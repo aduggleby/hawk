@@ -378,22 +378,23 @@ Creates a folder publish output at `./artifacts/publish/Hawk.Web`:
 ando run -p publish
 ```
 
-### Build A Container Image (Web Only)
+### Publish Plus Container Image (Web Only)
 
 The image contains only the ASP.NET app. SQL Server is external and configured via `ConnectionStrings__DefaultConnection`.
 
 ```bash
-ando run --dind -p docker
+ando run --dind -p publish
 ```
 
-### Push To GHCR
+### Push To GHCR (Optional)
 
-Set `GHCR_IMAGE` to `ghcr.io/<owner>/<name>` and ensure auth is available (recommended: `GITHUB_TOKEN` in CI).
+If `GHCR_IMAGE` is set to `ghcr.io/<owner>/<name>`, the `publish` profile will build multi-arch and push to GHCR.
+Ensure auth is available (recommended: `GITHUB_TOKEN` in CI).
 
 ```bash
 export GHCR_IMAGE=ghcr.io/YOUR_ORG/hawk-web
 export GITHUB_TOKEN=...   # in GitHub Actions, this is provided automatically
-ando run --dind -p push
+ando run --dind -p publish
 ```
 
 ### Versioning And CHANGELOG
