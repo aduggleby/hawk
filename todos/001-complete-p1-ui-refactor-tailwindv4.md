@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p1
 issue_id: "001"
 tags: [ui, tailwind, accessibility, refactor]
