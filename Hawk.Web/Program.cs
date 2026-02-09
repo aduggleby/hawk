@@ -15,6 +15,9 @@ using Hawk.Web.Data.Seeding;
 using Hangfire;
 using Hangfire.SqlServer;
 using Serilog;
+using Hawk.Web.Services.Email;
+using Hawk.Web.Services.Monitoring;
+using Hawk.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +41,18 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+
+builder.Services.AddHttpClient("urlchecks", c =>
+{
+    // We implement timeouts via CancellationTokenSource to capture them as "timeout" results.
+    c.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddScoped<IUrlChecker>(sp =>
+    new UrlChecker(sp.GetRequiredService<IHttpClientFactory>().CreateClient("urlchecks")));
+
+builder.Services.Configure<ResendCompatibleEmailOptions>(builder.Configuration.GetSection("Hawk:Resend"));
+builder.Services.AddHttpClient<ResendCompatibleEmailSender>();
+builder.Services.AddScoped<IEmailSender, ResendCompatibleEmailSender>();
 
 builder.Services.AddHangfire(cfg =>
 {
@@ -65,7 +80,16 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options =>
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
-builder.Services.AddRazorPages();
+builder.Services.AddRazorPages(options =>
+{
+    // Default: require auth for app pages. Identity UI remains accessible for login.
+    options.Conventions.AuthorizeFolder("/");
+    options.Conventions.AllowAnonymousToPage("/Index");
+    options.Conventions.AllowAnonymousToPage("/Privacy");
+});
+
+builder.Services.AddScoped<IMonitorRunner, MonitorRunner>();
+builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
 
 var app = builder.Build();
 
@@ -73,6 +97,11 @@ var app = builder.Build();
 // - Applies EF migrations (required for container deployments).
 // - Ensures an Admin role and a seed admin user exists.
 await app.Services.SeedIdentityAsync();
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    // Start the scheduler loop.
+    await scope.ServiceProvider.GetRequiredService<IMonitorScheduler>().EnsureStartedAsync(CancellationToken.None);
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
