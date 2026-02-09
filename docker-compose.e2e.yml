@@ -7,8 +7,10 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_PID: "Developer"
       SA_PASSWORD: "${SA_PASSWORD:-YourStrong!Passw0rd}"
-    volumes:
-      - hawk_e2e_db:/var/opt/mssql
+    # E2E should be hermetic: use an ephemeral database per run.
+    tmpfs:
+      # SQL Server runs as user `mssql` (typically uid 10001) and needs write access.
+      - /var/opt/mssql:uid=10001,gid=0,mode=0770
 
   mock:
     build:
@@ -26,7 +28,7 @@ services:
       dockerfile: Hawk.Web/Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: "Testing"
-      ASPNETCORE_URLS: "http://+:8080"
+      ASPNETCORE_URLS: "http://0.0.0.0:8080"
       ConnectionStrings__DefaultConnection: "Server=db;Database=HawkE2E;User Id=sa;Password=${SA_PASSWORD:-YourStrong!Passw0rd};TrustServerCertificate=true;Encrypt=false"
       Hawk__DisableHttpsRedirection: "true"
       Hawk__SeedAdmin__Email: "ad@dualconsult.com"
@@ -62,5 +64,4 @@ services:
       - ./screenshots:/work/screenshots
 
 volumes:
-  hawk_e2e_db:
   hawk_e2e_dpkeys:

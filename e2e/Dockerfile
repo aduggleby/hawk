@@ -21,4 +21,4 @@ RUN mkdir -p /work/screenshots
 ENV SCREENSHOTS_DIR=/work/screenshots
 
 ENTRYPOINT ["bash", "-lc"]
-CMD ["until curl -fsS \"$HAWK_BASE_URL/\" >/dev/null; do echo \"waiting for web: $HAWK_BASE_URL\"; sleep 1; done; Xvfb :99 -screen 0 1280x720x24 -nolisten tcp & export DISPLAY=:99; npx playwright test --project=chromium --reporter=list"]
+CMD ["until curl -4 -fsS \"$HAWK_BASE_URL/\" >/dev/null; do echo \"waiting for web: $HAWK_BASE_URL\"; sleep 1; done; rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; Xvfb :99 -screen 0 1280x720x24 -nolisten tcp & export DISPLAY=:99; npx playwright test --project=chromium --reporter=list"]

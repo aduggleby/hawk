@@ -16,7 +16,8 @@ RUN dotnet publish Hawk.Web/Hawk.Web.csproj -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
-ENV ASPNETCORE_URLS=http://+:8080
+# Bind explicitly to IPv4 in containers to keep inter-container connectivity predictable.
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 EXPOSE 8080
 
 COPY --from=build /app/publish .

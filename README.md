@@ -299,6 +299,67 @@ docker push ghcr.io/YOUR_ORG/hawk-web:latest
 
 Then set `image: ghcr.io/YOUR_ORG/hawk-web:latest` in the YAML.
 
+## Import From StatusCake
+
+Hawk can import:
+
+- StatusCake uptime tests (creates Hawk monitors)
+- StatusCake uptime alerts (imports run history)
+
+Import UI:
+
+- In Hawk, go to `Admin` -> `Import StatusCake`.
+
+### Export Tests From StatusCake (JSON)
+
+Export the raw JSON from the StatusCake API and save it to a file:
+
+```bash
+export STATUSCAKE_API_TOKEN="..."
+curl -sS "https://api.statuscake.com/v1/uptime?limit=100" \
+  -H "Authorization: Bearer $STATUSCAKE_API_TOKEN" \
+  > statuscake-uptime.json
+```
+
+Upload `statuscake-uptime.json` with import type `Tests`.
+
+Notes:
+
+- Only HTTP/HTTPS tests are imported.
+- The StatusCake id is appended to the monitor name as `(sc:<id>)` so alerts can be mapped later.
+- If a test uses `do_not_find` (inverted body match), Hawk imports it as disabled and emits a warning (Hawk v1 does not support inverted matches).
+
+### Export Alerts From StatusCake (JSON)
+
+The StatusCake alerts API is per-test. Export alerts for one or more tests:
+
+```bash
+export STATUSCAKE_API_TOKEN="..."
+TEST_ID="123"
+curl -sS "https://api.statuscake.com/v1/uptime/${TEST_ID}/alerts?limit=100" \
+  -H "Authorization: Bearer $STATUSCAKE_API_TOKEN" \
+  > "alerts-${TEST_ID}.json"
+```
+
+Hawk expects alerts in this combined format:
+
+```json
+[
+  { "test_id": "123", "data": [ /* alerts */ ] },
+  { "test_id": "124", "data": [ /* alerts */ ] }
+]
+```
+
+You can build that file like this (requires `jq`):
+
+```bash
+jq -n --slurpfile a alerts-123.json '{test_id:"123", data: $a[0].data}' > alerts-123.wrapped.json
+jq -n --slurpfile a alerts-124.json '{test_id:"124", data: $a[0].data}' > alerts-124.wrapped.json
+jq -s '.' alerts-*.wrapped.json > statuscake-alerts.json
+```
+
+Upload `statuscake-alerts.json` with import type `Alerts`.
+
 ## Ando Build And Release
 
 This repo includes an Ando build script: `build.csando`.

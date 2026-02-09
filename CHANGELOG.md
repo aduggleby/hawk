@@ -6,6 +6,10 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+### Added
+
+- Admin-only StatusCake JSON import for uptime tests and alert history.
+
 ## [0.9.0] - 2026-02-09
 
 ### Added
@@ -20,4 +24,3 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 - Docker compose for local dev (web + SQL Server + mock server).
 - Dockerized Playwright E2E tests (headed Chromium via Xvfb) saving screenshots to `./screenshots`.
 - Basic xUnit tests for URL checking and form validation.
-
