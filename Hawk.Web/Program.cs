@@ -12,14 +12,49 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Seeding;
+using Hangfire;
+using Hangfire.SqlServer;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((ctx, services, cfg) =>
+{
+    // Rolling file logs for container-friendly diagnostics.
+    // retainedFileCountLimit=30 approximates "delete logs older than 30 days" when rolling daily.
+    cfg.ReadFrom.Configuration(ctx.Configuration)
+        .Enrich.FromLogContext()
+        .WriteTo.Console()
+        .WriteTo.File(
+            path: Path.Combine("logs", "hawk-.log"),
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 30,
+            shared: true,
+            flushToDiskInterval: TimeSpan.FromSeconds(2));
+});
 
 // Add services to the container.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(connectionString));
+    options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+
+builder.Services.AddHangfire(cfg =>
+{
+    // Hangfire storage is co-located with the app DB for simple Docker Compose deployment.
+    cfg.SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UseSqlServerStorage(connectionString, new SqlServerStorageOptions
+        {
+            CommandBatchMaxTimeout = TimeSpan.FromMinutes(5),
+            SlidingInvisibilityTimeout = TimeSpan.FromMinutes(5),
+            QueuePollInterval = TimeSpan.FromSeconds(5),
+            UseRecommendedIsolationLevel = true,
+            DisableGlobalLocks = true
+        });
+});
+builder.Services.AddHangfireServer();
 
 builder.Services.AddDefaultIdentity<IdentityUser>(options =>
     {
@@ -62,6 +97,9 @@ app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Hangfire dashboard should be restricted later to Admin users.
+app.UseHangfireDashboard("/hangfire");
 
 app.MapStaticAssets();
 app.MapRazorPages()
