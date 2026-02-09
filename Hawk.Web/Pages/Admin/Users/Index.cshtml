@@ -11,8 +11,8 @@
         <p class="text-sm text-zinc-600">Admin-only user management.</p>
     </div>
     <div class="flex items-center gap-2">
-        <a class="hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
-        <a class="hawk-btn-primary" asp-page="/Admin/Users/Create">New user</a>
+        <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
+        <a class="hawk-btn hawk-btn-primary" asp-page="/Admin/Users/Create">New user</a>
     </div>
 </div>
 
@@ -33,8 +33,8 @@
                     <td class="px-4 py-3 font-mono text-xs">@u.Email</td>
                     <td class="px-4 py-3 text-xs text-zinc-700">@string.Join(", ", u.Roles)</td>
                     <td class="px-4 py-3 text-right">
-                        <a class="hawk-btn-ghost" asp-page="/Admin/Users/ResetPassword" asp-route-id="@u.Id">Reset password</a>
-                        <a class="hawk-btn-ghost ml-2" asp-page="/Admin/Users/Delete" asp-route-id="@u.Id">Delete</a>
+                        <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Users/ResetPassword" asp-route-id="@u.Id">Reset password</a>
+                        <a class="hawk-btn hawk-btn-ghost ml-2" asp-page="/Admin/Users/Delete" asp-route-id="@u.Id">Delete</a>
                     </td>
                 </tr>
             }

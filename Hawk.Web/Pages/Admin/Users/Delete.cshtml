@@ -10,7 +10,7 @@
         <h1 class="text-2xl font-semibold tracking-tight">Delete user</h1>
         <p class="text-sm text-zinc-600 font-mono">@Model.Email</p>
     </div>
-    <a class="hawk-btn-ghost" asp-page="/Admin/Users/Index">Back</a>
+    <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Users/Index">Back</a>
 </div>
 
 <div class="hawk-card border-red-200 max-w-xl">
@@ -19,9 +19,8 @@
 </div>
 
 <form method="post" class="flex items-center gap-2 mt-4 max-w-xl">
-    <button class="hawk-btn-danger" type="submit">Delete</button>
-    <a class="hawk-btn-ghost" asp-page="/Admin/Users/Index">Cancel</a>
+    <button class="hawk-btn hawk-btn-danger" type="submit">Delete</button>
+    <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Users/Index">Cancel</a>
 </form>
 
 <div class="text-sm text-red-700 mt-3" asp-validation-summary="All"></div>
-

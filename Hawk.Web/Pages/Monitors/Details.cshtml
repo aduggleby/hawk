@@ -24,10 +24,10 @@
     </div>
     <div class="flex items-center gap-2">
         <form method="post" asp-page-handler="RunNow">
-            <button class="hawk-btn-primary" type="submit">Run now</button>
+            <button class="hawk-btn hawk-btn-primary" type="submit">Run now</button>
         </form>
-        <a class="hawk-btn-ghost" asp-page="/Monitors/Edit" asp-route-id="@Model.Monitor.Id">Edit</a>
-        <a class="hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
+        <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Edit" asp-route-id="@Model.Monitor.Id">Edit</a>
+        <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
     </div>
 </div>
 
@@ -116,11 +116,11 @@
                                 <td class="px-4 py-3">
                                     @if (r.Success)
                                     {
-                                        <span class="hawk-badge-ok">OK</span>
+                                        <span class="hawk-badge hawk-badge-success">OK</span>
                                     }
                                     else
                                     {
-                                        <span class="hawk-badge-fail">FAIL</span>
+                                        <span class="hawk-badge hawk-badge-danger">FAIL</span>
                                         <span class="text-xs text-zinc-600 ml-2">@r.ErrorMessage</span>
                                     }
                                 </td>
