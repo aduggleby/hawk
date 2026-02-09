@@ -67,7 +67,7 @@ The web app UI is currently a mix of legacy Bootstrap assets and Tailwind utilit
 - [x] Brand tokens + semantic variables exist with light/dark modes
 - [x] Theme toggle works and persists (and no light flash on load)
 - [x] Layout shell uses new brand styling, has usable mobile navigation
-- [ ] CSS build is deterministic for Docker/publish (no stale `app.css`)
+- [x] CSS build is deterministic for Docker/publish (no stale `app.css`)
 
 ## Work Log
 
@@ -100,3 +100,10 @@ The web app UI is currently a mix of legacy Bootstrap assets and Tailwind utilit
 - Implemented mobile drawer behavior in `Hawk.Web/wwwroot/js/mobile-menu.js` (Escape/backdrop close, focus restore).
 - Added focus styles for `.hawk-input` in `Hawk.Web/Assets/components/hawk-input.css`.
 - Regenerated CSS with `npm --prefix Hawk.Web run build:css`.
+
+### 2026-02-09 - Docker Build Includes Tailwind Build
+
+**By:** Codex
+
+**Actions:**
+- Updated `Hawk.Web/Dockerfile` to build Tailwind CSS in a Node stage and copy `wwwroot/css/app.css` into the `dotnet publish` stage, preventing stale CSS in container deployments.
