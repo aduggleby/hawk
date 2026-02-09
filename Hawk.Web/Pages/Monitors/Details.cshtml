@@ -1,0 +1,142 @@
+@page "{id:guid}"
+@* <summary>Monitor details and run history.</summary> *@
+@model Hawk.Web.Pages.Monitors.DetailsModel
+@{
+    ViewData["Title"] = Model.Monitor?.Name ?? "Monitor";
+}
+
+@if (Model.Monitor is null)
+{
+    <div class="alert alert-danger">Monitor not found.</div>
+    return;
+}
+
+<div class="d-flex align-items-start justify-content-between mb-3">
+    <div>
+        <h1 class="h3 mb-1">@Model.Monitor.Name</h1>
+        <div class="text-muted">
+            <code>@Model.Monitor.Method</code>
+            <span class="mx-1">·</span>
+            <code>@Model.Monitor.Url</code>
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <form method="post" asp-page-handler="RunNow">
+            <button class="btn btn-outline-primary" type="submit">Run now</button>
+        </form>
+        <a class="btn btn-outline-secondary" asp-page="/Monitors/Edit" asp-route-id="@Model.Monitor.Id">Edit</a>
+        <a class="btn btn-outline-secondary" asp-page="/Monitors/Index">Back</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="border rounded p-3">
+            <div class="fw-semibold mb-2">Config</div>
+            <dl class="row mb-0">
+                <dt class="col-4">Enabled</dt>
+                <dd class="col-8">@((Model.Monitor.Enabled) ? "Yes" : "No")</dd>
+                <dt class="col-4">Interval</dt>
+                <dd class="col-8">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
+                <dt class="col-4">Timeout</dt>
+                <dd class="col-8">@Model.Monitor.TimeoutSeconds s</dd>
+                <dt class="col-4">Last run</dt>
+                <dd class="col-8">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+                <dt class="col-4">Next run</dt>
+                <dd class="col-8">@((Model.Monitor.NextRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+            </dl>
+        </div>
+
+        <div class="border rounded p-3 mt-3">
+            <div class="fw-semibold mb-2">Headers</div>
+            @if (Model.Monitor.Headers.Count == 0)
+            {
+                <div class="text-muted small">None.</div>
+            }
+            else
+            {
+                <ul class="list-unstyled mb-0">
+                    @foreach (var h in Model.Monitor.Headers)
+                    {
+                        <li><code>@h.Name</code>: <code>@h.Value</code></li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="border rounded p-3 mt-3">
+            <div class="fw-semibold mb-2">Match rules</div>
+            @if (Model.Monitor.MatchRules.Count == 0)
+            {
+                <div class="text-muted small">None.</div>
+            }
+            else
+            {
+                <ul class="list-unstyled mb-0">
+                    @foreach (var r in Model.Monitor.MatchRules)
+                    {
+                        <li><code>@r.Mode</code>: <code>@r.Pattern</code></li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="border rounded p-3">
+            <div class="fw-semibold mb-2">Recent runs</div>
+            @if (Model.Runs.Count == 0)
+            {
+                <div class="text-muted">No runs yet.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                        <tr>
+                            <th>When</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Result</th>
+                            <th>Alert</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var r in Model.Runs)
+                        {
+                            <tr>
+                                <td>@r.StartedAt.ToLocalTime().ToString("g")</td>
+                                <td><code>@(r.StatusCode?.ToString() ?? "-")</code></td>
+                                <td>@r.DurationMs ms</td>
+                                <td>
+                                    @if (r.Success)
+                                    {
+                                        <span class="badge text-bg-success">OK</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-danger">FAIL</span>
+                                        <span class="text-muted small ms-2">@r.ErrorMessage</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!r.Success)
+                                    {
+                                        <span class="text-muted small">@((r.AlertSent) ? "sent" : (r.AlertError ?? "not sent"))</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">-</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
