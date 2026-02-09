@@ -299,3 +299,44 @@ docker push ghcr.io/YOUR_ORG/hawk-web:latest
 
 Then set `image: ghcr.io/YOUR_ORG/hawk-web:latest` in the YAML.
 
+## Ando Build And Release
+
+This repo includes an Ando build script: `build.csando`.
+
+### Build And Test
+
+```bash
+ando run
+```
+
+### Publish (Artifacts)
+
+Creates a folder publish output at `./artifacts/publish/Hawk.Web`:
+
+```bash
+ando run -p publish
+```
+
+### Build A Container Image (Web Only)
+
+The image contains only the ASP.NET app. SQL Server is external and configured via `ConnectionStrings__DefaultConnection`.
+
+```bash
+ando run --dind -p docker
+```
+
+### Push To GHCR
+
+Set `GHCR_IMAGE` to `ghcr.io/<owner>/<name>` and ensure auth is available (recommended: `GITHUB_TOKEN` in CI).
+
+```bash
+export GHCR_IMAGE=ghcr.io/YOUR_ORG/hawk-web
+export GITHUB_TOKEN=...   # in GitHub Actions, this is provided automatically
+ando run --dind -p push
+```
+
+### Versioning And CHANGELOG
+
+- Project version is set to `0.9.0` in the `.csproj` files.
+- The intent is to use `ando release` which automatically bumps versions from there.
+- Changelog is tracked in `CHANGELOG.md`.

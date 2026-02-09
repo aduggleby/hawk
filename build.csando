@@ -1,0 +1,82 @@
+// <file>
+// <summary>
+// Ando build script for Hawk.
+//
+// Usage:
+// - `ando run`                      : restore, build, and test
+// - `ando run -p publish`           : dotnet publish to ./artifacts/publish/Hawk.Web
+// - `ando run --dind -p docker`     : build the Hawk.Web container image locally
+// - `ando run --dind -p push`       : build and push the Hawk.Web container image to GHCR
+//
+// Notes:
+// - The container image only contains the web app. SQL Server is external and configured via connection string.
+// - Set project version in *.csproj (currently 0.9.0). This is required for `ando release` workflows.
+// </summary>
+// </file>
+
+using System.Text.RegularExpressions;
+using Ando.Core;
+using Ando.Dotnet;
+using Ando.Docker;
+
+UseImage("mcr.microsoft.com/dotnet/sdk:10.0");
+
+var publish = DefineProfile("publish");
+var docker = DefineProfile("docker");
+var push = DefineProfile("push");
+
+var web = Dotnet.Project("./Hawk.Web/Hawk.Web.csproj");
+var tests = Dotnet.Project("./Hawk.Tests/Hawk.Tests.csproj");
+
+var configuration = "Release";
+var artifacts = Root / "artifacts";
+var publishDir = artifacts / "publish" / "Hawk.Web";
+
+Dotnet.Restore(tests);
+Dotnet.Build(web, o => o.Configuration(configuration).NoRestore());
+Dotnet.Test(tests, o => o.Configuration(configuration).NoRestore().NoBuild());
+
+if (publish)
+{
+    Dotnet.Publish(web, o => o.Configuration(configuration).NoRestore().Output(publishDir));
+    CopyZippedArtifactsToHost(artifacts, artifacts);
+}
+
+if (docker || push)
+{
+    if (!Docker.IsAvailable())
+        throw new InvalidOperationException("Docker is not available. Re-run with `ando run --dind -p docker` (or `-p push`).");
+
+    Docker.Install();
+
+    var version = (web.Version ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(version))
+        throw new InvalidOperationException("Project version is not set. Add <Version>0.9.0</Version> to Hawk.Web/Hawk.Web.csproj.");
+
+    var localTag = $"hawk-web:{version}";
+    var dockerfile = "./Hawk.Web/Dockerfile";
+
+    if (!push)
+    {
+        Docker.Build(dockerfile, o =>
+            o.WithContext(".")
+             .WithTags(localTag));
+    }
+    else
+    {
+        var image = Env("GHCR_IMAGE"); // Example: ghcr.io/<owner>/hawk-web
+        if (!Regex.IsMatch(image, "^ghcr\\.io/[^/]+/[^:]+$", RegexOptions.CultureInvariant))
+            throw new InvalidOperationException("GHCR_IMAGE must look like `ghcr.io/<owner>/<name>` (no tag).");
+
+        // Docker.Build handles GHCR auth when pushing:
+        // - GITHUB_TOKEN in env (recommended for GitHub Actions)
+        // - OR gh CLI auth (`gh auth login`) on the host
+        // - OR any existing docker credential helper config
+        Docker.Build(dockerfile, o =>
+            o.WithContext(".")
+             .WithPlatforms("linux/amd64", "linux/arm64")
+             .WithTags($"{image}:v{version}", $"{image}:latest")
+             .WithPush());
+    }
+}
+
