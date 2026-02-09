@@ -57,6 +57,13 @@ public sealed class MonitorForm
     public int IntervalSeconds { get; set; } = 60;
 
     /// <summary>
+    /// Number of consecutive failed runs required before an alert email is sent.
+    /// </summary>
+    [Display(Name = "Alert after consecutive failures")]
+    [Range(1, 20)]
+    public int AlertAfterConsecutiveFailures { get; set; } = 1;
+
+    /// <summary>
     /// POST content-type.
     /// </summary>
     [Display(Name = "Content-Type")]
@@ -99,6 +106,9 @@ public sealed class MonitorForm
 
         if (!MonitorIntervals.AllowedSeconds(env).Contains(IntervalSeconds))
             yield return new ValidationResult("Interval is not allowed in this environment.", [nameof(IntervalSeconds)]);
+
+        if (AlertAfterConsecutiveFailures < 1 || AlertAfterConsecutiveFailures > 20)
+            yield return new ValidationResult("Alert threshold must be between 1 and 20.", [nameof(AlertAfterConsecutiveFailures)]);
 
         var method = (Method ?? string.Empty).Trim().ToUpperInvariant();
         if (method is not ("GET" or "POST"))

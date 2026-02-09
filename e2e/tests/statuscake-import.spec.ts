@@ -43,8 +43,7 @@ test('import StatusCake tests and alerts', async ({ page }) => {
   });
 
   await page.getByRole('button', { name: 'Import' }).click();
-  await expect(page.getByText('Monitors created:')).toBeVisible();
-  await expect(page.getByText(/Monitors created:\s*2/)).toBeVisible();
+  await expect(page.getByTestId('import-monitors-created')).toHaveText('2');
 
   await snap(page, '30-statuscake-import-tests');
 
@@ -77,7 +76,7 @@ test('import StatusCake tests and alerts', async ({ page }) => {
     buffer: Buffer.from(alertsExport, 'utf-8'),
   });
   await page.getByRole('button', { name: 'Import' }).click();
-  await expect(page.getByText(/Runs created:\s*1/)).toBeVisible();
+  await expect(page.getByTestId('import-runs-created')).toHaveText('1');
 
   await snap(page, '31-statuscake-import-alerts');
 

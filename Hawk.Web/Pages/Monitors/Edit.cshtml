@@ -64,6 +64,17 @@
     </div>
 
     <div class="hawk-card">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+                <label class="hawk-label" asp-for="Form.AlertAfterConsecutiveFailures"></label>
+                <input class="hawk-input mt-2" asp-for="Form.AlertAfterConsecutiveFailures" type="number" min="1" max="20" />
+                <div class="text-sm text-red-700 mt-1" asp-validation-for="Form.AlertAfterConsecutiveFailures"></div>
+                <div class="text-xs text-zinc-500 mt-1">Email is sent only when the failure streak reaches this number (once per incident).</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="hawk-card">
         <div class="font-semibold mb-2">POST options</div>
         <div class="mt-4">
             <label class="hawk-label" asp-for="Form.ContentType"></label>

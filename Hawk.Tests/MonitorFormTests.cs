@@ -62,6 +62,22 @@ public class MonitorFormTests
         Assert.Contains(errors, e => e.ErrorMessage?.Contains("Interval", StringComparison.OrdinalIgnoreCase) == true);
     }
 
+    [Fact]
+    public void Validate_Rejects_InvalidAlertThreshold()
+    {
+        var env = new FakeEnv("Production");
+        var form = new MonitorForm
+        {
+            Name = "x",
+            Url = "https://example.com",
+            Method = "GET",
+            IntervalSeconds = 60,
+            AlertAfterConsecutiveFailures = 0
+        };
+        var errors = form.Validate(env).ToArray();
+        Assert.Contains(errors, e => e.ErrorMessage?.Contains("Alert", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
     private sealed class FakeEnv(string envName) : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = envName;
@@ -70,4 +86,3 @@ public class MonitorFormTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }
-

@@ -70,6 +70,7 @@ Location: `e2e/`
 Run:
 - Docker (recommended): `docker compose -f docker-compose.e2e.yml up --build --exit-code-from e2e e2e`
   - Note: this writes screenshots to host `./screenshots` (mounted into the Playwright container).
+  - Preferred: `npm --prefix e2e test` which performs `docker compose down` first to guarantee a fresh DB each run.
 
 ## HTTPS Redirection Toggle (For E2E)
 
@@ -117,6 +118,11 @@ Implementation:
 - `Hawk.Web/Services/Email/ResendCompatibleEmailSender.cs` posts to `${BaseUrl}/emails` with Bearer auth.
 - E2E points `Hawk__Resend__BaseUrl` at `Hawk.MockServer` and asserts captured payloads via `GET /emails`.
 
+Alert policy:
+- Monitors have `AlertAfterConsecutiveFailures` (1..20) controlling when a failure incident should trigger email.
+- Policy logic lives in `Hawk.Web/Services/Monitoring/AlertPolicy.cs` and is enforced by `MonitorRunner` when saving runs.
+- Default behavior (`1`) is "alert on first failure after a success", not "alert on every failed run".
+
 ## Logging
 
 Requirement:
@@ -161,6 +167,7 @@ Implementation:
 - `e2e/Dockerfile` runs headed Chromium via `Xvfb` (not headless) and waits for `HAWK_BASE_URL`.
 - Screenshots are written to host `./screenshots` by `e2e/tests/helpers.ts`.
  - Playwright is forced to run serially in Docker via `E2E_DOCKER=1` in `docker-compose.e2e.yml`.
+- If screenshot capture is flaky under Docker/Xvfb, `snap()` retries and then logs a warning instead of failing the whole suite.
 
 ## Deployment To Proxmox VM (Planned)
 

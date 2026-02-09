@@ -45,8 +45,14 @@
         <div class="mt-6 border-t border-zinc-100 pt-4">
             <h2 class="font-semibold mb-2">Result</h2>
             <div class="text-sm">
-                <div><span class="font-mono">Monitors created:</span> @Model.Result.MonitorsCreated</div>
-                <div><span class="font-mono">Runs created:</span> @Model.Result.RunsCreated</div>
+                <div>
+                    <span class="font-mono">Monitors created:</span>
+                    <span data-testid="import-monitors-created">@Model.Result.MonitorsCreated</span>
+                </div>
+                <div>
+                    <span class="font-mono">Runs created:</span>
+                    <span data-testid="import-runs-created">@Model.Result.RunsCreated</span>
+                </div>
             </div>
 
             @if (Model.Result.Warnings.Count != 0)
@@ -64,4 +70,3 @@
         </div>
     }
 </form>
-

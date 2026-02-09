@@ -116,3 +116,35 @@ test('error states: non-2xx and match failure trigger a FAIL result (and alert i
   await expect(page.locator('tbody tr').first()).toContainText('FAIL');
   await snap(page, '31-nomatch-fail');
 });
+
+test('alert threshold: only alert after N consecutive failures', async ({ page, request }) => {
+  await loginAsSeedAdmin(page);
+  await gotoMonitors(page);
+
+  // Reset captured emails so this test is deterministic.
+  await request.post(`${MOCK_BASE}/emails/reset`);
+
+  await page.getByRole('link', { name: /new monitor/i }).click();
+  await page.getByLabel(/^name$/i).fill('Threshold 2');
+  await page.getByLabel(/^url$/i).fill(`${MOCK_BASE}/error`);
+  await page.getByLabel(/^method$/i).selectOption('GET');
+  await page.getByLabel(/^interval$/i).selectOption('60');
+  await page.getByLabel(/alert after consecutive failures/i).fill('2');
+
+  await page.getByRole('button', { name: /^create$/i }).click();
+  await snap(page, '40-threshold-details-created');
+
+  // Run 1: fail, but no alert yet.
+  await page.getByRole('button', { name: /^run now$/i }).click();
+  await pollForAtLeastRuns(page, 1, 30_000);
+  let emailsRes = await request.get(`${MOCK_BASE}/emails`);
+  let emails = await emailsRes.json();
+  expect(emails.length).toBe(0);
+
+  // Run 2: second consecutive failure should alert.
+  await page.getByRole('button', { name: /^run now$/i }).click();
+  await pollForAtLeastRuns(page, 2, 30_000);
+  emailsRes = await request.get(`${MOCK_BASE}/emails`);
+  emails = await emailsRes.json();
+  expect(emails.length).toBe(1);
+});

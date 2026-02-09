@@ -10,7 +10,22 @@ export async function snap(page: Page, name: string) {
   fs.mkdirSync(dir, { recursive: true });
   const safe = name.replace(/[^a-z0-9._-]+/gi, '_').toLowerCase();
   const file = path.join(dir, `${safe}.png`);
-  await page.screenshot({ path: file, fullPage: true });
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await page.screenshot({ path: file, fullPage: true });
+      return;
+    } catch (err) {
+      if (attempt === 3) {
+        // Screenshot failures can be intermittent in dockerized headed runs; don't fail the whole suite.
+        // Tests still validate behavior; screenshots are best-effort.
+        // eslint-disable-next-line no-console
+        console.warn(`snap('${name}') failed:`, err);
+        return;
+      }
+
+      await page.waitForTimeout(250 * attempt);
+    }
+  }
 }
 
 export async function loginAsSeedAdmin(page: Page) {

@@ -57,6 +57,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
             Enabled = m.Enabled,
             TimeoutSeconds = m.TimeoutSeconds,
             IntervalSeconds = AllowedIntervals.Contains(m.IntervalSeconds) ? m.IntervalSeconds : AllowedIntervals.FirstOrDefault(),
+            AlertAfterConsecutiveFailures = Math.Clamp(m.AlertAfterConsecutiveFailures, 1, 20),
             ContentType = m.ContentType,
             Body = m.Body,
         };
@@ -102,6 +103,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         m.Enabled = Form.Enabled;
         m.TimeoutSeconds = Form.TimeoutSeconds;
         m.IntervalSeconds = Form.IntervalSeconds;
+        m.AlertAfterConsecutiveFailures = Form.AlertAfterConsecutiveFailures;
         m.ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim();
         m.Body = Form.Body;
 
@@ -135,4 +137,3 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         return RedirectToPage("/Monitors/Details", new { id = m.Id });
     }
 }
-

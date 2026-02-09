@@ -63,6 +63,12 @@ public sealed class Monitor
     public DateTimeOffset? LastRunAt { get; set; }
 
     /// <summary>
+    /// Number of consecutive failed runs required before an alert email is sent.
+    /// Alerting triggers only when the failure streak reaches this threshold (once per incident).
+    /// </summary>
+    public int AlertAfterConsecutiveFailures { get; set; } = 1;
+
+    /// <summary>
     /// Optional request content-type (used for POST/PUT/PATCH).
     /// </summary>
     [MaxLength(200)]
@@ -94,4 +100,3 @@ public sealed class Monitor
     /// </summary>
     public List<MonitorMatchRule> MatchRules { get; set; } = [];
 }
-

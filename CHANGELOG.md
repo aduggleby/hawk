@@ -9,6 +9,10 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 ### Added
 
 - Admin-only StatusCake JSON import for uptime tests and alert history.
+- Alerting policy setting: send email only after `N` consecutive failures (default: `1`).
+- E2E stability improvements:
+  - Always recreate docker compose stack for a clean DB per run.
+  - Stable `data-testid` assertions for StatusCake import results.
 
 ## [0.9.0] - 2026-02-09
 

@@ -54,4 +54,11 @@ app.MapPost("/emails", async (HttpContext ctx) =>
 
 app.MapGet("/emails", () => Results.Json(sentEmails.ToArray()));
 
+app.MapPost("/emails/reset", () =>
+{
+    // Branch: clear captured emails between E2E tests.
+    while (sentEmails.TryDequeue(out _)) { }
+    return Results.Ok();
+});
+
 app.Run();

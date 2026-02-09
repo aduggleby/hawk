@@ -102,7 +102,17 @@ public sealed class MonitorRunner(
 
         if (!run.Success)
         {
-            await TrySendAlertAsync(monitor, run, cancellationToken);
+            var priorFailures = await CountPriorConsecutiveFailuresAsync(monitor.Id, cancellationToken);
+            var threshold = Math.Clamp(monitor.AlertAfterConsecutiveFailures, 1, 20);
+            if (AlertPolicy.ShouldAlertOnFailure(threshold, priorFailures))
+            {
+                await TrySendAlertAsync(monitor, run, cancellationToken);
+            }
+            else
+            {
+                run.AlertSent = false;
+                run.AlertError = $"Not alerted (needs {threshold} consecutive failures; prior={priorFailures}).";
+            }
         }
 
         // Best-effort: keep a rolling last-run timestamp on the monitor.
@@ -184,5 +194,26 @@ public sealed class MonitorRunner(
             run.AlertSent = false;
             run.AlertError = ex.Message;
         }
+    }
+
+    private async Task<int> CountPriorConsecutiveFailuresAsync(Guid monitorId, CancellationToken cancellationToken)
+    {
+        // Load a small window of recent runs and count failures until the first success.
+        // Branch: limited to 50 to keep this O(1) for normal usage.
+        var recent = await db.MonitorRuns
+            .Where(r => r.MonitorId == monitorId)
+            .OrderByDescending(r => r.StartedAt)
+            .Take(50)
+            .Select(r => new { r.Success })
+            .ToListAsync(cancellationToken);
+
+        var count = 0;
+        foreach (var r in recent)
+        {
+            if (r.Success)
+                break;
+            count++;
+        }
+        return count;
     }
 }

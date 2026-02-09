@@ -60,6 +60,7 @@ public class CreateModel(ApplicationDbContext db, IHostEnvironment env, UserMana
             Enabled = Form.Enabled,
             TimeoutSeconds = Form.TimeoutSeconds,
             IntervalSeconds = Form.IntervalSeconds,
+            AlertAfterConsecutiveFailures = Form.AlertAfterConsecutiveFailures,
             ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim(),
             Body = Form.Body,
             // Branch: can be null if authentication is disabled/misconfigured.
