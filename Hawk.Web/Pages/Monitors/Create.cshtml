@@ -5,116 +5,124 @@
     ViewData["Title"] = "New monitor";
 }
 
-<h1 class="h3 mb-3">New monitor</h1>
-
-<form method="post" class="vstack gap-3">
+<div class="flex items-start justify-between gap-4 mb-6">
     <div>
-        <label class="form-label">Name</label>
-        <input class="form-control" asp-for="Form.Name" />
-        <span class="text-danger" asp-validation-for="Form.Name"></span>
+        <h1 class="text-2xl font-semibold tracking-tight">New monitor</h1>
+        <p class="text-sm text-zinc-600">Create a new uptime or content check.</p>
+    </div>
+    <a class="hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
+</div>
+
+<form method="post" class="space-y-4">
+    <div class="hawk-card">
+        <label class="hawk-label">Name</label>
+        <input class="hawk-input mt-2" asp-for="Form.Name" />
+        <div class="text-sm text-red-700 mt-1" asp-validation-for="Form.Name"></div>
     </div>
 
-    <div>
-        <label class="form-label">URL</label>
-        <input class="form-control font-monospace" asp-for="Form.Url" placeholder="https://example.com/health" />
-        <span class="text-danger" asp-validation-for="Form.Url"></span>
+    <div class="hawk-card">
+        <label class="hawk-label">URL</label>
+        <input class="hawk-input mt-2 font-mono" asp-for="Form.Url" placeholder="https://example.com/health" />
+        <div class="text-sm text-red-700 mt-1" asp-validation-for="Form.Url"></div>
     </div>
 
-    <div class="row g-3">
-        <div class="col-md-3">
-            <label class="form-label">Method</label>
-            <select class="form-select" asp-for="Form.Method">
-                <option value="GET">GET</option>
-                <option value="POST">POST</option>
-            </select>
-            <span class="text-danger" asp-validation-for="Form.Method"></span>
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">Interval</label>
-            <select class="form-select" asp-for="Form.IntervalSeconds">
-                @foreach (var s in Model.AllowedIntervals)
-                {
-                    <option value="@s">@((s < 60) ? $"{s}s" : $"{s/60}m")</option>
-                }
-            </select>
-            <span class="text-danger" asp-validation-for="Form.IntervalSeconds"></span>
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">Timeout (s)</label>
-            <input class="form-control" asp-for="Form.TimeoutSeconds" type="number" min="1" max="300" />
-            <span class="text-danger" asp-validation-for="Form.TimeoutSeconds"></span>
-        </div>
-        <div class="col-md-3 d-flex align-items-end">
-            <div class="form-check">
-                <input class="form-check-input" asp-for="Form.Enabled" />
-                <label class="form-check-label" asp-for="Form.Enabled">Enabled</label>
-            </div>
-        </div>
-    </div>
-
-    <div class="border rounded p-3">
-        <div class="d-flex align-items-center justify-content-between">
+    <div class="hawk-card">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
-                <div class="fw-semibold">POST options</div>
-                <div class="text-muted small">Only used when Method=POST.</div>
+                <label class="hawk-label">Method</label>
+                <select class="hawk-select mt-2" asp-for="Form.Method">
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                </select>
+                <div class="text-sm text-red-700 mt-1" asp-validation-for="Form.Method"></div>
             </div>
-        </div>
-
-        <div class="mt-3">
-            <label class="form-label">Content-Type</label>
-            <input class="form-control font-monospace" asp-for="Form.ContentType" placeholder="application/json" />
-            <span class="text-danger" asp-validation-for="Form.ContentType"></span>
-        </div>
-
-        <div class="mt-3">
-            <label class="form-label">Body</label>
-            <textarea class="form-control font-monospace" asp-for="Form.Body" rows="5" placeholder="{\"ping\":true}"></textarea>
-            <span class="text-danger" asp-validation-for="Form.Body"></span>
+            <div>
+                <label class="hawk-label">Interval</label>
+                <select class="hawk-select mt-2" asp-for="Form.IntervalSeconds">
+                    @foreach (var s in Model.AllowedIntervals)
+                    {
+                        <option value="@s">@((s < 60) ? $"{s}s" : $"{s/60}m")</option>
+                    }
+                </select>
+                <div class="text-sm text-red-700 mt-1" asp-validation-for="Form.IntervalSeconds"></div>
+            </div>
+            <div>
+                <label class="hawk-label">Timeout (s)</label>
+                <input class="hawk-input mt-2" asp-for="Form.TimeoutSeconds" type="number" min="1" max="300" />
+                <div class="text-sm text-red-700 mt-1" asp-validation-for="Form.TimeoutSeconds"></div>
+            </div>
+            <div class="flex items-end">
+                <label class="inline-flex items-center gap-2 text-sm">
+                    <input class="h-4 w-4" asp-for="Form.Enabled" />
+                    <span class="font-medium">Enabled</span>
+                </label>
+            </div>
         </div>
     </div>
 
-    <div class="border rounded p-3">
-        <div class="fw-semibold mb-2">Headers</div>
+    <div class="hawk-card">
+        <div class="flex items-start justify-between gap-3">
+            <div>
+                <div class="font-semibold">POST options</div>
+                <div class="text-sm text-zinc-600">Only used when Method=POST.</div>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <label class="hawk-label">Content-Type</label>
+            <input class="hawk-input mt-2 font-mono" asp-for="Form.ContentType" placeholder="application/json" />
+            <div class="text-sm text-red-700 mt-1" asp-validation-for="Form.ContentType"></div>
+        </div>
+
+        <div class="mt-4">
+            <label class="hawk-label">Body</label>
+            <textarea class="hawk-input mt-2 font-mono" asp-for="Form.Body" rows="6" placeholder="{\"ping\":true}"></textarea>
+            <div class="text-sm text-red-700 mt-1" asp-validation-for="Form.Body"></div>
+        </div>
+    </div>
+
+    <div class="hawk-card">
+        <div class="font-semibold mb-2">Headers</div>
+        <div class="text-sm text-zinc-600 mb-3">Optional request headers.</div>
         @for (var i = 0; i < 5; i++)
         {
-            <div class="row g-2 mb-2">
-                <div class="col-md-4">
-                    <input class="form-control font-monospace" name="Form.HeaderNames[@i]" value="@Model.Form.HeaderNames[i]" placeholder="X-Token" />
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-2 mb-2">
+                <div class="md:col-span-4">
+                    <input class="hawk-input font-mono" name="Form.HeaderNames[@i]" value="@Model.Form.HeaderNames[i]" placeholder="X-Token" />
                 </div>
-                <div class="col-md-8">
-                    <input class="form-control font-monospace" name="Form.HeaderValues[@i]" value="@Model.Form.HeaderValues[i]" placeholder="secret" />
+                <div class="md:col-span-8">
+                    <input class="hawk-input font-mono" name="Form.HeaderValues[@i]" value="@Model.Form.HeaderValues[i]" placeholder="secret" />
                 </div>
             </div>
         }
     </div>
 
-    <div class="border rounded p-3">
-        <div class="fw-semibold mb-2">Match rules</div>
-        <div class="text-muted small mb-2">All rules must pass for the run to be marked successful.</div>
+    <div class="hawk-card">
+        <div class="font-semibold mb-2">Match rules</div>
+        <div class="text-sm text-zinc-600 mb-3">All rules must pass for the run to be marked successful.</div>
         @for (var i = 0; i < 5; i++)
         {
-            <div class="row g-2 mb-2">
-                <div class="col-md-3">
-                    <select class="form-select" name="Form.MatchModes[@i]">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-2 mb-2">
+                <div class="md:col-span-3">
+                    <select class="hawk-select" name="Form.MatchModes[@i]">
                         <option value="None" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.None)">None</option>
                         <option value="Contains" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.Contains)">Contains</option>
                         <option value="Regex" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.Regex)">Regex</option>
                     </select>
                 </div>
-                <div class="col-md-9">
-                    <input class="form-control font-monospace" name="Form.MatchPatterns[@i]" value="@Model.Form.MatchPatterns[i]" placeholder="Example Domain" />
+                <div class="md:col-span-9">
+                    <input class="hawk-input font-mono" name="Form.MatchPatterns[@i]" value="@Model.Form.MatchPatterns[i]" placeholder="Example Domain" />
                 </div>
             </div>
         }
     </div>
 
-    <div class="d-flex gap-2">
-        <button class="btn btn-primary" type="submit">Create</button>
-        <a class="btn btn-outline-secondary" asp-page="/Monitors/Index">Cancel</a>
+    <div class="flex items-center gap-2">
+        <button class="hawk-btn-primary" type="submit">Create</button>
+        <a class="hawk-btn-ghost" asp-page="/Monitors/Index">Cancel</a>
     </div>
 </form>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 }
-

@@ -1,0 +1,12 @@
+{
+  "name": "hawk-web",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.0.0",
+    "tailwindcss": "^4.0.0"
+  },
+  "scripts": {
+    "build:css": "npx tailwindcss -i ./Assets/tailwind.css -o ./wwwroot/css/app.css --minify"
+  }
+}

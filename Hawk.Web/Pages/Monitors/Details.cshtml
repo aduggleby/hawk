@@ -7,127 +7,131 @@
 
 @if (Model.Monitor is null)
 {
-    <div class="alert alert-danger">Monitor not found.</div>
+    <div class="hawk-card border-red-200">
+        <div class="text-sm text-red-800">Monitor not found.</div>
+    </div>
     return;
 }
 
-<div class="d-flex align-items-start justify-content-between mb-3">
+<div class="flex items-start justify-between gap-4 mb-6">
     <div>
-        <h1 class="h3 mb-1">@Model.Monitor.Name</h1>
-        <div class="text-muted">
-            <code>@Model.Monitor.Method</code>
-            <span class="mx-1">·</span>
-            <code>@Model.Monitor.Url</code>
+        <h1 class="text-2xl font-semibold tracking-tight mb-1">@Model.Monitor.Name</h1>
+        <div class="text-sm text-zinc-600 font-mono">
+            <span class="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs">@Model.Monitor.Method</span>
+            <span class="mx-2 text-zinc-400">·</span>
+            <span>@Model.Monitor.Url</span>
         </div>
     </div>
-    <div class="d-flex gap-2">
+    <div class="flex items-center gap-2">
         <form method="post" asp-page-handler="RunNow">
-            <button class="btn btn-outline-primary" type="submit">Run now</button>
+            <button class="hawk-btn-primary" type="submit">Run now</button>
         </form>
-        <a class="btn btn-outline-secondary" asp-page="/Monitors/Edit" asp-route-id="@Model.Monitor.Id">Edit</a>
-        <a class="btn btn-outline-secondary" asp-page="/Monitors/Index">Back</a>
+        <a class="hawk-btn-ghost" asp-page="/Monitors/Edit" asp-route-id="@Model.Monitor.Id">Edit</a>
+        <a class="hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
     </div>
 </div>
 
-<div class="row g-3">
-    <div class="col-lg-5">
-        <div class="border rounded p-3">
-            <div class="fw-semibold mb-2">Config</div>
-            <dl class="row mb-0">
-                <dt class="col-4">Enabled</dt>
-                <dd class="col-8">@((Model.Monitor.Enabled) ? "Yes" : "No")</dd>
-                <dt class="col-4">Interval</dt>
-                <dd class="col-8">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
-                <dt class="col-4">Timeout</dt>
-                <dd class="col-8">@Model.Monitor.TimeoutSeconds s</dd>
-                <dt class="col-4">Last run</dt>
-                <dd class="col-8">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
-                <dt class="col-4">Next run</dt>
-                <dd class="col-8">@((Model.Monitor.NextRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <div class="lg:col-span-5 space-y-4">
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Config</div>
+            <dl class="grid grid-cols-12 gap-y-2 text-sm">
+                <dt class="col-span-4 text-zinc-600">Enabled</dt>
+                <dd class="col-span-8 font-medium">@((Model.Monitor.Enabled) ? "Yes" : "No")</dd>
+                <dt class="col-span-4 text-zinc-600">Interval</dt>
+                <dd class="col-span-8 font-medium">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
+                <dt class="col-span-4 text-zinc-600">Timeout</dt>
+                <dd class="col-span-8 font-medium">@Model.Monitor.TimeoutSeconds s</dd>
+                <dt class="col-span-4 text-zinc-600">Last run</dt>
+                <dd class="col-span-8">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+                <dt class="col-span-4 text-zinc-600">Next run</dt>
+                <dd class="col-span-8">@((Model.Monitor.NextRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
             </dl>
         </div>
 
-        <div class="border rounded p-3 mt-3">
-            <div class="fw-semibold mb-2">Headers</div>
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Headers</div>
             @if (Model.Monitor.Headers.Count == 0)
             {
-                <div class="text-muted small">None.</div>
+                <div class="text-sm text-zinc-600">None.</div>
             }
             else
             {
-                <ul class="list-unstyled mb-0">
+                <ul class="space-y-1 text-xs font-mono">
                     @foreach (var h in Model.Monitor.Headers)
                     {
-                        <li><code>@h.Name</code>: <code>@h.Value</code></li>
+                        <li><span class="text-zinc-600">@h.Name</span>: <span>@h.Value</span></li>
                     }
                 </ul>
             }
         </div>
 
-        <div class="border rounded p-3 mt-3">
-            <div class="fw-semibold mb-2">Match rules</div>
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Match rules</div>
             @if (Model.Monitor.MatchRules.Count == 0)
             {
-                <div class="text-muted small">None.</div>
+                <div class="text-sm text-zinc-600">None.</div>
             }
             else
             {
-                <ul class="list-unstyled mb-0">
+                <ul class="space-y-1 text-xs font-mono">
                     @foreach (var r in Model.Monitor.MatchRules)
                     {
-                        <li><code>@r.Mode</code>: <code>@r.Pattern</code></li>
+                        <li><span class="text-zinc-600">@r.Mode</span>: <span>@r.Pattern</span></li>
                     }
                 </ul>
             }
         </div>
     </div>
 
-    <div class="col-lg-7">
-        <div class="border rounded p-3">
-            <div class="fw-semibold mb-2">Recent runs</div>
+    <div class="lg:col-span-7">
+        <div class="hawk-card p-0 overflow-hidden">
+            <div class="px-4 py-4 border-b border-zinc-100">
+                <div class="font-semibold">Recent runs</div>
+            </div>
             @if (Model.Runs.Count == 0)
             {
-                <div class="text-muted">No runs yet.</div>
+                <div class="px-4 py-6 text-sm text-zinc-600">No runs yet.</div>
             }
             else
             {
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-zinc-50 text-zinc-600">
                         <tr>
-                            <th>When</th>
-                            <th>Status</th>
-                            <th>Duration</th>
-                            <th>Result</th>
-                            <th>Alert</th>
+                            <th class="text-left font-semibold px-4 py-3">When</th>
+                            <th class="text-left font-semibold px-4 py-3">Status</th>
+                            <th class="text-left font-semibold px-4 py-3">Duration</th>
+                            <th class="text-left font-semibold px-4 py-3">Result</th>
+                            <th class="text-left font-semibold px-4 py-3">Alert</th>
                         </tr>
                         </thead>
-                        <tbody>
+                        <tbody class="divide-y divide-zinc-100">
                         @foreach (var r in Model.Runs)
                         {
-                            <tr>
-                                <td>@r.StartedAt.ToLocalTime().ToString("g")</td>
-                                <td><code>@(r.StatusCode?.ToString() ?? "-")</code></td>
-                                <td>@r.DurationMs ms</td>
-                                <td>
+                            <tr class="hover:bg-zinc-50/70">
+                                <td class="px-4 py-3">@r.StartedAt.ToLocalTime().ToString("g")</td>
+                                <td class="px-4 py-3 font-mono text-xs"><span class="rounded-lg border border-zinc-200 bg-white px-2 py-1">@(r.StatusCode?.ToString() ?? "-")</span></td>
+                                <td class="px-4 py-3 text-zinc-700">@r.DurationMs ms</td>
+                                <td class="px-4 py-3">
                                     @if (r.Success)
                                     {
-                                        <span class="badge text-bg-success">OK</span>
+                                        <span class="hawk-badge-ok">OK</span>
                                     }
                                     else
                                     {
-                                        <span class="badge text-bg-danger">FAIL</span>
-                                        <span class="text-muted small ms-2">@r.ErrorMessage</span>
+                                        <span class="hawk-badge-fail">FAIL</span>
+                                        <span class="text-xs text-zinc-600 ml-2">@r.ErrorMessage</span>
                                     }
                                 </td>
-                                <td>
+                                <td class="px-4 py-3 text-xs text-zinc-600">
                                     @if (!r.Success)
                                     {
-                                        <span class="text-muted small">@((r.AlertSent) ? "sent" : (r.AlertError ?? "not sent"))</span>
+                                        @((r.AlertSent) ? "sent" : (r.AlertError ?? "not sent"))
                                     }
                                     else
                                     {
-                                        <span class="text-muted small">-</span>
+                                        <span>-</span>
                                     }
                                 </td>
                             </tr>
@@ -139,4 +143,3 @@
         </div>
     </div>
 </div>
-
