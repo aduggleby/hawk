@@ -19,46 +19,54 @@ public sealed class MonitorForm
     /// <summary>
     /// Display name.
     /// </summary>
+    [Display(Name = "Name")]
     [Required, MaxLength(200)]
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
     /// Absolute URL to request.
     /// </summary>
+    [Display(Name = "URL")]
     [Required, MaxLength(2048)]
     public string Url { get; set; } = string.Empty;
 
     /// <summary>
     /// HTTP method: GET or POST.
     /// </summary>
+    [Display(Name = "Method")]
     [Required, MaxLength(16)]
     public string Method { get; set; } = "GET";
 
     /// <summary>
     /// Enabled flag.
     /// </summary>
+    [Display(Name = "Enabled")]
     public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// Timeout in seconds.
     /// </summary>
+    [Display(Name = "Timeout (s)")]
     [Range(1, 300)]
     public int TimeoutSeconds { get; set; } = 15;
 
     /// <summary>
     /// Fixed interval in seconds between runs.
     /// </summary>
+    [Display(Name = "Interval")]
     public int IntervalSeconds { get; set; } = 60;
 
     /// <summary>
     /// POST content-type.
     /// </summary>
+    [Display(Name = "Content-Type")]
     [MaxLength(200)]
     public string? ContentType { get; set; }
 
     /// <summary>
     /// POST body.
     /// </summary>
+    [Display(Name = "Body")]
     public string? Body { get; set; }
 
     /// <summary>
@@ -106,4 +114,3 @@ public sealed class MonitorForm
         }
     }
 }
-

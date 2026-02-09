@@ -15,13 +15,13 @@
 
 <form method="post" class="space-y-4 max-w-xl">
     <div class="hawk-card">
-        <label class="hawk-label">Email</label>
+        <label class="hawk-label" asp-for="Input.Email"></label>
         <input class="hawk-input mt-2 font-mono" asp-for="Input.Email" />
         <div class="text-sm text-red-700 mt-1" asp-validation-for="Input.Email"></div>
     </div>
 
     <div class="hawk-card">
-        <label class="hawk-label">Password</label>
+        <label class="hawk-label" asp-for="Input.Password"></label>
         <input class="hawk-input mt-2 font-mono" asp-for="Input.Password" type="password" />
         <div class="text-sm text-red-700 mt-1" asp-validation-for="Input.Password"></div>
     </div>
@@ -37,4 +37,3 @@
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 }
-
