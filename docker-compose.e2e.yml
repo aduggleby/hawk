@@ -1,0 +1,63 @@
+name: hawk-e2e
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      SA_PASSWORD: "${SA_PASSWORD:-YourStrong!Passw0rd}"
+    volumes:
+      - hawk_e2e_db:/var/opt/mssql
+
+  mock:
+    build:
+      context: .
+      dockerfile: Hawk.MockServer/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8081"
+    expose:
+      - "8081"
+
+  web:
+    build:
+      context: .
+      dockerfile: Hawk.Web/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Testing"
+      ASPNETCORE_URLS: "http://+:8080"
+      ConnectionStrings__DefaultConnection: "Server=db;Database=HawkE2E;User Id=sa;Password=${SA_PASSWORD:-YourStrong!Passw0rd};TrustServerCertificate=true;Encrypt=false"
+      Hawk__DisableHttpsRedirection: "true"
+      Hawk__SeedAdmin__Email: "ad@dualconsult.com"
+      Hawk__SeedAdmin__Password: "Hawk!2026-Admin#1"
+      Hawk__Scheduler__Enabled: "true"
+      Hawk__Scheduler__TickSeconds: "1"
+      Hawk__Email__Enabled: "true"
+      Hawk__Email__From: "Hawk <hawk@localhost>"
+      Hawk__Resend__BaseUrl: "http://mock:8081"
+      Hawk__Resend__ApiKey: "dev"
+    depends_on:
+      - db
+      - mock
+    expose:
+      - "8080"
+
+  e2e:
+    build:
+      context: .
+      dockerfile: e2e/Dockerfile
+    environment:
+      HAWK_BASE_URL: "http://web:8080"
+      HAWK_SEED_EMAIL: "ad@dualconsult.com"
+      HAWK_SEED_PASSWORD: "Hawk!2026-Admin#1"
+      MOCK_BASE_URL: "http://mock:8081"
+      SCREENSHOTS_DIR: "/work/screenshots"
+    depends_on:
+      - web
+    volumes:
+      - ./screenshots:/work/screenshots
+
+volumes:
+  hawk_e2e_db:
+
