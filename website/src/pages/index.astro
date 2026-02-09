@@ -1,0 +1,161 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Hawk | Uptime Checks + Verification">
+	<section class="hero">
+		<div class="container hero__grid">
+			<div class="hero__card reveal">
+				<div class="kicker">
+					<span class="kicker__dot" aria-hidden="true"></span>
+					<span>Uptime checks, verification, and alerts</span>
+				</div>
+
+				<h1 class="h1">Know when your URLs lie.</h1>
+				<p class="lead">
+					Hawk runs scheduled HTTP checks, verifies response content, keeps history, and alerts only when it matters.
+					Docker-first, SQL Server-backed, Hangfire-scheduled.
+				</p>
+
+				<div class="cta">
+					<a class="btn btn--primary" href="#quickstart">Quickstart</a>
+					<a class="btn btn--ghost" href="/docs">Read the docs</a>
+				</div>
+			</div>
+
+			<aside class="callout reveal reveal--2" aria-label="Quick commands">
+				<h2 class="callout__title">Get running (Docker)</h2>
+				<pre class="code"><span class="prompt">$</span> docker compose up -d --build
+<span class="prompt">$</span> open http://localhost:8080</pre>
+				<p class="meta">
+					Includes a seeded admin user in dev/test. Use env overrides for container/CI deployments.
+				</p>
+			</aside>
+		</div>
+	</section>
+
+	<section id="quickstart" class="section">
+		<div class="container">
+			<h2 class="section__title reveal reveal--2">Quickstart</h2>
+			<p class="section__desc reveal reveal--3">
+				A sane default setup: web + SQL Server, migrations on startup, and a scheduler that runs checks on fixed
+				intervals.
+			</p>
+
+			<div class="steps">
+				<div class="step reveal reveal--2">
+					<div class="step__title">1. Start services</div>
+					<p class="step__body">From the repo root:</p>
+					<pre class="code" style="color: rgba(11,11,13,0.86); background: rgba(255,255,255,0.7); border-color: rgba(11,11,13,0.16);"><span style="color: rgba(11,11,13,0.66);">$</span> docker compose up -d --build</pre>
+				</div>
+
+				<div class="step reveal reveal--3">
+					<div class="step__title">2. Sign in</div>
+					<p class="step__body">
+						Open the app at <code style="font-family: var(--font-mono);">http://localhost:8080</code> and sign in with
+						the seeded admin user (or set <code style="font-family: var(--font-mono);">Hawk__SeedAdmin__*</code>).
+					</p>
+				</div>
+
+				<div class="step reveal reveal--3">
+					<div class="step__title">3. Create a monitor</div>
+					<p class="step__body">
+						Create a GET/POST monitor, add headers if needed, and verify content with a case-insensitive contains
+						rule or regex.
+					</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section id="features" class="section">
+		<div class="container">
+			<h2 class="section__title">Features</h2>
+			<p class="section__desc">
+				Opinionated on purpose: fixed intervals, predictable storage, and alerting that doesn’t spam.
+			</p>
+
+			<div class="grid">
+				<article class="card">
+					<div class="card__kicker"><span class="pill">Checks</span><span>HTTP + verification</span></div>
+					<h3 class="card__title">Verify the body, not just the status code</h3>
+					<p class="card__body">
+						Case-insensitive <strong>contains</strong> rules and <strong>regex</strong> rules with timeouts, buffering up to
+						256KB for matching and snippets.
+					</p>
+				</article>
+
+				<article class="card">
+					<div class="card__kicker"><span class="pill">Schedule</span><span>Hangfire</span></div>
+					<h3 class="card__title">Self-scheduling tick job</h3>
+					<p class="card__body">
+						A single scheduler job enqueues due monitors and updates <code style="font-family: var(--font-mono);">NextRunAt</code>.
+						Runs save history and update <code style="font-family: var(--font-mono);">LastRunAt</code>.
+					</p>
+				</article>
+
+				<article class="card card--dark">
+					<div class="card__kicker"><span class="pill">Alerting</span><span>Resend-compatible</span></div>
+					<h3 class="card__title">Alert after consecutive failures</h3>
+					<p class="card__body">
+						Configurable <code style="font-family: var(--font-mono);">AlertAfterConsecutiveFailures</code> so you alert on real incidents,
+						not every blip. Easily mocked for E2E runs.
+					</p>
+				</article>
+
+				<article class="card">
+					<div class="card__kicker"><span class="pill">Data</span><span>SQL Server</span></div>
+					<h3 class="card__title">Single source of truth</h3>
+					<p class="card__body">
+						Identity + monitor config + history + Hangfire storage in SQL Server. Docker-first; no SQLite fallback.
+					</p>
+				</article>
+
+				<article class="card">
+					<div class="card__kicker"><span class="pill">Ops</span><span>Docker-first</span></div>
+					<h3 class="card__title">Migrations on startup</h3>
+					<p class="card__body">
+						Container boot applies EF migrations with retries (handles SQL Server warm-up) and then starts the app.
+					</p>
+				</article>
+
+				<article class="card card--dark">
+					<div class="card__kicker"><span class="pill">E2E</span><span>Playwright</span></div>
+					<h3 class="card__title">Deterministic tests in Docker</h3>
+					<p class="card__body">
+						Headed Chromium under Xvfb, serial by default to avoid shared-DB flakes, screenshots mounted to host.
+					</p>
+				</article>
+			</div>
+		</div>
+	</section>
+
+	<section class="section">
+		<div class="container">
+			<h2 class="section__title">What it looks like in practice</h2>
+			<p class="section__desc">
+				Checks run on fixed intervals, results are stored, and alerts trigger only after your chosen failure policy.
+			</p>
+			<div class="grid">
+				<article class="card card--dark" style="grid-column: span 7;">
+					<div class="card__kicker"><span class="pill">Example</span><span>Content verification</span></div>
+					<h3 class="card__title">“Is the banner text present?”</h3>
+					<pre class="code"><span class="prompt">$</span> GET https://example.com
+<span class="prompt">✓</span> body contains "Welcome back"</pre>
+					<p class="meta">
+						Use regex when the page is dynamic, and keep matches small. Hawk caps body buffering for predictable
+						resource usage.
+					</p>
+				</article>
+
+				<article class="card" style="grid-column: span 5;">
+					<div class="card__kicker"><span class="pill">Policy</span><span>Noise control</span></div>
+					<h3 class="card__title">Alert when it flips</h3>
+					<p class="card__body">
+						Default behavior is “alert on first failure after a success”, not “alert on every failed run”.
+					</p>
+				</article>
+			</div>
+		</div>
+	</section>
+</BaseLayout>

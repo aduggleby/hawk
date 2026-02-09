@@ -1,0 +1,23 @@
+---
+const links = [
+  { href: "/#quickstart", label: "Quickstart" },
+  { href: "/#features", label: "Features" },
+  { href: "/docs", label: "Docs" },
+];
+---
+
+<header class="header">
+  <div class="container header__inner">
+    <a class="brand" href="/" aria-label="Hawk home">
+      <span class="brand__mark" aria-hidden="true"></span>
+      <span class="brand__word">Hawk</span>
+    </a>
+
+    <nav class="nav" aria-label="Primary navigation">
+      {links.map((l) => (
+        <a class="nav__link" href={l.href}>{l.label}</a>
+      ))}
+    </nav>
+  </div>
+</header>
+

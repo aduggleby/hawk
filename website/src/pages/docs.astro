@@ -1,0 +1,34 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Hawk | Docs" description="Hawk documentation: configuration, scheduling, checks, and alerting.">
+  <section class="section">
+    <div class="container">
+      <h1 class="h1" style="font-size: clamp(2rem, 2.6vw, 2.6rem); margin-top: 0;">Docs</h1>
+      <p class="lead">
+        This is a placeholder docs page for the Astro site. The canonical docs for now live in the repo README.
+      </p>
+
+      <div class="grid">
+        <article class="card" style="grid-column: span 6;">
+          <div class="card__kicker"><span class="pill">Config</span><span>Environment variables</span></div>
+          <h2 class="card__title">Docker-friendly settings</h2>
+          <p class="card__body">
+            Hawk is configured via standard ASP.NET env vars like <code style="font-family: var(--font-mono);">ConnectionStrings__DefaultConnection</code>
+            and <code style="font-family: var(--font-mono);">Hawk__*</code>.
+          </p>
+        </article>
+
+        <article class="card card--dark" style="grid-column: span 6;">
+          <div class="card__kicker"><span class="pill">Next</span><span>Move content here</span></div>
+          <h2 class="card__title">Add real docs later</h2>
+          <p class="card__body">
+            Convert the repo README sections into Markdown/MDX pages and wire up a sidebar. Keep the yellow/ink theme.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
