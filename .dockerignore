@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.git/
+**/.DS_Store
+**/node_modules/
+e2e/test-results/
+e2e/node_modules/
+logs/
+screenshots/
+Hawk.Web/wwwroot/lib/
+

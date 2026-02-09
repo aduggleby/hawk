@@ -1,0 +1,50 @@
+name: hawk
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      SA_PASSWORD: "${SA_PASSWORD:-YourStrong!Passw0rd}"
+    ports:
+      - "1433:1433"
+    volumes:
+      - hawk_db:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P $$SA_PASSWORD -Q \"SELECT 1\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: Hawk.Web/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ConnectionStrings__DefaultConnection: "Server=db;Database=Hawk;User Id=sa;Password=${SA_PASSWORD:-YourStrong!Passw0rd};TrustServerCertificate=true;Encrypt=false"
+      Hawk__DisableHttpsRedirection: "true"
+      Hawk__SeedAdmin__Email: "ad@dualconsult.com"
+      Hawk__SeedAdmin__Password: "Hawk!2026-Admin#1"
+      Hawk__Resend__BaseUrl: "${RESEND_BASEURL:-http://mock:8081}"
+      Hawk__Resend__ApiKey: "${RESEND_APIKEY:-dev}"
+      Hawk__Email__From: "${EMAIL_FROM:-Hawk <hawk@localhost>}"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+
+  mock:
+    build:
+      context: .
+      dockerfile: Hawk.MockServer/Dockerfile
+    ports:
+      - "8081:8081"
+
+volumes:
+  hawk_db:
+
