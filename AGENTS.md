@@ -9,6 +9,8 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - Unit tests: `Hawk.Tests` (xUnit)
 - E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs)
 - Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture)
+- Primary database: SQL Server (EF Core SQL Server provider)
+- SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
 
 ## Auth / Users
 
@@ -67,6 +69,7 @@ Location: `e2e/`
 
 Run:
 - Docker (recommended): `docker compose -f docker-compose.e2e.yml up --build --exit-code-from e2e e2e`
+  - Note: this writes screenshots to host `./screenshots` (mounted into the Playwright container).
 
 ## HTTPS Redirection Toggle (For E2E)
 
@@ -97,6 +100,12 @@ Scheduling requirements:
 Implementation:
 - Scheduling is a self-scheduling Hangfire tick job (`IMonitorScheduler.TickAsync`) that enqueues due monitors.
 - The user-facing interval list includes `5s` only when `ASPNETCORE_ENVIRONMENT=Testing`.
+  - This is enforced in code via `MonitorIntervals.AllowedSeconds(env)`.
+
+Handy commands:
+- Run locally: `docker compose up -d --build`
+- App: `http://localhost:8080`
+- Mock server: `http://localhost:8081`
 
 ## Email Alerts
 
@@ -164,6 +173,23 @@ Implementation notes:
   - How to provision VM (Terraform, Proxmox API, cloud-init template, manual).
   - SSH user, VM OS image, network, domain/ports.
 - Once VM exists: install Docker, copy compose, configure env, run `docker compose up -d`.
+
+## Configuration Cheatsheet
+
+- SQL Server:
+  - `ConnectionStrings__DefaultConnection` (used by EF Core + Hangfire)
+  - `SA_PASSWORD` (compose)
+- Scheduler:
+  - `Hawk__Scheduler__Enabled` (default true)
+  - `Hawk__Scheduler__TickSeconds` (default 30, or 5 in Testing unless overridden)
+- Seed admin:
+  - `Hawk__SeedAdmin__Email`
+  - `Hawk__SeedAdmin__Password`
+- Email:
+  - `Hawk__Email__Enabled` (default true)
+  - `Hawk__Email__From` (or `Hawk__Resend__From`)
+  - `Hawk__Resend__BaseUrl` (Resend-compatible API base URL)
+  - `Hawk__Resend__ApiKey`
 
 ## Git Workflow
 
