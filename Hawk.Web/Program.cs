@@ -19,6 +19,7 @@ using Serilog;
 using Hawk.Web.Services.Email;
 using Hawk.Web.Services.Monitoring;
 using Hawk.Web.Services;
+using Hawk.Web.Services.Import;
 using Hawk.Web.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -116,6 +117,7 @@ builder.Services.AddRazorPages(options =>
 
 builder.Services.AddScoped<IMonitorRunner, MonitorRunner>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
+builder.Services.AddScoped<StatusCakeImporter>();
 
 var app = builder.Build();
 

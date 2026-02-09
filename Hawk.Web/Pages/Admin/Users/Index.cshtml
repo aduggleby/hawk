@@ -10,7 +10,10 @@
         <h1 class="text-2xl font-semibold tracking-tight">Users</h1>
         <p class="text-sm text-zinc-600">Admin-only user management.</p>
     </div>
-    <a class="hawk-btn-primary" asp-page="/Admin/Users/Create">New user</a>
+    <div class="flex items-center gap-2">
+        <a class="hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
+        <a class="hawk-btn-primary" asp-page="/Admin/Users/Create">New user</a>
+    </div>
 </div>
 
 <div class="hawk-card p-0 overflow-hidden">
@@ -39,4 +42,3 @@
         </table>
     </div>
 </div>
-
