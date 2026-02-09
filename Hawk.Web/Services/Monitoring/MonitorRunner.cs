@@ -36,6 +36,8 @@ public sealed class MonitorRunner(
         var monitor = await db.Monitors
             .Include(x => x.Headers)
             .Include(x => x.MatchRules)
+            // Important: multiple collection includes can cause cartesian explosion; split queries keep it predictable.
+            .AsSplitQuery()
             .FirstOrDefaultAsync(x => x.Id == monitorId, cancellationToken);
         if (monitor is null)
         {
@@ -103,21 +105,21 @@ public sealed class MonitorRunner(
             await TrySendAlertAsync(monitor, run, cancellationToken);
         }
 
-        db.MonitorRuns.Add(run);
-        await db.SaveChangesAsync(cancellationToken);
-
         // Best-effort: keep a rolling last-run timestamp on the monitor.
         monitor.LastRunAt = started;
+        db.MonitorRuns.Add(run);
         await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task PersistInvalidConfigAsync(MonitorEntity monitor, string error, CancellationToken cancellationToken)
     {
+        var now = DateTimeOffset.UtcNow;
+        monitor.LastRunAt = now;
         db.MonitorRuns.Add(new MonitorRun
         {
             MonitorId = monitor.Id,
-            StartedAt = DateTimeOffset.UtcNow,
-            FinishedAt = DateTimeOffset.UtcNow,
+            StartedAt = now,
+            FinishedAt = now,
             DurationMs = 0,
             StatusCode = null,
             Success = false,

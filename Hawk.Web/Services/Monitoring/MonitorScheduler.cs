@@ -63,7 +63,6 @@ public sealed class MonitorScheduler(
                 // Branch: guard against invalid config (interval <= 0).
                 var interval = Math.Clamp(monitor.IntervalSeconds, 5, 24 * 60 * 60);
                 monitor.NextRunAt = now.AddSeconds(interval);
-                monitor.LastRunAt = now;
 
                 jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(monitor.Id, "schedule", CancellationToken.None));
             }

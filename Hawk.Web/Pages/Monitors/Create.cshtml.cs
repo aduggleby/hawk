@@ -6,6 +6,7 @@
 
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Identity;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Monitoring;
 using Hawk.Web.Services;
@@ -16,7 +17,7 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Create monitor page model.
 /// </summary>
-public class CreateModel(ApplicationDbContext db, IHostEnvironment env) : PageModel
+public class CreateModel(ApplicationDbContext db, IHostEnvironment env, UserManager<IdentityUser> userManager) : PageModel
 {
     /// <summary>
     /// Bound form data.
@@ -61,7 +62,8 @@ public class CreateModel(ApplicationDbContext db, IHostEnvironment env) : PageMo
             IntervalSeconds = Form.IntervalSeconds,
             ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim(),
             Body = Form.Body,
-            CreatedByUserId = User.Identity?.Name,
+            // Branch: can be null if authentication is disabled/misconfigured.
+            CreatedByUserId = userManager.GetUserId(User),
         };
 
         for (var i = 0; i < Math.Min(Form.HeaderNames.Length, Form.HeaderValues.Length); i++)
