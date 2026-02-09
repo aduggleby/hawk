@@ -169,17 +169,28 @@ Implementation:
  - Playwright is forced to run serially in Docker via `E2E_DOCKER=1` in `docker-compose.e2e.yml`.
 - If screenshot capture is flaky under Docker/Xvfb, `snap()` retries and then logs a warning instead of failing the whole suite.
 
-## Deployment To Proxmox VM (Planned)
+## Deployment To Proxmox VM
 
-User asked:
-- Deploy to a new VM on `alex-office-proxmox1`.
-- Use an existing public key from `~/.ssh` or `~/.sshkeys` (keys exist locally).
+Deployed on `alex-office-proxmox1` using the SSH key `~/.sshkeys/id_ad_dualconsult_com`:
 
-Implementation notes:
-- Needs clarification outside this file:
-  - How to provision VM (Terraform, Proxmox API, cloud-init template, manual).
-  - SSH user, VM OS image, network, domain/ports.
-- Once VM exists: install Docker, copy compose, configure env, run `docker compose up -d`.
+- Proxmox host: `alex-office-proxmox1`
+- VM:
+  - VMID: `102`
+  - Name: `hawk`
+  - OS image: `/var/lib/vz/template/iso/ubuntu-22.04-cloudimg-amd64.img`
+  - User: `alex` (cloud-init), key-based auth
+  - IP (DHCP): `192.168.1.127`
+- Deployment path on VM: `/opt/hawk`
+
+Commands (high level):
+- Install Docker on the VM (Docker convenience script).
+- Copy repo to `/opt/hawk`.
+- Create `/opt/hawk/.env` with `SA_PASSWORD` and email env vars.
+- Start services: `sudo docker compose up -d --build`.
+
+Service endpoints on the VM:
+- Hawk web: `http://192.168.1.127:8080`
+- Mock server: `http://192.168.1.127:8081`
 
 ## Configuration Cheatsheet
 
