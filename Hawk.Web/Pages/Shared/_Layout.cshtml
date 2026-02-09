@@ -53,11 +53,48 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                         </svg>
                     </button>
+                    <button id="mobile-menu-toggle" type="button" class="hawk-btn hawk-btn-ghost sm:hidden" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false">
+                        <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                    </button>
                     <partial name="_LoginPartial" />
                 </div>
             </div>
         </div>
     </header>
+
+    <div id="mobile-menu" class="fixed inset-0 z-50 sm:hidden" hidden>
+        <div id="mobile-menu-backdrop" class="fixed inset-0 opacity-0 transition-opacity duration-200 bg-[color-mix(in_srgb,var(--text-primary)_45%,transparent)]"></div>
+        <nav id="mobile-menu-panel"
+             class="fixed left-0 top-0 bottom-0 w-72 max-w-[85vw] -translate-x-full transition-transform duration-200 border-r border-[color:var(--border-primary)] bg-[color:var(--bg-primary)] shadow-[var(--shadow-hard)]"
+             role="dialog"
+             aria-modal="true"
+             aria-label="Mobile navigation">
+            <div class="flex items-center justify-between px-4 py-4 border-b border-[color:var(--border-primary)]">
+                <a class="no-underline" asp-area="" asp-page="/Index">
+                    <span class="inline-flex items-center gap-2 font-mono text-sm font-semibold tracking-tight">
+                        <span class="inline-block h-3 w-3 rounded-sm bg-brand-500 shadow-[0_0_0_3px_color-mix(in_srgb,var(--text-primary)_8%,transparent)]"></span>
+                        HAWK
+                    </span>
+                </a>
+                <button id="mobile-menu-close" type="button" class="hawk-btn hawk-btn-ghost" aria-label="Close menu">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="px-4 py-4 space-y-2">
+                <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="" asp-page="/Monitors/Index">Monitors</a>
+                @if (User.Identity?.IsAuthenticated == true && User.IsInRole("Admin"))
+                {
+                    <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="" asp-page="/Admin/Users/Index">Admin</a>
+                    <a class="hawk-btn hawk-btn-ghost w-full justify-start" href="/hangfire">Hangfire</a>
+                }
+                <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="" asp-page="/Privacy">Privacy</a>
+            </div>
+        </nav>
+    </div>
 
     <main id="main-content" class="mx-auto max-w-6xl px-4 py-6">
         @RenderBody()
@@ -71,6 +108,7 @@
     </footer>
 
     <script src="~/js/theme.js" asp-append-version="true"></script>
+    <script src="~/js/mobile-menu.js" asp-append-version="true"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>

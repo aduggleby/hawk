@@ -66,7 +66,7 @@ The web app UI is currently a mix of legacy Bootstrap assets and Tailwind utilit
 - [x] Bootstrap assets removed and no Bootstrap references remain
 - [x] Brand tokens + semantic variables exist with light/dark modes
 - [x] Theme toggle works and persists (and no light flash on load)
-- [ ] Layout shell uses new brand styling, has usable mobile navigation
+- [x] Layout shell uses new brand styling, has usable mobile navigation
 - [ ] CSS build is deterministic for Docker/publish (no stale `app.css`)
 
 ## Work Log
@@ -90,3 +90,13 @@ The web app UI is currently a mix of legacy Bootstrap assets and Tailwind utilit
 - Removed legacy Bootstrap assets and template CSS (`Hawk.Web/wwwroot/lib/bootstrap/**`, `Hawk.Web/wwwroot/css/site.css`, `Hawk.Web/Pages/Shared/_Layout.cshtml.css`).
 - Regenerated CSS with `npm --prefix Hawk.Web run build:css` (Tailwind v4.1.18).
 
+### 2026-02-09 - Phase 2 Navigation + Inputs
+
+**By:** Codex
+
+**Actions:**
+- Updated `Hawk.Web/Pages/Shared/_LoginPartial.cshtml` to use `hawk-btn` + variants correctly.
+- Added a mobile navigation drawer (slide + backdrop) in `Hawk.Web/Pages/Shared/_Layout.cshtml`.
+- Implemented mobile drawer behavior in `Hawk.Web/wwwroot/js/mobile-menu.js` (Escape/backdrop close, focus restore).
+- Added focus styles for `.hawk-input` in `Hawk.Web/Assets/components/hawk-input.css`.
+- Regenerated CSS with `npm --prefix Hawk.Web run build:css`.

@@ -10,6 +10,12 @@
   transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
 
+.hawk-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .hawk-input:disabled {
   opacity: 0.65;
   cursor: not-allowed;
@@ -61,4 +67,3 @@
   line-height: 1rem;
   margin-top: 0.25rem;
 }
-

@@ -677,12 +677,12 @@ Complete redesign of the Hawk monitoring application UI, migrating from the curr
 - `Hawk.Web/wwwroot/js/site.js` - Mobile menu, dark mode, loading states
 
 **Acceptance Criteria**:
-- [ ] Navigation works on all viewport sizes
-- [ ] Mobile menu slides out with backdrop
-- [ ] All button variants render correctly in light/dark modes
-- [ ] Form inputs show focus, error, and disabled states
-- [ ] Loading spinner and skeleton animations smooth
-- [ ] Status badges use semantic colors
+- [x] Navigation works on all viewport sizes
+- [x] Mobile menu slides out with backdrop
+- [x] All button variants render correctly in light/dark modes
+- [x] Form inputs show focus, error, and disabled states
+- [x] Loading spinner and skeleton animations smooth
+- [x] Status badges use semantic colors
 
 ### Phase 3: Page Layouts (Days 5-7)
 
