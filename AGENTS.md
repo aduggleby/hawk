@@ -7,7 +7,8 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - Solution: `Hawk.sln`
 - Web app: `Hawk.Web` (Razor Pages + ASP.NET Core Identity)
 - Unit tests: `Hawk.Tests` (xUnit)
-- E2E tests: `e2e` (Playwright, Chromium)
+- E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs)
+- Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture)
 
 ## Auth / Users
 
@@ -29,6 +30,7 @@ Environment overrides (preferred for Docker/CI):
 
 - The app currently calls `db.Database.MigrateAsync()` during startup seeding.
 - Goal: keep this behavior for container deployments (web container applies migrations against the SQL Server container at boot).
+- Current behavior includes retries to handle SQL Server still starting.
 
 ## URL Checking Core
 
@@ -51,15 +53,18 @@ Implemented v1 URL checker service in `Hawk.Web/Services/UrlCheckModels.cs`:
 
 Location: `e2e/`
 - Config: `e2e/playwright.config.ts`
-  - Starts the web app automatically (unless `HAWK_BASE_URL` is set).
-  - Uses `--no-launch-profile` to avoid `launchSettings.json` overriding URLs.
-  - Sets `Hawk__DisableHttpsRedirection=true` to keep HTTP stable in E2E.
+  - Expects `HAWK_BASE_URL` to point at a running app (docker compose provides this).
+  - Runs Chromium headed (`headless: false`).
 - Tests: `e2e/tests/smoke.spec.ts`
   - Home page loads
   - Seed admin can log in
+- Tests: `e2e/tests/monitors.spec.ts`
+  - Creates GET/POST monitors, verifies OK/FAIL states
+  - Verifies schedule execution using the Testing-only 5s interval
+  - Verifies failure alerts hit the mock `/emails` endpoint
 
 Run:
-- `cd e2e && npm test`
+- Docker (recommended): `docker compose -f docker-compose.e2e.yml up --build --exit-code-from e2e e2e`
 
 ## HTTPS Redirection Toggle (For E2E)
 
@@ -74,6 +79,7 @@ Target architecture:
 - `docker-compose.yml` with:
   - `web` (ASP.NET)
   - `db` (SQL Server)
+- `mock` (mock server; optional but useful for testing alerting)
 - App uses SQL Server for:
   - Identity
   - Hangfire storage
@@ -86,11 +92,19 @@ Scheduling requirements:
 - Fixed intervals only (user chooses from allowed values).
 - For E2E testing, add a special 5-second interval available only in `Testing` environment.
 
+Implementation:
+- Scheduling is a self-scheduling Hangfire tick job (`IMonitorScheduler.TickAsync`) that enqueues due monitors.
+- The user-facing interval list includes `5s` only when `ASPNETCORE_ENVIRONMENT=Testing`.
+
 ## Email Alerts (Planned)
 
 Failures trigger email via a Resend-compatible API:
 - Configurable via environment variables (API key + base URL).
 - Must be mockable for E2E (dependency injection: swap implementation in `Testing`).
+
+Implementation:
+- `Hawk.Web/Services/Email/ResendCompatibleEmailSender.cs` posts to `${BaseUrl}/emails` with Bearer auth.
+- E2E points `Hawk__Resend__BaseUrl` at `Hawk.MockServer` and asserts captured payloads via `GET /emails`.
 
 ## Logging (Planned)
 
@@ -102,6 +116,9 @@ Implementation notes:
 - Use Serilog sinks to roll by day.
 - Add retention (`retainedFileCountLimit`) sized for ~30 days (or use a cleanup job).
 - Ensure logs write to a mounted folder in Docker.
+
+Implementation:
+- Serilog file sink rolls daily to `logs/hawk-.log` with `retainedFileCountLimit: 30`.
 
 ## E2E In Docker (Planned)
 
@@ -116,6 +133,11 @@ Implementation notes:
 - Prefer Playwright official image for browser deps.
 - Use `xvfb-run` to drive headed Chromium.
 - Mount `./screenshots:/work/screenshots`.
+
+Implementation:
+- `docker-compose.e2e.yml` runs `web` + `db` + `mock` + `e2e`.
+- `e2e/Dockerfile` runs headed Chromium via `Xvfb` (not headless) and waits for `HAWK_BASE_URL`.
+- Screenshots are written to host `./screenshots` by `e2e/tests/helpers.ts`.
 
 ## Deployment To Proxmox VM (Planned)
 
@@ -135,4 +157,3 @@ Implementation notes:
 - Keep commits scoped:
   - Infra (Docker/compose) separate from app features
   - E2E harness changes separate from app behavior when possible
-
