@@ -18,6 +18,7 @@ using Serilog;
 using Hawk.Web.Services.Email;
 using Hawk.Web.Services.Monitoring;
 using Hawk.Web.Services;
+using Hawk.Web.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -128,7 +129,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // Hangfire dashboard should be restricted later to Admin users.
-app.UseHangfireDashboard("/hangfire");
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = [new HangfireDashboardAuthFilter()]
+});
 
 app.MapStaticAssets();
 app.MapRazorPages()
