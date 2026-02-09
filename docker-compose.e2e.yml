@@ -55,6 +55,7 @@ services:
       HAWK_SEED_PASSWORD: "Hawk!2026-Admin#1"
       MOCK_BASE_URL: "http://mock:8081"
       SCREENSHOTS_DIR: "/work/screenshots"
+      E2E_DOCKER: "1"
     depends_on:
       - web
     volumes:

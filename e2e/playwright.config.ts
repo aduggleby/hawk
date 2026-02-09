@@ -9,13 +9,22 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.HAWK_BASE_URL ?? 'http://127.0.0.1:8080';
+const runningInDocker = ['1', 'true', 'yes'].includes((process.env.E2E_DOCKER ?? '').toLowerCase());
+const dockerWorkers = Number.parseInt(process.env.PLAYWRIGHT_WORKERS ?? '', 10);
+const workers =
+  Number.isFinite(dockerWorkers) && dockerWorkers > 0
+    ? dockerWorkers
+    : runningInDocker
+      ? 1
+      : undefined;
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: true,
+  // Docker runs share a single DB instance by default; run serially to avoid flakes.
+  fullyParallel: runningInDocker ? false : true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: process.env.CI ? 2 : workers,
   reporter: 'list',
   timeout: 120_000,
   use: {

@@ -55,6 +55,8 @@ Location: `e2e/`
 - Config: `e2e/playwright.config.ts`
   - Expects `HAWK_BASE_URL` to point at a running app (docker compose provides this).
   - Runs Chromium headed (`headless: false`).
+  - In Docker, runs serially by default (`E2E_DOCKER=1` forces `workers=1`, `fullyParallel=false`) to avoid shared-DB flakes.
+  - Override with `PLAYWRIGHT_WORKERS=<n>` if you intentionally want parallelism.
 - Tests: `e2e/tests/smoke.spec.ts`
   - Home page loads
   - Seed admin can log in
@@ -75,18 +77,18 @@ E2E uses HTTP because Playwright `webServer.url` expects a stable plain URL.
 
 ## Docker / SQL Server / Hangfire (Planned)
 
-Target architecture:
-- `docker-compose.yml` with:
+Implemented architecture:
+- `docker-compose.yml` runs:
   - `web` (ASP.NET)
   - `db` (SQL Server)
-- `mock` (mock server; optional but useful for testing alerting)
+  - `mock` (optional mock server; useful for testing alerting)
 - App uses SQL Server for:
   - Identity
   - Hangfire storage
   - Monitoring configuration + check history
-- The web container should:
-  - Apply EF migrations on startup
-  - Register Hangfire server and dashboard
+- The web container:
+  - Applies EF migrations on startup
+  - Runs Hangfire server and dashboard (dashboard is Admin-only)
 
 Scheduling requirements:
 - Fixed intervals only (user chooses from allowed values).
@@ -96,7 +98,7 @@ Implementation:
 - Scheduling is a self-scheduling Hangfire tick job (`IMonitorScheduler.TickAsync`) that enqueues due monitors.
 - The user-facing interval list includes `5s` only when `ASPNETCORE_ENVIRONMENT=Testing`.
 
-## Email Alerts (Planned)
+## Email Alerts
 
 Failures trigger email via a Resend-compatible API:
 - Configurable via environment variables (API key + base URL).
@@ -106,7 +108,7 @@ Implementation:
 - `Hawk.Web/Services/Email/ResendCompatibleEmailSender.cs` posts to `${BaseUrl}/emails` with Bearer auth.
 - E2E points `Hawk__Resend__BaseUrl` at `Hawk.MockServer` and asserts captured payloads via `GET /emails`.
 
-## Logging (Planned)
+## Logging
 
 Requirement:
 - Serilog rolling application log.
@@ -149,6 +151,7 @@ Implementation:
 - `docker-compose.e2e.yml` runs `web` + `db` + `mock` + `e2e`.
 - `e2e/Dockerfile` runs headed Chromium via `Xvfb` (not headless) and waits for `HAWK_BASE_URL`.
 - Screenshots are written to host `./screenshots` by `e2e/tests/helpers.ts`.
+ - Playwright is forced to run serially in Docker via `E2E_DOCKER=1` in `docker-compose.e2e.yml`.
 
 ## Deployment To Proxmox VM (Planned)
 
@@ -168,3 +171,18 @@ Implementation notes:
 - Keep commits scoped:
   - Infra (Docker/compose) separate from app features
   - E2E harness changes separate from app behavior when possible
+
+## Refactoring Notes (Important)
+
+- Monitor ownership:
+  - `Monitor.CreatedByUserId` stores the Identity user id (not the email/username).
+  - Implemented in `Hawk.Web/Pages/Monitors/Create.cshtml.cs` using `UserManager.GetUserId(User)`.
+- Scheduler vs runner state:
+  - `MonitorScheduler` updates `NextRunAt` when enqueuing due monitors.
+  - `MonitorRunner` is the only place that updates `LastRunAt` (including invalid config runs).
+- EF include behavior:
+  - `MonitorRunner` uses `.AsSplitQuery()` when loading `Monitor.Headers` and `Monitor.MatchRules` to avoid cartesian explosion.
+
+## Local Tooling Quirks
+
+- `dotnet test -q` sometimes surfaces MSBuild cache/directory errors in this repo; use `dotnet test Hawk.sln -v:m` if you hit that.
