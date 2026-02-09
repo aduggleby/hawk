@@ -39,7 +39,7 @@ public sealed class StatusCakeImporterTests
         var res = await importer.ImportTestsAsync(ms, "user-1", CancellationToken.None);
 
         Assert.Equal(2, res.MonitorsCreated);
-        Assert.Empty(res.Warnings.Where(w => w.Contains("Skipped", StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(res.Warnings, w => w.Contains("Skipped", StringComparison.OrdinalIgnoreCase));
 
         var monitors = await db.Monitors.OrderBy(m => m.Name).ToListAsync();
         Assert.Contains(monitors, m => m.Name.Contains("(sc:123)", StringComparison.Ordinal));
