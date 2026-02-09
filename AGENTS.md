@@ -120,6 +120,17 @@ Implementation notes:
 Implementation:
 - Serilog file sink rolls daily to `logs/hawk-.log` with `retainedFileCountLimit: 30`.
 
+## DataProtection Keys (Docker)
+
+Problem:
+- ASP.NET Core Identity cookies are protected using DataProtection keys.
+- If keys are not persisted, a container restart invalidates existing auth cookies.
+
+Implementation:
+- When running in a container (`DOTNET_RUNNING_IN_CONTAINER=true`), keys are persisted to `/var/lib/hawk/dpkeys`.
+- `docker-compose.yml` mounts a named volume `hawk_dpkeys` at `/var/lib/hawk/dpkeys`.
+- Override path via `Hawk:DataProtection:KeysPath` if needed.
+
 ## E2E In Docker (Planned)
 
 Requirement:

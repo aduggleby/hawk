@@ -9,6 +9,7 @@
 // </file>
 
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Seeding;
@@ -71,6 +72,23 @@ builder.Services.AddHangfire(cfg =>
         });
 });
 builder.Services.AddHangfireServer();
+
+// Persist DataProtection keys in containers so Identity cookies remain valid across restarts.
+// Branch: only enabled automatically when running in a container unless explicitly configured.
+var dpKeysPath = builder.Configuration["Hawk:DataProtection:KeysPath"];
+var runningInContainer = string.Equals(
+    Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"),
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+if (!string.IsNullOrWhiteSpace(dpKeysPath) || runningInContainer)
+{
+    dpKeysPath = string.IsNullOrWhiteSpace(dpKeysPath) ? "/var/lib/hawk/dpkeys" : dpKeysPath;
+    Directory.CreateDirectory(dpKeysPath);
+    builder.Services
+        .AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(dpKeysPath))
+        .SetApplicationName("Hawk");
+}
 
 builder.Services.AddDefaultIdentity<IdentityUser>(options =>
     {

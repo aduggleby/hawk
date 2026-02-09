@@ -42,6 +42,8 @@ services:
       - mock
     expose:
       - "8080"
+    volumes:
+      - hawk_e2e_dpkeys:/var/lib/hawk/dpkeys
 
   e2e:
     build:
@@ -60,4 +62,4 @@ services:
 
 volumes:
   hawk_e2e_db:
-
+  hawk_e2e_dpkeys:

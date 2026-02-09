@@ -37,6 +37,7 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+      - hawk_dpkeys:/var/lib/hawk/dpkeys
 
   mock:
     build:
@@ -47,4 +48,4 @@ services:
 
 volumes:
   hawk_db:
-
+  hawk_dpkeys:
