@@ -1,0 +1,18 @@
+@utility hawk-shell {
+  min-height: 100vh;
+  background: var(--bg-primary);
+
+  /* Branded gradient background (with plain bg fallback). */
+  background-image:
+    radial-gradient(at 14% 8%, color-mix(in srgb, var(--accent) 30%, transparent) 0px, transparent 55%),
+    radial-gradient(at 82% 18%, color-mix(in srgb, var(--accent) 18%, transparent) 0px, transparent 55%),
+    radial-gradient(at 60% 94%, color-mix(in srgb, var(--text-primary) 6%, transparent) 0px, transparent 60%);
+}
+
+@supports not (background: color-mix(in srgb, white 50%, transparent)) {
+  .hawk-shell {
+    /* Older browsers: keep it simple. */
+    background-image: none;
+  }
+}
+

@@ -1,0 +1,19 @@
+@utility hawk-card {
+  border-radius: var(--radius-2xl);
+  border: 1px solid var(--border-primary);
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  box-shadow: var(--shadow-soft);
+  padding: 1.5rem;
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .hawk-card {
+    backdrop-filter: blur(10px);
+  }
+}
+
+.hawk-card:hover {
+  box-shadow: var(--shadow-medium);
+}
+

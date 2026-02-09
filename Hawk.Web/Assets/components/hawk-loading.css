@@ -1,0 +1,37 @@
+@utility hawk-spinner {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: hawk-spin 0.6s linear infinite;
+}
+
+@keyframes hawk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@utility hawk-skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg-secondary) 100%, transparent) 0%,
+    color-mix(in srgb, var(--bg-secondary) 60%, var(--bg-primary) 40%) 50%,
+    color-mix(in srgb, var(--bg-secondary) 100%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: hawk-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-md);
+}
+
+@keyframes hawk-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
