@@ -81,12 +81,19 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options =>
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", p => p.RequireRole("Admin"));
+});
+
 builder.Services.AddRazorPages(options =>
 {
     // Default: require auth for app pages. Identity UI remains accessible for login.
     options.Conventions.AuthorizeFolder("/");
     options.Conventions.AllowAnonymousToPage("/Index");
     options.Conventions.AllowAnonymousToPage("/Privacy");
+    options.Conventions.AuthorizeFolder("/Admin", "AdminOnly");
 });
 
 builder.Services.AddScoped<IMonitorRunner, MonitorRunner>();

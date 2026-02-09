@@ -1,0 +1,27 @@
+@page "{id}"
+@* <summary>Admin delete user confirmation.</summary> *@
+@model Hawk.Web.Pages.Admin.Users.DeleteModel
+@{
+    ViewData["Title"] = "Delete user";
+}
+
+<div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-2xl font-semibold tracking-tight">Delete user</h1>
+        <p class="text-sm text-zinc-600 font-mono">@Model.Email</p>
+    </div>
+    <a class="hawk-btn-ghost" asp-page="/Admin/Users/Index">Back</a>
+</div>
+
+<div class="hawk-card border-red-200 max-w-xl">
+    <div class="text-sm">This will permanently delete the user.</div>
+    <div class="text-xs text-zinc-600 mt-2">If this user owns monitors in a future version, ownership will need reassignment.</div>
+</div>
+
+<form method="post" class="flex items-center gap-2 mt-4 max-w-xl">
+    <button class="hawk-btn-danger" type="submit">Delete</button>
+    <a class="hawk-btn-ghost" asp-page="/Admin/Users/Index">Cancel</a>
+</form>
+
+<div class="text-sm text-red-700 mt-3" asp-validation-summary="All"></div>
+

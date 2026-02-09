@@ -22,6 +22,11 @@
                     </a>
                     <nav class="hidden sm:flex items-center gap-3 text-sm">
                         <a class="no-underline text-zinc-700 hover:text-zinc-900" asp-area="" asp-page="/Monitors/Index">Monitors</a>
+                        @if (User.Identity?.IsAuthenticated == true && User.IsInRole("Admin"))
+                        {
+                            <a class="no-underline text-zinc-700 hover:text-zinc-900" asp-area="" asp-page="/Admin/Users/Index">Admin</a>
+                            <a class="no-underline text-zinc-700 hover:text-zinc-900" href="/hangfire">Hangfire</a>
+                        }
                         <a class="no-underline text-zinc-700 hover:text-zinc-900" asp-area="" asp-page="/Privacy">Privacy</a>
                     </nav>
                 </div>

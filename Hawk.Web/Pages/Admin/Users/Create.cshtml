@@ -1,0 +1,40 @@
+@page
+@* <summary>Admin create user page.</summary> *@
+@model Hawk.Web.Pages.Admin.Users.CreateModel
+@{
+    ViewData["Title"] = "New user";
+}
+
+<div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-2xl font-semibold tracking-tight">New user</h1>
+        <p class="text-sm text-zinc-600">Create a local username/password user.</p>
+    </div>
+    <a class="hawk-btn-ghost" asp-page="/Admin/Users/Index">Back</a>
+</div>
+
+<form method="post" class="space-y-4 max-w-xl">
+    <div class="hawk-card">
+        <label class="hawk-label">Email</label>
+        <input class="hawk-input mt-2 font-mono" asp-for="Input.Email" />
+        <div class="text-sm text-red-700 mt-1" asp-validation-for="Input.Email"></div>
+    </div>
+
+    <div class="hawk-card">
+        <label class="hawk-label">Password</label>
+        <input class="hawk-input mt-2 font-mono" asp-for="Input.Password" type="password" />
+        <div class="text-sm text-red-700 mt-1" asp-validation-for="Input.Password"></div>
+    </div>
+
+    <div class="text-sm text-red-700" asp-validation-summary="All"></div>
+
+    <div class="flex items-center gap-2">
+        <button class="hawk-btn-primary" type="submit">Create</button>
+        <a class="hawk-btn-ghost" asp-page="/Admin/Users/Index">Cancel</a>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+
