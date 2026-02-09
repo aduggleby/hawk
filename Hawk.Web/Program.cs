@@ -1,3 +1,13 @@
+// <file>
+// <summary>
+// Application entry point and dependency injection configuration.
+// Notes:
+// - Identity is configured for username/password logins.
+// - Startup seeding applies EF migrations and ensures a seed admin user exists.
+// - HTTPS redirection can be disabled (for E2E) via Hawk__DisableHttpsRedirection=true.
+// </summary>
+// </file>
+
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
@@ -24,6 +34,9 @@ builder.Services.AddRazorPages();
 
 var app = builder.Build();
 
+// Important branch: boot-time seeding.
+// - Applies EF migrations (required for container deployments).
+// - Ensures an Admin role and a seed admin user exists.
 await app.Services.SeedIdentityAsync();
 
 // Configure the HTTP request pipeline.
@@ -40,8 +53,10 @@ else
 
 if (!app.Configuration.GetValue("Hawk:DisableHttpsRedirection", false))
 {
+    // Branch: production/default behavior.
     app.UseHttpsRedirection();
 }
+// Else branch: E2E/Testing can force plain HTTP to keep Playwright stable.
 
 app.UseRouting();
 

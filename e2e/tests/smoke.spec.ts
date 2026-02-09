@@ -1,3 +1,10 @@
+/**
+ * @file Basic E2E smoke coverage.
+ *
+ * This suite:
+ * - Verifies the app starts and renders.
+ * - Verifies the seeded admin can authenticate through the UI.
+ */
 import { expect, test } from '@playwright/test';
 
 test('home page loads', async ({ page }) => {
@@ -13,6 +20,7 @@ test('seed admin can log in', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('link', { name: /^login$/i }).click();
 
+  // Branch: on Identity UI, labels are localized; we match by regex.
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /log in/i }).click();

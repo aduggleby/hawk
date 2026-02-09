@@ -1,3 +1,11 @@
+/**
+ * @file Playwright config for Hawk end-to-end tests.
+ *
+ * Notes:
+ * - By default, we start the ASP.NET app via `dotnet run` (unless `HAWK_BASE_URL` is provided).
+ * - We disable HTTPS redirection in the app for E2E stability.
+ * - Seed admin credentials are injected via env so E2E doesn't depend on repo config.
+ */
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = process.env.HAWK_E2E_PORT ?? '5199';

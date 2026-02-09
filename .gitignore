@@ -483,5 +483,7 @@ $RECYCLE.BIN/
 
 # Hawk local/runtime artifacts
 Hawk.Web/app.db
+Hawk.Web/app.db-shm
+Hawk.Web/app.db-wal
 screenshots/
 logs/

@@ -1,3 +1,10 @@
+// <file>
+// <summary>
+// URL checking primitives and an <see cref="IUrlChecker"/> implementation used by Hangfire jobs and on-demand runs.
+// Supports GET/POST-style requests with header overrides and content verification (contains/regex).
+// </summary>
+// </file>
+
 using System.Diagnostics;
 using System.Net;
 using System.Text;
@@ -5,18 +12,35 @@ using System.Text.RegularExpressions;
 
 namespace Hawk.Web.Services;
 
+/// <summary>
+/// Describes how a response body should be verified.
+/// </summary>
 public enum ContentMatchMode
 {
+    /// <summary>No content verification.</summary>
     None = 0,
+    /// <summary>Case-insensitive substring match.</summary>
     Contains = 1,
+    /// <summary>Case-insensitive regular expression match.</summary>
     Regex = 2,
 }
 
+/// <summary>
+/// A single content verification rule.
+/// </summary>
+/// <param name="Mode">Match mode to apply.</param>
+/// <param name="Pattern">String or regex pattern to search for.</param>
 public sealed record ContentMatchRule(ContentMatchMode Mode, string Pattern)
 {
+    /// <summary>
+    /// Creates a no-op rule that always passes.
+    /// </summary>
     public static ContentMatchRule None() => new(ContentMatchMode.None, string.Empty);
 }
 
+/// <summary>
+/// Describes a single URL check (request details + verification rules).
+/// </summary>
 public sealed record UrlCheckRequest(
     Uri Url,
     HttpMethod Method,
@@ -27,8 +51,14 @@ public sealed record UrlCheckRequest(
     IReadOnlyList<ContentMatchRule> MatchRules
 );
 
+/// <summary>
+/// A single content match evaluation result for a <see cref="ContentMatchRule"/>.
+/// </summary>
 public sealed record UrlCheckMatchResult(ContentMatchRule Rule, bool Matched, string? Details);
 
+/// <summary>
+/// Result of executing a <see cref="UrlCheckRequest"/>.
+/// </summary>
 public sealed record UrlCheckResult(
     bool Success,
     HttpStatusCode? StatusCode,
@@ -38,16 +68,28 @@ public sealed record UrlCheckResult(
     string? ResponseBodySnippet
 );
 
+/// <summary>
+/// Abstraction for executing checks, allowing mocking in tests and swapping implementations in different environments.
+/// </summary>
 public interface IUrlChecker
 {
+    /// <summary>
+    /// Executes a URL check.
+    /// </summary>
+    /// <param name="request">Request to execute.</param>
+    /// <param name="cancellationToken">Caller cancellation token.</param>
     Task<UrlCheckResult> CheckAsync(UrlCheckRequest request, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Default <see cref="IUrlChecker"/> implementation using <see cref="HttpClient"/>.
+/// </summary>
 public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
 {
     // Limit how much we buffer for matching/snippets. Keep it small to avoid storing huge bodies.
     private const int MaxBodyBytes = 256 * 1024;
 
+    /// <inheritdoc />
     public async Task<UrlCheckResult> CheckAsync(UrlCheckRequest request, CancellationToken cancellationToken)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -69,6 +111,7 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
 
             if (request.Method == HttpMethod.Post || request.Method == HttpMethod.Put || request.Method == HttpMethod.Patch)
             {
+                // Branch: request has a body. Default content-type to JSON to keep behavior predictable when the user omits it.
                 var body = request.Body ?? string.Empty;
                 var contentType = string.IsNullOrWhiteSpace(request.ContentType) ? "application/json" : request.ContentType!;
                 httpRequest.Content = new StringContent(body, Encoding.UTF8, contentType);
@@ -92,6 +135,7 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
         }
         catch (OperationCanceledException oce) when (!cancellationToken.IsCancellationRequested)
         {
+            // Branch: timeout (as opposed to an explicit cancellation from the caller).
             sw.Stop();
             return new UrlCheckResult(
                 Success: false,
@@ -104,6 +148,7 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
         }
         catch (Exception ex)
         {
+            // Branch: network error, invalid request configuration, TLS failure, DNS error, etc.
             sw.Stop();
             return new UrlCheckResult(
                 Success: false,
@@ -126,6 +171,7 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
         {
             if (rule.Mode == ContentMatchMode.None || string.IsNullOrEmpty(rule.Pattern))
             {
+                // Branch: no-op rules are treated as passing to simplify "optional" matches in the UI.
                 results.Add(new UrlCheckMatchResult(rule, true, null));
                 continue;
             }
@@ -146,6 +192,7 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
             }
             catch (Exception ex)
             {
+                // Branch: invalid regex, regex timeout, etc.
                 results.Add(new UrlCheckMatchResult(rule, false, $"Match error: {ex.Message}"));
             }
         }
@@ -196,4 +243,3 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
         return Encoding.UTF8.GetString(ms.ToArray());
     }
 }
-

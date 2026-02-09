@@ -1,9 +1,22 @@
+// <file>
+// <summary>
+// Unit tests for the URL checker implementation.
+// Uses https://example.com for stable, low-risk integration-style assertions.
+// </summary>
+// </file>
+
 using Hawk.Web.Services;
 
 namespace Hawk.Tests;
 
+/// <summary>
+/// Tests for <see cref="UrlChecker"/>.
+/// </summary>
 public class UrlCheckerTests
 {
+    /// <summary>
+    /// Verifies a simple GET succeeds and content contains a known string.
+    /// </summary>
     [Fact]
     public async Task Get_ExampleDotCom_ContainsMatch_Succeeds()
     {
@@ -28,6 +41,9 @@ public class UrlCheckerTests
         Assert.Contains(res.MatchResults, m => m.Rule.Mode == ContentMatchMode.Contains && m.Matched);
     }
 
+    /// <summary>
+    /// Verifies regex matching succeeds on a stable page.
+    /// </summary>
     [Fact]
     public async Task Get_ExampleDotCom_RegexMatch_Succeeds()
     {
@@ -50,6 +66,9 @@ public class UrlCheckerTests
         Assert.Contains(res.MatchResults, m => m.Rule.Mode == ContentMatchMode.Regex && m.Matched);
     }
 
+    /// <summary>
+    /// Verifies non-GET requests return a deterministic failure result (but do not throw).
+    /// </summary>
     [Fact]
     public async Task Post_ExampleDotCom_IsNotSuccess()
     {
@@ -72,4 +91,3 @@ public class UrlCheckerTests
         Assert.False(res.Success);
     }
 }
-
