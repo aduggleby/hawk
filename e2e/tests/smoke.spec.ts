@@ -12,7 +12,8 @@ test('home page loads', async ({ page }) => {
   await page.goto('/');
   await snap(page, '01-home');
   await expect(page).toHaveTitle(/Hawk/i);
-  await expect(page.getByRole('link', { name: /monitors/i })).toBeVisible();
+  // Be specific: home has both "Monitors" (nav) and "Open monitors" (CTA).
+  await expect(page.getByRole('link', { name: /^monitors$/i })).toBeVisible();
 });
 
 test('seed admin can log in', async ({ page }) => {
