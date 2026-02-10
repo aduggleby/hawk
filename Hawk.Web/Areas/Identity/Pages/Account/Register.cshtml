@@ -1,0 +1,93 @@
+@page
+@model RegisterModel
+
+@{
+    ViewData["Title"] = "Register";
+}
+
+<div class="mx-auto max-w-xl py-10">
+    <div class="hawk-card">
+        <div class="flex items-start justify-between gap-4 mb-6">
+            <div>
+                <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Auth</div>
+                <h1 class="text-2xl font-semibold tracking-tight">Register</h1>
+                <p class="text-sm text-zinc-600 mt-1">Create a local account.</p>
+            </div>
+            <a class="hawk-btn hawk-btn-ghost hawk-btn-sm" asp-page="./Login" asp-route-returnUrl="@Model.ReturnUrl">Back</a>
+        </div>
+
+        <form id="registerForm" asp-route-returnUrl="@Model.ReturnUrl" method="post" class="space-y-4">
+            <div asp-validation-summary="ModelOnly" class="hawk-error-message" role="alert"></div>
+
+            <div>
+                <label asp-for="Input.Email" class="hawk-label">Email</label>
+                <input asp-for="Input.Email"
+                       class="hawk-input"
+                       autocomplete="username"
+                       aria-required="true"
+                       placeholder="name@example.com"
+                       autofocus />
+                <span asp-validation-for="Input.Email" class="hawk-error-message"></span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label asp-for="Input.Password" class="hawk-label">Password</label>
+                    <input asp-for="Input.Password"
+                           class="hawk-input"
+                           autocomplete="new-password"
+                           aria-required="true"
+                           placeholder="password" />
+                    <span asp-validation-for="Input.Password" class="hawk-error-message"></span>
+                </div>
+                <div>
+                    <label asp-for="Input.ConfirmPassword" class="hawk-label">Confirm</label>
+                    <input asp-for="Input.ConfirmPassword"
+                           class="hawk-input"
+                           autocomplete="new-password"
+                           aria-required="true"
+                           placeholder="password" />
+                    <span asp-validation-for="Input.ConfirmPassword" class="hawk-error-message"></span>
+                </div>
+            </div>
+
+            <button id="registerSubmit" type="submit" class="hawk-btn hawk-btn-primary w-full">Create account</button>
+        </form>
+
+        <div class="mt-6 pt-6 border-t border-[color:var(--border-primary)]">
+            <div class="text-xs font-mono uppercase tracking-tight text-zinc-500 mb-2">External Providers</div>
+            @{
+                if ((Model.ExternalLogins?.Count ?? 0) == 0)
+                {
+                    <div class="text-sm text-zinc-600">
+                        No external authentication providers are configured.
+                    </div>
+                }
+                else
+                {
+                    <form id="external-account"
+                          asp-page="./ExternalLogin"
+                          asp-route-returnUrl="@Model.ReturnUrl"
+                          method="post"
+                          class="space-y-2">
+                        @foreach (var provider in Model.ExternalLogins!)
+                        {
+                            <button type="submit"
+                                    class="hawk-btn hawk-btn-secondary w-full"
+                                    name="provider"
+                                    value="@provider.Name"
+                                    title="Register using your @provider.DisplayName account">
+                                @provider.DisplayName
+                            </button>
+                        }
+                    </form>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+

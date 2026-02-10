@@ -1,0 +1,10 @@
+@model string
+
+@if (!string.IsNullOrWhiteSpace(Model))
+{
+    var isError = Model.StartsWith("Error", StringComparison.OrdinalIgnoreCase);
+    <div class="hawk-alert @(isError ? "hawk-alert-error" : "hawk-alert-success")" role="alert">
+        <div class="text-sm">@Model</div>
+    </div>
+}
+

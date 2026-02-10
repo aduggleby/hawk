@@ -17,16 +17,16 @@
     <div class="hawk-card">
         <label class="hawk-label" asp-for="Input.Email"></label>
         <input class="hawk-input mt-2 font-mono" asp-for="Input.Email" />
-        <div class="text-sm text-red-700 mt-1" asp-validation-for="Input.Email"></div>
+        <div class="hawk-error-message" asp-validation-for="Input.Email"></div>
     </div>
 
     <div class="hawk-card">
         <label class="hawk-label" asp-for="Input.Password"></label>
         <input class="hawk-input mt-2 font-mono" asp-for="Input.Password" type="password" />
-        <div class="text-sm text-red-700 mt-1" asp-validation-for="Input.Password"></div>
+        <div class="hawk-error-message" asp-validation-for="Input.Password"></div>
     </div>
 
-    <div class="text-sm text-red-700" asp-validation-summary="All"></div>
+    <div class="hawk-error-message" asp-validation-summary="All"></div>
 
     <div class="flex items-center gap-2">
         <button class="hawk-btn hawk-btn-primary" type="submit">Create</button>

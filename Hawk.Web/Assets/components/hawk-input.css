@@ -1,9 +1,9 @@
 @utility hawk-input {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 0.875rem;
   line-height: 1.25rem;
@@ -47,15 +47,17 @@
 }
 
 @utility hawk-input-error {
-  border-color: var(--color-danger-500);
+  border-color: var(--accent);
+  border-style: dashed;
 }
 
 @utility hawk-input-success {
-  border-color: var(--color-success-500);
+  border-color: var(--border-primary);
 }
 
 @utility hawk-error-message {
-  color: var(--color-danger-900);
+  color: var(--text-primary);
+  font-weight: 600;
   font-size: 0.75rem;
   line-height: 1rem;
   margin-top: 0.25rem;

@@ -1,0 +1,100 @@
+@page
+@model LoginModel
+
+@{
+    ViewData["Title"] = "Log in";
+}
+
+<div class="mx-auto max-w-xl py-10">
+    <div class="hawk-card">
+        <div class="flex items-start justify-between gap-4 mb-6">
+            <div>
+                <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Auth</div>
+                <h1 class="text-2xl font-semibold tracking-tight">Log in</h1>
+                <p class="text-sm text-zinc-600 mt-1">Use your Hawk account to access monitors and scheduling.</p>
+            </div>
+            <a class="hawk-btn hawk-btn-ghost hawk-btn-sm" asp-area="" asp-page="/Index">Home</a>
+        </div>
+
+        <form id="account" method="post" class="space-y-4">
+            <div asp-validation-summary="ModelOnly" class="hawk-error-message" role="alert"></div>
+
+            <div>
+                <label asp-for="Input.Email" class="hawk-label">Email</label>
+                <input asp-for="Input.Email"
+                       class="hawk-input"
+                       autocomplete="username"
+                       aria-required="true"
+                       placeholder="name@example.com"
+                       autofocus />
+                <span asp-validation-for="Input.Email" class="hawk-error-message"></span>
+            </div>
+
+            <div>
+                <label asp-for="Input.Password" class="hawk-label">Password</label>
+                <input asp-for="Input.Password"
+                       class="hawk-input"
+                       autocomplete="current-password"
+                       aria-required="true"
+                       placeholder="password" />
+                <span asp-validation-for="Input.Password" class="hawk-error-message"></span>
+            </div>
+
+            <div class="flex items-center justify-between gap-3">
+                <label asp-for="Input.RememberMe" class="text-sm flex items-center gap-2 select-none">
+                    <input class="h-4 w-4 rounded border border-[color:var(--border-primary)] bg-[color:var(--bg-secondary)]"
+                           asp-for="Input.RememberMe" />
+                    @Html.DisplayNameFor(m => m.Input.RememberMe)
+                </label>
+                <a id="forgot-password" asp-page="./ForgotPassword" class="text-sm">Forgot password?</a>
+            </div>
+
+            <button id="login-submit" type="submit" class="hawk-btn hawk-btn-primary w-full">Log in</button>
+
+            <div class="flex items-center justify-between gap-3 pt-2 border-t border-[color:var(--border-primary)]">
+                <a asp-page="./Register" asp-route-returnUrl="@Model.ReturnUrl" class="hawk-btn hawk-btn-ghost hawk-btn-sm">
+                    Create account
+                </a>
+                <a id="resend-confirmation" asp-page="./ResendEmailConfirmation" class="hawk-btn hawk-btn-ghost hawk-btn-sm">
+                    Resend confirmation
+                </a>
+            </div>
+        </form>
+
+        <div class="mt-6 pt-6 border-t border-[color:var(--border-primary)]">
+            <div class="text-xs font-mono uppercase tracking-tight text-zinc-500 mb-2">External Providers</div>
+            @{
+                if ((Model.ExternalLogins?.Count ?? 0) == 0)
+                {
+                    <div class="text-sm text-zinc-600">
+                        No external authentication providers are configured.
+                    </div>
+                }
+                else
+                {
+                    <form id="external-account"
+                          asp-page="./ExternalLogin"
+                          asp-route-returnUrl="@Model.ReturnUrl"
+                          method="post"
+                          class="space-y-2">
+                        @foreach (var provider in Model.ExternalLogins!)
+                        {
+                            <button type="submit"
+                                    class="hawk-btn hawk-btn-secondary w-full"
+                                    name="provider"
+                                    value="@provider.Name"
+                                    title="Log in using your @provider.DisplayName account">
+                                @provider.DisplayName
+                            </button>
+                        }
+                    </form>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+

@@ -1,0 +1,41 @@
+@page
+@model RegisterConfirmationModel
+
+@{
+    ViewData["Title"] = "Register confirmation";
+}
+
+<div class="mx-auto max-w-xl py-10">
+    <div class="hawk-card">
+        <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Auth</div>
+        <h1 class="text-2xl font-semibold tracking-tight">Account created</h1>
+
+        @if (Model.DisplayConfirmAccountLink)
+        {
+            <div class="mt-4 space-y-3">
+                <div class="hawk-alert hawk-alert-info" role="alert">
+                    <div class="text-sm">
+                        Email sending is not configured for this environment. Use the link below to confirm the account.
+                    </div>
+                </div>
+                <a id="confirm-link" href="@Model.EmailConfirmationUrl" class="hawk-btn hawk-btn-primary">
+                    Confirm account
+                </a>
+                <div class="text-xs text-zinc-600 font-mono break-words">
+                    @Model.EmailConfirmationUrl
+                </div>
+            </div>
+        }
+        else
+        {
+            <p class="text-sm text-zinc-600 mt-3">
+                Please check your email to confirm your account.
+            </p>
+        }
+
+        <div class="mt-6 pt-6 border-t border-[color:var(--border-primary)]">
+            <a class="hawk-btn hawk-btn-ghost" asp-page="./Login">Back to log in</a>
+        </div>
+    </div>
+</div>
+

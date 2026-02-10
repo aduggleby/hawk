@@ -1,0 +1,20 @@
+@page
+@model AccessDeniedModel
+
+@{
+    ViewData["Title"] = "Access denied";
+}
+
+<div class="mx-auto max-w-xl py-10">
+    <div class="hawk-card border-[color:var(--text-primary)] border-dashed">
+        <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Auth</div>
+        <h1 class="text-2xl font-semibold tracking-tight">Access denied</h1>
+        <p class="text-sm text-zinc-600 mt-2">You do not have access to this resource.</p>
+
+        <div class="mt-6 flex items-center gap-2">
+            <a class="hawk-btn hawk-btn-primary" asp-area="" asp-page="/Index">Home</a>
+            <a class="hawk-btn hawk-btn-ghost" asp-area="" asp-page="/Monitors/Index">Monitors</a>
+        </div>
+    </div>
+</div>
+

@@ -4,30 +4,31 @@
   gap: 0.75rem;
   padding: 1rem;
   border-radius: var(--radius-lg);
-  border: 1px solid;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 @utility hawk-alert-error {
-  background: color-mix(in srgb, var(--color-danger-500) 10%, transparent);
-  border-color: var(--color-danger-500);
-  color: var(--color-danger-900);
+  border-color: var(--text-primary);
+  border-left-width: 4px;
+  border-left-style: solid;
 }
 
 @utility hawk-alert-warning {
-  background: color-mix(in srgb, var(--color-warning-500) 10%, transparent);
-  border-color: var(--color-warning-500);
-  color: var(--color-warning-900);
+  border-color: var(--text-primary);
+  border-left-width: 4px;
+  border-left-style: dotted;
 }
 
 @utility hawk-alert-info {
-  background: color-mix(in srgb, var(--color-info-500) 10%, transparent);
-  border-color: var(--color-info-500);
-  color: var(--color-info-900);
+  border-color: var(--text-primary);
+  border-left-width: 4px;
+  border-left-style: solid;
 }
 
 @utility hawk-alert-success {
-  background: color-mix(in srgb, var(--color-success-500) 10%, transparent);
-  border-color: var(--color-success-500);
-  color: var(--color-success-900);
+  border-color: var(--text-primary);
+  border-left-width: 4px;
+  border-left-style: solid;
 }
-
