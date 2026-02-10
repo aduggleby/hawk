@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.1`
+- Version: `0.9.2`
 
 ## Auth / Users
 
@@ -83,7 +83,7 @@ Run:
 
 E2E uses HTTP because Playwright `webServer.url` expects a stable plain URL.
 
-## Docker / SQL Server / Hangfire (Planned)
+## Docker / SQL Server / Hangfire
 
 Implemented architecture:
 - `docker-compose.yml` runs:
@@ -153,7 +153,7 @@ Implementation:
 - `docker-compose.yml` mounts a named volume `hawk_dpkeys` at `/var/lib/hawk/dpkeys`.
 - Override path via `Hawk:DataProtection:KeysPath` if needed.
 
-## E2E In Docker (Planned)
+## E2E In Docker
 
 Requirement:
 - Run E2E tests in Docker with:

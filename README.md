@@ -386,16 +386,9 @@ This repo includes an Ando build script: `build.csando`.
 ando run
 ```
 
-### Publish (Artifacts)
+### Publish (Artifacts + Container Image)
 
-Creates a folder publish output at `./artifacts/publish/Hawk.Web`:
-
-```bash
-ando run -p publish
-```
-
-### Publish Plus Container Image (Web Only)
-
+Publishes the app to `./artifacts/publish/Hawk.Web` and builds a local Docker image (`hawk-web:<version>`).
 The image contains only the ASP.NET app. SQL Server is external and configured via `ConnectionStrings__DefaultConnection`.
 
 ```bash
@@ -404,7 +397,7 @@ ando run --dind -p publish
 
 ### Push To GHCR (Optional)
 
-If `GHCR_IMAGE` is set to `ghcr.io/<owner>/<name>`, the `publish` profile will build multi-arch and push to GHCR.
+If `GHCR_IMAGE` is set to `ghcr.io/<owner>/<name>`, the `publish` profile will build multi-arch (amd64 + arm64) and push to GHCR.
 Ensure auth is available (recommended: `GITHUB_TOKEN` in CI).
 
 ```bash
@@ -415,6 +408,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.1` in the `.csproj` files.
+- Project version is set to `0.9.2` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.
