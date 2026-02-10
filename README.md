@@ -182,8 +182,8 @@ spec:
       containers:
         - name: web
           # Build/publish your own image and push it to a registry your TrueNAS cluster can pull from.
-          # Example: ghcr.io/your-org/hawk-web:latest
-          image: hawk-web:latest
+          # Example: ghcr.io/your-org/hawk:latest
+          image: hawk:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -293,11 +293,11 @@ TrueNAS pulls images from registries; it typically cannot build from your local 
 From this repo, you can build and push `Hawk.Web`:
 
 ```bash
-docker build -t ghcr.io/YOUR_ORG/hawk-web:latest -f Hawk.Web/Dockerfile .
-docker push ghcr.io/YOUR_ORG/hawk-web:latest
+docker build -t ghcr.io/YOUR_ORG/hawk:latest -f Hawk.Web/Dockerfile .
+docker push ghcr.io/YOUR_ORG/hawk:latest
 ```
 
-Then set `image: ghcr.io/YOUR_ORG/hawk-web:latest` in the YAML.
+Then set `image: ghcr.io/YOUR_ORG/hawk:latest` in the YAML.
 
 ## Admin User Management
 

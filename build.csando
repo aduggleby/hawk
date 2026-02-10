@@ -56,8 +56,8 @@ if (publish)
     {
         Log.Info("Building local Docker image (HAWK_SKIP_GHCR=true)...");
         Docker.Build("./Hawk.Web/Dockerfile", o => o
-            .WithTag($"hawk-web:{version}")
-            .WithTag("hawk-web:latest")
+            .WithTag($"hawk:{version}")
+            .WithTag("hawk:latest")
             .WithContext("."));
     }
     else
@@ -69,7 +69,7 @@ if (publish)
 
         var ghcrImage =
             Env("GHCR_IMAGE", required: false) ??
-            $"ghcr.io/{ghcrOwner}/hawk-web";
+            $"ghcr.io/{ghcrOwner}/hawk";
 
         Log.Info($"Building and pushing multi-arch image: {ghcrImage}:{version}");
         Docker.Build("./Hawk.Web/Dockerfile", o => o
