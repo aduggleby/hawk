@@ -388,27 +388,17 @@ ando run
 
 ### Publish (Artifacts + Container Image)
 
-Publishes the app to `./artifacts/publish/Hawk.Web` and builds a local Docker image (`hawk-web:<version>`).
+Publishes the app to `./artifacts/publish/Hawk.Web` and builds a multi-arch (amd64 + arm64) container image pushed to GHCR.
 The image contains only the ASP.NET app. SQL Server is external and configured via `ConnectionStrings__DefaultConnection`.
-
-```bash
-ando run --dind -p publish
-```
-
-### Push To GHCR (Optional)
-
-By default, the `publish` profile builds multi-arch (amd64 + arm64) and pushes to GHCR.
 
 Override the destination with `GHCR_IMAGE=ghcr.io/<owner>/<name>`.
 Ensure auth is available (recommended: `GITHUB_TOKEN` in CI, or `gh auth login` locally).
 
 ```bash
-export GHCR_IMAGE=ghcr.io/YOUR_ORG/hawk-web
-export GITHUB_TOKEN=...   # in GitHub Actions, this is provided automatically
 ando run --dind -p publish
 ```
 
-To build locally without pushing:
+To build locally without pushing to GHCR:
 
 ```bash
 export HAWK_SKIP_GHCR=true
@@ -417,6 +407,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.2` in the `.csproj` files.
+- Project version is set to `0.9.3` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.
