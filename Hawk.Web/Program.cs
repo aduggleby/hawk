@@ -111,7 +111,6 @@ builder.Services.AddRazorPages(options =>
     // Default: require auth for app pages. Identity UI remains accessible for login.
     options.Conventions.AuthorizeFolder("/");
     options.Conventions.AllowAnonymousToPage("/Index");
-    options.Conventions.AllowAnonymousToPage("/Privacy");
     options.Conventions.AuthorizeFolder("/Admin", "AdminOnly");
 });
 

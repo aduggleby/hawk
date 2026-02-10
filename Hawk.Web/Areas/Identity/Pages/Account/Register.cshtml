@@ -54,40 +54,9 @@
             <button id="registerSubmit" type="submit" class="hawk-btn hawk-btn-primary w-full">Create account</button>
         </form>
 
-        <div class="mt-6 pt-6 border-t border-[color:var(--border-primary)]">
-            <div class="text-xs font-mono uppercase tracking-tight text-zinc-500 mb-2">External Providers</div>
-            @{
-                if ((Model.ExternalLogins?.Count ?? 0) == 0)
-                {
-                    <div class="text-sm text-zinc-600">
-                        No external authentication providers are configured.
-                    </div>
-                }
-                else
-                {
-                    <form id="external-account"
-                          asp-page="./ExternalLogin"
-                          asp-route-returnUrl="@Model.ReturnUrl"
-                          method="post"
-                          class="space-y-2">
-                        @foreach (var provider in Model.ExternalLogins!)
-                        {
-                            <button type="submit"
-                                    class="hawk-btn hawk-btn-secondary w-full"
-                                    name="provider"
-                                    value="@provider.Name"
-                                    title="Register using your @provider.DisplayName account">
-                                @provider.DisplayName
-                            </button>
-                        }
-                    </form>
-                }
-            }
-        </div>
     </div>
 </div>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 }
-
