@@ -2,15 +2,17 @@
 
 This repository is building an ASP.NET Razor Pages uptime checker and URL verifier with Hangfire-based scheduling, SQL Server storage, and Docker-first deployment.
 
-## Current State (As Of 2026-02-09)
+## Current State (As Of 2026-02-10)
 
 - Solution: `Hawk.sln`
 - Web app: `Hawk.Web` (Razor Pages + ASP.NET Core Identity)
 - Unit tests: `Hawk.Tests` (xUnit)
 - E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs)
 - Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture)
+- UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
+- Version: `0.9.1`
 
 ## Auth / Users
 
@@ -27,6 +29,8 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 Environment overrides (preferred for Docker/CI):
 - `Hawk__SeedAdmin__Email`
 - `Hawk__SeedAdmin__Password`
+
+Admin users can manage other users via Admin -> Users (CRUD + password reset).
 
 ## Migrations On Startup
 
@@ -91,6 +95,7 @@ Implemented architecture:
   - Hangfire storage
   - Monitoring configuration + check history
 - The web container:
+  - Multi-stage Docker build: `node:20-alpine` stage compiles Tailwind CSS, then .NET SDK stage builds the app
   - Applies EF migrations on startup
   - Runs Hangfire server and dashboard (dashboard is Admin-only)
 
@@ -226,6 +231,11 @@ Service endpoints on the VM:
   - `MonitorRunner` is the only place that updates `LastRunAt` (including invalid config runs).
 - EF include behavior:
   - `MonitorRunner` uses `.AsSplitQuery()` when loading `Monitor.Headers` and `Monitor.MatchRules` to avoid cartesian explosion.
+
+## Removed Features
+
+- Privacy page (`/Privacy`) — removed; no longer in nav or routes.
+- External auth provider buttons — removed from Login and Register Identity pages (app uses local accounts only).
 
 ## Local Tooling Quirks
 

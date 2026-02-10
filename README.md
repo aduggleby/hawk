@@ -1,6 +1,6 @@
 # Hawk
 
-ASP.NET Razor Pages uptime checker and URL verifier with Hangfire scheduling, SQL Server storage, and Docker-first deployment.
+ASP.NET Razor Pages uptime checker and URL verifier with Hangfire scheduling, SQL Server storage, and Docker-first deployment. Styled with Tailwind CSS v4 and supports dark mode.
 
 ## Install On TrueNAS SCALE (Custom App YAML)
 
@@ -299,6 +299,22 @@ docker push ghcr.io/YOUR_ORG/hawk-web:latest
 
 Then set `image: ghcr.io/YOUR_ORG/hawk-web:latest` in the YAML.
 
+## Admin User Management
+
+Admin users can manage other users from the Admin panel:
+
+- **Admin** -> **Users**: list all users.
+- **Create**: add a new user with email, password, and optional Admin role.
+- **Reset Password**: reset a user's password.
+- **Delete**: remove a user.
+
+## Alert Policy
+
+Each monitor has an `AlertAfterConsecutiveFailures` setting (1–20, default 1).
+
+- `1`: alert on first failure after a success (default).
+- `N > 1`: alert only after `N` consecutive failures, reducing noise from transient blips.
+
 ## Import From StatusCake
 
 Hawk can import:
@@ -399,6 +415,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.0` in the `.csproj` files.
+- Project version is set to `0.9.1` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.
