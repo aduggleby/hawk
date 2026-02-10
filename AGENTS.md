@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.5`
+- Version: `0.9.6`
 
 ## Ports
 
@@ -122,6 +122,17 @@ Handy commands:
 - App: `http://localhost:17800`
 - Mock server: `http://localhost:17801`
 
+## Startup Banner
+
+- `Hawk.Web/Infrastructure/StartupBanner.cs` prints an ASCII art banner and version to the console on startup.
+- Called from `Program.cs` before the host starts.
+
+## Flash Messages
+
+- `Hawk.Web/Pages/Shared/_Flash.cshtml` renders flash messages from `TempData["FlashError"]` and `TempData["FlashInfo"]`.
+- Included in `_Layout.cshtml` so flash messages appear on any page after a redirect.
+- Used by Identity pages (Register, ForgotPassword, ResendEmailConfirmation) to show email delivery errors to the user instead of crashing.
+
 ## Email Alerts
 
 Failures trigger email via a Resend-compatible API:
@@ -130,6 +141,7 @@ Failures trigger email via a Resend-compatible API:
 
 Implementation:
 - `Hawk.Web/Services/Email/ResendCompatibleEmailSender.cs` posts to `${BaseUrl}/emails` with Bearer auth.
+- `Hawk.Web/Services/Email/IdentityUiEmailSender.cs` adapts the app's `IEmailSender` for ASP.NET Core Identity UI email flows (register confirmation, forgot password, etc.). It checks `Hawk:Email:Enabled` and `Hawk:Email:From` before sending, and throws (with logging) if email is disabled or misconfigured. Identity pages catch these errors and display them via flash messages instead of showing a 500 error.
 - E2E points `Hawk__Resend__BaseUrl` at `Hawk.MockServer` and asserts captured payloads via `GET /emails`.
 
 Alert policy:
