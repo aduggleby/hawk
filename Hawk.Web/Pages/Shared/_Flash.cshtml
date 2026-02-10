@@ -1,0 +1,16 @@
+@* <summary>Simple flash messages via TempData (used for post-redirect warnings/errors).</summary> *@
+
+@if (TempData["FlashError"] is string flashError && !string.IsNullOrWhiteSpace(flashError))
+{
+    <div class="hawk-alert hawk-alert-error mb-3" role="alert">
+        <div class="text-sm">@flashError</div>
+    </div>
+}
+
+@if (TempData["FlashInfo"] is string flashInfo && !string.IsNullOrWhiteSpace(flashInfo))
+{
+    <div class="hawk-alert hawk-alert-info mb-3" role="alert">
+        <div class="text-sm">@flashInfo</div>
+    </div>
+}
+

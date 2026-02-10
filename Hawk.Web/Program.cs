@@ -22,6 +22,8 @@ using Hawk.Web.Services;
 using Hawk.Web.Services.Import;
 using Hawk.Web.Infrastructure;
 
+StartupBanner.Write();
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((ctx, services, cfg) =>
@@ -56,6 +58,7 @@ builder.Services.AddScoped<IUrlChecker>(sp =>
 builder.Services.Configure<ResendCompatibleEmailOptions>(builder.Configuration.GetSection("Hawk:Resend"));
 builder.Services.AddHttpClient<ResendCompatibleEmailSender>();
 builder.Services.AddScoped<IEmailSender, ResendCompatibleEmailSender>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Identity.UI.Services.IEmailSender, IdentityUiEmailSender>();
 
 builder.Services.AddHangfire(cfg =>
 {
@@ -153,6 +156,8 @@ if (!app.Configuration.GetValue("Hawk:DisableHttpsRedirection", false))
     app.UseHttpsRedirection();
 }
 // Else branch: E2E/Testing can force plain HTTP to keep Playwright stable.
+
+app.UseSerilogRequestLogging();
 
 app.UseRouting();
 

@@ -99,8 +99,8 @@
     --text-primary: var(--color-paper-100);
     --text-secondary: var(--color-ink-200);
     --text-muted: var(--color-ink-300);
-    /* Slightly brighter so 1px borders remain visible on dark surfaces. */
-    --border-primary: var(--color-ink-600);
+    /* Brighter so 1px borders have visible contrast on dark surfaces. */
+    --border-primary: var(--color-ink-500);
     --accent: var(--color-paper-100);
   }
 
