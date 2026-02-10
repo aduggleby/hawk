@@ -95,8 +95,12 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options =>
     {
         // For an internal uptime tool, email confirmation is usually friction with no upside.
         options.SignIn.RequireConfirmedAccount = false;
-        options.Password.RequiredLength = 12;
-        options.Password.RequireNonAlphanumeric = true;
+        options.Password.RequiredLength = 8;
+        options.Password.RequireDigit = false;
+        options.Password.RequireLowercase = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredUniqueChars = 0;
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
@@ -122,7 +126,8 @@ var app = builder.Build();
 
 // Important branch: boot-time seeding.
 // - Applies EF migrations (required for container deployments).
-// - Ensures an Admin role and a seed admin user exists.
+// - Ensures an Admin role exists.
+// - In Development/Testing, also creates a seed admin user for convenience/E2E.
 await app.Services.SeedIdentityAsync();
 await using (var scope = app.Services.CreateAsyncScope())
 {

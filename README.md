@@ -2,289 +2,166 @@
 
 ASP.NET Razor Pages uptime checker and URL verifier with Hangfire scheduling, SQL Server storage, and Docker-first deployment. Styled with Tailwind CSS v4 and supports dark mode.
 
-## Install On TrueNAS SCALE (Custom App YAML)
+## Using An External SQL Server
 
-These instructions target TrueNAS SCALE's **Apps** feature using a **Custom App** where you paste Kubernetes YAML.
+Hawk uses a single SQL Server connection string for EF Core (Identity + app data) and Hangfire storage.
+
+Set the connection string via the standard ASP.NET Core environment variable:
+
+- `ConnectionStrings__DefaultConnection`
+
+### Create Database + Login/User (T-SQL)
+
+Run this once on your SQL Server as a sysadmin (for example `sa`). This creates:
+
+- Database: `Hawk`
+- Login/User: `hawk` (SQL authentication)
+
+Generate a strong password:
+
+```bash
+openssl rand -base64 32
+```
+
+If you want to run this via `sqlcmd` from a machine with `sqlcmd` installed:
+
+```bash
+# -C tells sqlcmd to trust the server certificate (useful for dev/self-signed TLS).
+sqlcmd -S YOUR_SQL_HOST,1433 -U sa -P 'YOUR_SA_PASSWORD' -C
+```
+
+Then paste the SQL below and type `exit` to quit.
+
+```sql
+-- Create DB (idempotent-ish)
+IF DB_ID(N'Hawk') IS NULL
+BEGIN
+  CREATE DATABASE [Hawk];
+END
+GO
+
+-- Create login (server-level)
+IF NOT EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = N'hawk')
+BEGIN
+  CREATE LOGIN [hawk]
+    WITH PASSWORD = N'CHANGE_ME_strong_password',
+         CHECK_POLICY = ON,
+         CHECK_EXPIRATION = OFF;
+END
+GO
+
+-- Create user + grant permissions (database-level)
+USE [Hawk];
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'hawk')
+BEGIN
+  CREATE USER [hawk] FOR LOGIN [hawk];
+END
+GO
+
+-- Hawk applies migrations on startup and needs to create/alter tables.
+-- db_owner is the simplest way to ensure EF Core + Hangfire can manage schema.
+EXEC sp_addrolemember N'db_owner', N'hawk';
+GO
+```
+
+Notes:
+- `GO` is a batch separator for tools like SSMS/Azure Data Studio/sqlcmd.
+- For production hardening, you can replace `db_owner` with a tighter permission set, but you must ensure schema migrations + Hangfire can still run.
+
+### Configure Hawk To Use The External Server
+
+Example connection string (adjust host/port and encryption settings to match your server):
+
+```text
+Server=YOUR_SQL_HOST,1433;Database=Hawk;User Id=hawk;Password=...;Encrypt=true;TrustServerCertificate=false;
+```
+
+Local dev (bash):
+
+```bash
+export ConnectionStrings__DefaultConnection="Server=192.168.1.50,1433;Database=Hawk;User Id=hawk;Password=CHANGE_ME;TrustServerCertificate=true;Encrypt=false"
+dotnet run --project Hawk.Web
+```
+
+Docker (run the web container and point it at your SQL Server):
+
+```bash
+docker run --rm -p 17800:8080 \
+  -e ASPNETCORE_URLS="http://+:8080" \
+  -e ConnectionStrings__DefaultConnection="Server=192.168.1.50,1433;Database=Hawk;User Id=hawk;Password=CHANGE_ME;TrustServerCertificate=true;Encrypt=false" \
+  ghcr.io/aduggleby/hawk:latest
+```
+
+## Install On TrueNAS SCALE (Install via YAML)
+
+These instructions target TrueNAS SCALE's **Apps** feature using **Install via YAML** (Docker Compose format). Hawk connects to an existing SQL Server instance (external to the Hawk container).
 
 ### Prereqs
 
-- TrueNAS SCALE with Apps enabled.
-- A way to provide persistent storage for:
-  - SQL Server data
-  - Hawk DataProtection keys (keeps login sessions valid across restarts)
-  - Optional: logs
-- You must choose a StorageClass that exists on your system (replace `YOUR_STORAGE_CLASS`).
+- TrueNAS SCALE 24.10 or later.
+- SQL Server already running as a TrueNAS app (or otherwise reachable over TCP).
 
-### 1) Choose Credentials And Settings
+### 1) Create Database And User
 
-You will set:
+Create the `Hawk` database and the `hawk` login/user on your SQL Server.
 
-- `SA_PASSWORD`: SQL Server `sa` password (must be strong).
-- `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`: initial Hawk admin user credentials.
-- Optional email settings (Resend-compatible):
-  - `RESEND_BASEURL`
-  - `RESEND_APIKEY`
-  - `EMAIL_FROM`
+Use the SQL script in the **Using An External SQL Server** section above.
 
-Note:
-- Hawk applies EF Core migrations automatically on startup.
-- Default web port inside the container is `8080`.
+In Production (and other non-Development environments), Hawk does not seed an admin user. The **first user to register** will be promoted to the `Admin` role automatically.
 
-### 2) Create The App (Paste YAML)
+### 2) Open The YAML Installation Wizard
 
-In TrueNAS SCALE:
+1. Apps -> Discover Apps.
+2. Click the three-dot menu (top right).
+3. Select **Install via YAML**.
 
-1. Apps -> Discover Apps -> Custom App.
-2. Set an app name (e.g. `hawk`).
-3. Paste the YAML below into the YAML editor.
-4. Replace:
-   - `YOUR_STORAGE_CLASS`
-   - passwords
-   - (optional) image names/tags
-5. Deploy.
+### 3) Configure The Application
+
+Application name: `hawk`
+
+Paste the following YAML and replace the placeholder values:
 
 ```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: hawk
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: hawk-secrets
-  namespace: hawk
-type: Opaque
-stringData:
-  SA_PASSWORD: "CHANGE_ME_strong_sa_password"
-  SEED_ADMIN_EMAIL: "ad@dualconsult.com"
-  SEED_ADMIN_PASSWORD: "CHANGE_ME_strong_admin_password"
-  RESEND_APIKEY: "dev"
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hawk-config
-  namespace: hawk
-data:
-  # If you run Hawk behind an ingress, keep this true and terminate TLS at the ingress.
-  Hawk__DisableHttpsRedirection: "true"
+services:
+  hawk:
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - Hawk__DisableHttpsRedirection=true
 
-  # Resend-compatible settings (point at Resend or a compatible gateway).
-  RESEND_BASEURL: "https://api.resend.com"
-  EMAIL_FROM: "Hawk <hawk@yourdomain>"
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: hawk-mssql-data
-  namespace: hawk
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: YOUR_STORAGE_CLASS
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: hawk-dpkeys
-  namespace: hawk
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 128Mi
-  storageClassName: YOUR_STORAGE_CLASS
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: hawk-logs
-  namespace: hawk
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: YOUR_STORAGE_CLASS
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hawk-db
-  namespace: hawk
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hawk-db
-  template:
-    metadata:
-      labels:
-        app: hawk-db
-    spec:
-      containers:
-        - name: mssql
-          image: mcr.microsoft.com/mssql/server:2022-latest
-          ports:
-            - containerPort: 1433
-          env:
-            - name: ACCEPT_EULA
-              value: "Y"
-            - name: MSSQL_PID
-              value: "Developer"
-            - name: SA_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: hawk-secrets
-                  key: SA_PASSWORD
-          volumeMounts:
-            - name: mssql-data
-              mountPath: /var/opt/mssql
-      volumes:
-        - name: mssql-data
-          persistentVolumeClaim:
-            claimName: hawk-mssql-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: hawk-db
-  namespace: hawk
-spec:
-  selector:
-    app: hawk-db
-  ports:
-    - name: mssql
-      port: 1433
-      targetPort: 1433
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hawk-web
-  namespace: hawk
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hawk-web
-  template:
-    metadata:
-      labels:
-        app: hawk-web
-    spec:
-      containers:
-        - name: web
-          # Build/publish your own image and push it to a registry your TrueNAS cluster can pull from.
-          # Example: ghcr.io/your-org/hawk:latest
-          image: ghcr.io/your-org/hawk:latest
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 8080
-          env:
-            - name: ASPNETCORE_URLS
-              value: "http://+:8080"
-            - name: ASPNETCORE_ENVIRONMENT
-              value: "Production"
-            - name: ConnectionStrings__DefaultConnection
-              value: "Server=hawk-db;Database=Hawk;User Id=sa;Password=$(SA_PASSWORD);TrustServerCertificate=true;Encrypt=false"
-            - name: SA_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: hawk-secrets
-                  key: SA_PASSWORD
-            - name: Hawk__SeedAdmin__Email
-              valueFrom:
-                secretKeyRef:
-                  name: hawk-secrets
-                  key: SEED_ADMIN_EMAIL
-            - name: Hawk__SeedAdmin__Password
-              valueFrom:
-                secretKeyRef:
-                  name: hawk-secrets
-                  key: SEED_ADMIN_PASSWORD
-            - name: Hawk__Resend__BaseUrl
-              valueFrom:
-                configMapKeyRef:
-                  name: hawk-config
-                  key: RESEND_BASEURL
-            - name: Hawk__Resend__ApiKey
-              valueFrom:
-                secretKeyRef:
-                  name: hawk-secrets
-                  key: RESEND_APIKEY
-            - name: Hawk__Email__From
-              valueFrom:
-                configMapKeyRef:
-                  name: hawk-config
-                  key: EMAIL_FROM
-            - name: Hawk__DisableHttpsRedirection
-              valueFrom:
-                configMapKeyRef:
-                  name: hawk-config
-                  key: Hawk__DisableHttpsRedirection
-          volumeMounts:
-            - name: dpkeys
-              mountPath: /var/lib/hawk/dpkeys
-            - name: logs
-              mountPath: /app/logs
-      volumes:
-        - name: dpkeys
-          persistentVolumeClaim:
-            claimName: hawk-dpkeys
-        - name: logs
-          persistentVolumeClaim:
-            claimName: hawk-logs
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: hawk-web
-  namespace: hawk
-spec:
-  selector:
-    app: hawk-web
-  ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
-  type: ClusterIP
+      # External SQL Server (use your TrueNAS host IP / SQL port)
+      - >-
+        ConnectionStrings__DefaultConnection=Server=YOUR_TRUENAS_IP,1433;Database=Hawk;User Id=hawk;
+        Password=YOUR_HAWK_PASSWORD;TrustServerCertificate=true;Encrypt=true
+
+      # Email (Resend-compatible)
+      - Hawk__Email__From=Hawk <hawk@yourdomain>
+      - Hawk__Resend__ApiKey=YOUR_RESEND_APIKEY
+      - Hawk__Resend__BaseUrl=https://api.resend.com
+      # For official Resend, BaseUrl can be omitted or set to: https://api.resend.com
+
+    image: ghcr.io/aduggleby/hawk:latest
+    ports:
+      - '17800:8080'
+    pull_policy: always
+    restart: unless-stopped
 ```
 
-### 3) Expose The App
+Values to replace:
 
-You have a few options:
+| Placeholder | Replace with |
+| --- | --- |
+| `YOUR_TRUENAS_IP` | Your TrueNAS host IP (example: `192.168.1.100`) |
+| `1433` | SQL Server mapped port (change if different) |
+| `YOUR_HAWK_PASSWORD` | Password you set for the `hawk` login |
+| `YOUR_RESEND_APIKEY` | Resend (or compatible gateway) API key |
+| `Hawk <hawk@yourdomain>` | Your verified sender address |
 
-- TrueNAS SCALE UI: create an Ingress (recommended) and terminate TLS there.
-- Or, change the `hawk-web` Service `type` to `NodePort` and expose a port on the node.
+### 4) Expose The App (Reverse Proxy)
 
-Example Ingress (adjust host and ingress class for your cluster):
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: hawk
-  namespace: hawk
-spec:
-  rules:
-    - host: hawk.yourdomain
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: hawk-web
-                port:
-                  number: 8080
-```
+For HTTPS, use the built-in TrueNAS ingress features (or Traefik) and proxy to `http://YOUR_TRUENAS_IP:17800`.
 
 ## Building And Publishing An Image (For TrueNAS)
 
@@ -293,11 +170,11 @@ TrueNAS pulls images from registries; it typically cannot build from your local 
 From this repo, you can build and push `Hawk.Web`:
 
 ```bash
-docker build -t ghcr.io/YOUR_ORG/hawk:latest -f Hawk.Web/Dockerfile .
-docker push ghcr.io/YOUR_ORG/hawk:latest
+docker build -t ghcr.io/aduggleby/hawk:latest -f Hawk.Web/Dockerfile .
+docker push ghcr.io/aduggleby/hawk:latest
 ```
 
-Then set `image: ghcr.io/YOUR_ORG/hawk:latest` in the YAML.
+Then set `image: ghcr.io/aduggleby/hawk:latest` in the YAML (or your own org if you publish a fork).
 
 ## Admin User Management
 

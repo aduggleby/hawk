@@ -1,12 +1,14 @@
 // <file>
 // <summary>
-// Identity/roles bootstrapper. Applies EF migrations on startup and ensures there is an Admin role and a seed admin user.
+// Identity/roles bootstrapper. Applies EF migrations on startup and ensures there is an Admin role.
+// In Development/Testing, also ensures a seed admin user exists for convenience and E2E automation.
 // This keeps container deployments simple (no separate migration job required).
 // </summary>
 // </file>
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 
 namespace Hawk.Web.Data.Seeding;
 
@@ -16,7 +18,7 @@ namespace Hawk.Web.Data.Seeding;
 public static class IdentitySeeder
 {
     /// <summary>
-    /// Applies outstanding EF migrations, creates the <c>Admin</c> role, and ensures the seed admin user exists.
+    /// Applies outstanding EF migrations, creates the <c>Admin</c> role, and (optionally) ensures a seed admin user exists.
     /// </summary>
     /// <param name="services">Application service provider.</param>
     /// <exception cref="InvalidOperationException">Thrown when role or user creation fails.</exception>
@@ -33,6 +35,7 @@ public static class IdentitySeeder
         var roleManager = sp.GetRequiredService<RoleManager<IdentityRole>>();
         var userManager = sp.GetRequiredService<UserManager<IdentityUser>>();
         var config = sp.GetRequiredService<IConfiguration>();
+        var env = sp.GetRequiredService<IHostEnvironment>();
 
         const string adminRole = "Admin";
         if (!await roleManager.RoleExistsAsync(adminRole))
@@ -41,6 +44,11 @@ public static class IdentitySeeder
             if (!roleRes.Succeeded)
                 throw new InvalidOperationException($"Failed to create role '{adminRole}': {string.Join(", ", roleRes.Errors.Select(e => e.Description))}");
         }
+
+        // In production-like environments, do NOT seed an admin user.
+        // The first registered user will be promoted to Admin during registration.
+        if (!env.IsDevelopment() && !env.IsEnvironment("Testing"))
+            return;
 
         // Configurable via environment variables for Docker/CI.
         var seedEmail = config["Hawk:SeedAdmin:Email"] ?? "ad@dualconsult.com";

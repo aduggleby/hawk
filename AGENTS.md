@@ -14,14 +14,23 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
 - Version: `0.9.4`
 
+## Ports
+
+Reserved ports for this project:
+
+- Web: `17800` (container port `8080`)
+- Mock server: `17801` (container port `8081`)
+- SQL Server (dev compose only): `17833` (container port `1433`)
+
 ## Auth / Users
 
 - Auth is ASP.NET Core Identity (Individual auth).
 - Roles are enabled (`AddRoles<IdentityRole>()`).
-- A seed admin user is created at startup:
+- In `Development` and `Testing`, a seed admin user is created at startup:
   - Email: `ad@dualconsult.com`
   - Password: `Hawk!2026-Admin#1`
   - Role: `Admin`
+- In `Production` (and other non-Development environments), Hawk does not seed an admin user. The first user to register is promoted to the `Admin` role automatically.
 - Seeding and migration are executed on startup in:
   - `Hawk.Web/Data/Seeding/IdentitySeeder.cs`
   - Called from `Hawk.Web/Program.cs`
@@ -110,8 +119,8 @@ Implementation:
 
 Handy commands:
 - Run locally: `docker compose up -d --build`
-- App: `http://localhost:8080`
-- Mock server: `http://localhost:8081`
+- App: `http://localhost:17800`
+- Mock server: `http://localhost:17801`
 
 ## Email Alerts
 
@@ -194,8 +203,8 @@ Commands (high level):
 - Start services: `sudo docker compose up -d --build`.
 
 Service endpoints on the VM:
-- Hawk web: `http://192.168.1.127:8080`
-- Mock server: `http://192.168.1.127:8081`
+- Hawk web: `http://192.168.1.127:17800`
+- Mock server: `http://192.168.1.127:17801`
 
 ## Configuration Cheatsheet
 

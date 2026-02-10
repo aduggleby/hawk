@@ -12,11 +12,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Hawk.Web.Areas.Identity.Pages.Account
@@ -25,24 +27,30 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
     {
         private readonly SignInManager<IdentityUser> _signInManager;
         private readonly UserManager<IdentityUser> _userManager;
+        private readonly RoleManager<IdentityRole> _roleManager;
         private readonly IUserStore<IdentityUser> _userStore;
         private readonly IUserEmailStore<IdentityUser> _emailStore;
         private readonly ILogger<RegisterModel> _logger;
         private readonly IEmailSender _emailSender;
+        private readonly IHostEnvironment _env;
 
         public RegisterModel(
             UserManager<IdentityUser> userManager,
+            RoleManager<IdentityRole> roleManager,
             IUserStore<IdentityUser> userStore,
             SignInManager<IdentityUser> signInManager,
             ILogger<RegisterModel> logger,
-            IEmailSender emailSender)
+            IEmailSender emailSender,
+            IHostEnvironment env)
         {
             _userManager = userManager;
+            _roleManager = roleManager;
             _userStore = userStore;
             _emailStore = GetEmailStore();
             _signInManager = signInManager;
             _logger = logger;
             _emailSender = emailSender;
+            _env = env;
         }
 
         /// <summary>
@@ -112,6 +120,9 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
             ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
             if (ModelState.IsValid)
             {
+                var shouldBootstrapAdmin = !_env.IsDevelopment() && !_env.IsEnvironment("Testing");
+                var isFirstUser = shouldBootstrapAdmin && !await _userManager.Users.AnyAsync();
+
                 var user = CreateUser();
 
                 await _userStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
@@ -121,6 +132,34 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
                 if (result.Succeeded)
                 {
                     _logger.LogInformation("User created a new account with password.");
+
+                    if (isFirstUser)
+                    {
+                        const string adminRole = "Admin";
+
+                        if (!await _roleManager.RoleExistsAsync(adminRole))
+                        {
+                            var roleRes = await _roleManager.CreateAsync(new IdentityRole(adminRole));
+                            if (!roleRes.Succeeded)
+                            {
+                                _logger.LogError("Failed to create role '{Role}' during first-user bootstrap: {Errors}", adminRole, string.Join(", ", roleRes.Errors.Select(e => e.Description)));
+                                await _userManager.DeleteAsync(user);
+                                ModelState.AddModelError(string.Empty, "Failed to initialize admin role. Please try again.");
+                                return Page();
+                            }
+                        }
+
+                        var addRoleRes = await _userManager.AddToRoleAsync(user, adminRole);
+                        if (!addRoleRes.Succeeded)
+                        {
+                            _logger.LogError("Failed to add first user '{Email}' to role '{Role}': {Errors}", Input.Email, adminRole, string.Join(", ", addRoleRes.Errors.Select(e => e.Description)));
+                            await _userManager.DeleteAsync(user);
+                            ModelState.AddModelError(string.Empty, "Failed to initialize admin user. Please try again.");
+                            return Page();
+                        }
+
+                        _logger.LogInformation("Promoted first registered user '{Email}' to Admin.", Input.Email);
+                    }
 
                     var userId = await _userManager.GetUserIdAsync(user);
                     var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);

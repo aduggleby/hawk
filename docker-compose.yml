@@ -8,7 +8,7 @@ services:
       MSSQL_PID: "Developer"
       SA_PASSWORD: "${SA_PASSWORD:-YourStrong!Passw0rd}"
     ports:
-      - "1433:1433"
+      - "17833:1433"
     volumes:
       - hawk_db:/var/opt/mssql
     healthcheck:
@@ -31,7 +31,7 @@ services:
       Hawk__Resend__ApiKey: "${RESEND_APIKEY:-dev}"
       Hawk__Email__From: "${EMAIL_FROM:-Hawk <hawk@localhost>}"
     ports:
-      - "8080:8080"
+      - "17800:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -44,7 +44,7 @@ services:
       context: .
       dockerfile: Hawk.MockServer/Dockerfile
     ports:
-      - "8081:8081"
+      - "17801:8081"
 
 volumes:
   hawk_db:
