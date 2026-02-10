@@ -26,9 +26,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 			<aside class="callout reveal reveal--2" aria-label="Quick commands">
 				<h2 class="callout__title">Get running (Docker)</h2>
 				<pre class="code"><span class="prompt">$</span> docker compose up -d --build
-<span class="prompt">$</span> open http://localhost:8080</pre>
+<span class="prompt">$</span> open http://localhost:17800</pre>
 				<p class="meta">
-					Includes a seeded admin user in dev/test. Use env overrides for container/CI deployments.
+					Seeded admin user in dev/test. In production, the first registered user is auto-promoted to Admin.
 				</p>
 			</aside>
 		</div>
@@ -52,8 +52,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 				<div class="step reveal reveal--3">
 					<div class="step__title">2. Sign in</div>
 					<p class="step__body">
-						Open the app at <code style="font-family: var(--font-mono);">http://localhost:8080</code> and sign in with
-						the seeded admin user (or set <code style="font-family: var(--font-mono);">Hawk__SeedAdmin__*</code>).
+						Open the app at <code style="font-family: var(--font-mono);">http://localhost:17800</code> and sign in with
+						the seeded admin user (dev/test), or register — the first user is auto-promoted to Admin.
 					</p>
 				</div>
 
