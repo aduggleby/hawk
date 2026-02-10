@@ -20,6 +20,7 @@ var publish = DefineProfile("publish");
 var web = Dotnet.Project("./Hawk.Web/Hawk.Web.csproj");
 var tests = Dotnet.Project("./Hawk.Tests/Hawk.Tests.csproj");
 
+var version = web.Version;
 var configuration = global::Ando.Workflow.Configuration.Release;
 var artifacts = Root / "artifacts";
 var publishDir = artifacts / "publish" / "Hawk.Web";
@@ -39,6 +40,32 @@ if (publish)
         .SkipRestore()
         .SkipBuild()
         .Output(publishDir));
+
+    // Optional container publish:
+    // - If GHCR_IMAGE is set to "ghcr.io/<owner>/<name>", build multi-arch and push.
+    // - Otherwise, build a local image only.
+    var ghcrImage = Env("GHCR_IMAGE", required: false);
+    // Note: Docker ops require `ando --dind`. ANDO will prompt if needed.
+    Docker.Install();
+
+    if (!string.IsNullOrWhiteSpace(ghcrImage))
+    {
+        Log.Info($"Building and pushing multi-arch image: {ghcrImage}:{version}");
+        Docker.Build("./Hawk.Web/Dockerfile", o => o
+            .WithPlatforms("linux/amd64", "linux/arm64")
+            .WithTag($"{ghcrImage}:{version}")
+            .WithTag($"{ghcrImage}:latest")
+            .WithContext(".")
+            .WithPush());
+    }
+    else
+    {
+        Log.Info("Building local Docker image (set GHCR_IMAGE to push to GHCR)...");
+        Docker.Build("./Hawk.Web/Dockerfile", o => o
+            .WithTag($"hawk-web:{version}")
+            .WithTag("hawk-web:latest")
+            .WithContext("."));
+    }
 
     // Builds run in containers; copy outputs back to the host for local inspection/CI artifacts.
     Ando.CopyZippedArtifactsToHost("artifacts", "./artifacts");
