@@ -183,7 +183,7 @@ spec:
         - name: web
           # Build/publish your own image and push it to a registry your TrueNAS cluster can pull from.
           # Example: ghcr.io/your-org/hawk:latest
-          image: hawk:latest
+          image: ghcr.io/your-org/hawk:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -395,13 +395,6 @@ Override the destination with `GHCR_IMAGE=ghcr.io/<owner>/<name>`.
 Ensure auth is available (recommended: `GITHUB_TOKEN` in CI, or `gh auth login` locally).
 
 ```bash
-ando run --dind -p publish
-```
-
-To build locally without pushing to GHCR:
-
-```bash
-export HAWK_SKIP_GHCR=true
 ando run --dind -p publish
 ```
 

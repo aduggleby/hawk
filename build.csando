@@ -42,43 +42,30 @@ if (publish)
         .Output(publishDir));
 
     // Container publish (like ~/Source/ando/build.csando):
-    // - Builds multi-arch and pushes to GHCR by default.
+    // - Builds multi-arch and pushes to GHCR (no local-only image builds).
     // - Override image name with GHCR_IMAGE (ghcr.io/<owner>/<name>).
-    // - Set HAWK_SKIP_GHCR=true to build local tags only (no push).
     //
     // Notes:
     // - Docker ops require `ando --dind`.
     // - Auth: Ando auto-logins to ghcr.io when pushing using `GITHUB_TOKEN` (or `gh auth token`).
     Docker.Install();
 
-    var skipGhcr = (Env("HAWK_SKIP_GHCR", required: false) ?? "").Trim().ToLowerInvariant() is "1" or "true" or "yes";
-    if (skipGhcr)
-    {
-        Log.Info("Building local Docker image (HAWK_SKIP_GHCR=true)...");
-        Docker.Build("./Hawk.Web/Dockerfile", o => o
-            .WithTag($"hawk:{version}")
-            .WithTag("hawk:latest")
-            .WithContext("."));
-    }
-    else
-    {
-        var ghcrOwner =
-            Env("GITHUB_REPOSITORY_OWNER", required: false) ??
-            Env("GHCR_OWNER", required: false) ??
-            "aduggleby";
+    var ghcrOwner =
+        Env("GITHUB_REPOSITORY_OWNER", required: false) ??
+        Env("GHCR_OWNER", required: false) ??
+        "aduggleby";
 
-        var ghcrImage =
-            Env("GHCR_IMAGE", required: false) ??
-            $"ghcr.io/{ghcrOwner}/hawk";
+    var ghcrImage =
+        Env("GHCR_IMAGE", required: false) ??
+        $"ghcr.io/{ghcrOwner}/hawk";
 
-        Log.Info($"Building and pushing multi-arch image: {ghcrImage}:{version}");
-        Docker.Build("./Hawk.Web/Dockerfile", o => o
-            .WithPlatforms("linux/amd64", "linux/arm64")
-            .WithTag($"{ghcrImage}:{version}")
-            .WithTag($"{ghcrImage}:latest")
-            .WithContext(".")
-            .WithPush());
-    }
+    Log.Info($"Building and pushing multi-arch image: {ghcrImage}:{version}");
+    Docker.Build("./Hawk.Web/Dockerfile", o => o
+        .WithPlatforms("linux/amd64", "linux/arm64")
+        .WithTag($"{ghcrImage}:{version}")
+        .WithTag($"{ghcrImage}:latest")
+        .WithContext(".")
+        .WithPush());
 
     // Builds run in containers; copy outputs back to the host for local inspection/CI artifacts.
     Ando.CopyZippedArtifactsToHost("artifacts", "./artifacts");
