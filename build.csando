@@ -41,15 +41,36 @@ if (publish)
         .SkipBuild()
         .Output(publishDir));
 
-    // Optional container publish:
-    // - If GHCR_IMAGE is set to "ghcr.io/<owner>/<name>", build multi-arch and push.
-    // - Otherwise, build a local image only.
-    var ghcrImage = Env("GHCR_IMAGE", required: false);
-    // Note: Docker ops require `ando --dind`. ANDO will prompt if needed.
+    // Container publish (like ~/Source/ando/build.csando):
+    // - Builds multi-arch and pushes to GHCR by default.
+    // - Override image name with GHCR_IMAGE (ghcr.io/<owner>/<name>).
+    // - Set HAWK_SKIP_GHCR=true to build local tags only (no push).
+    //
+    // Notes:
+    // - Docker ops require `ando --dind`.
+    // - Auth: Ando auto-logins to ghcr.io when pushing using `GITHUB_TOKEN` (or `gh auth token`).
     Docker.Install();
 
-    if (!string.IsNullOrWhiteSpace(ghcrImage))
+    var skipGhcr = (Env("HAWK_SKIP_GHCR", required: false) ?? "").Trim().ToLowerInvariant() is "1" or "true" or "yes";
+    if (skipGhcr)
     {
+        Log.Info("Building local Docker image (HAWK_SKIP_GHCR=true)...");
+        Docker.Build("./Hawk.Web/Dockerfile", o => o
+            .WithTag($"hawk-web:{version}")
+            .WithTag("hawk-web:latest")
+            .WithContext("."));
+    }
+    else
+    {
+        var ghcrOwner =
+            Env("GITHUB_REPOSITORY_OWNER", required: false) ??
+            Env("GHCR_OWNER", required: false) ??
+            "aduggleby";
+
+        var ghcrImage =
+            Env("GHCR_IMAGE", required: false) ??
+            $"ghcr.io/{ghcrOwner}/hawk-web";
+
         Log.Info($"Building and pushing multi-arch image: {ghcrImage}:{version}");
         Docker.Build("./Hawk.Web/Dockerfile", o => o
             .WithPlatforms("linux/amd64", "linux/arm64")
@@ -57,14 +78,6 @@ if (publish)
             .WithTag($"{ghcrImage}:latest")
             .WithContext(".")
             .WithPush());
-    }
-    else
-    {
-        Log.Info("Building local Docker image (set GHCR_IMAGE to push to GHCR)...");
-        Docker.Build("./Hawk.Web/Dockerfile", o => o
-            .WithTag($"hawk-web:{version}")
-            .WithTag("hawk-web:latest")
-            .WithContext("."));
     }
 
     // Builds run in containers; copy outputs back to the host for local inspection/CI artifacts.
