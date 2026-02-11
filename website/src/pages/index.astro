@@ -99,7 +99,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 					<h3 class="card__title">Alert after consecutive failures</h3>
 					<p class="card__body">
 						Configurable <code style="font-family: var(--font-mono);">AlertAfterConsecutiveFailures</code> so you alert on real incidents,
-						not every blip. Easily mocked for E2E runs.
+						not every blip. Per-monitor email overrides and account-wide alert routing.
 					</p>
 				</article>
 
@@ -140,6 +140,22 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 					<h3 class="card__title">Migrate from StatusCake</h3>
 					<p class="card__body">
 						Import uptime tests and alert history from StatusCake JSON exports. Maps HTTP tests and run history into Hawk monitors.
+					</p>
+				</article>
+
+				<article class="card">
+					<div class="card__kicker"><span class="pill">Settings</span><span>Per-user</span></div>
+					<h3 class="card__title">Per-user alert and crawler settings</h3>
+					<p class="card__body">
+						Override alert email per account or per monitor. Set a default User-Agent (preset or custom) for your monitors.
+					</p>
+				</article>
+
+				<article class="card card--dark">
+					<div class="card__kicker"><span class="pill">Debug</span><span>Live test</span></div>
+					<h3 class="card__title">Test monitors on demand</h3>
+					<p class="card__body">
+						Run any monitor immediately and inspect full diagnostics: request, response headers, match results, and body snippet.
 					</p>
 				</article>
 			</div>

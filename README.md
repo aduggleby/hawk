@@ -142,6 +142,9 @@ services:
       - Hawk__Resend__BaseUrl=https://api.resend.com
       # For official Resend, BaseUrl can be omitted or set to: https://api.resend.com
 
+      # URL check defaults (optional)
+      - Hawk__UrlChecks__UserAgent=firefox
+
     image: ghcr.io/aduggleby/hawk:latest
     ports:
       - '17800:8080'
@@ -191,6 +194,31 @@ Each monitor has an `AlertAfterConsecutiveFailures` setting (1–20, default 1).
 
 - `1`: alert on first failure after a success (default).
 - `N > 1`: alert only after `N` consecutive failures, reducing noise from transient blips.
+
+### Alert Recipient Resolution
+
+When a monitor fails, the alert email recipient is resolved in this order:
+
+1. **Per-monitor override** — the `AlertEmailOverride` field on the monitor.
+2. **Account-wide override** — set in **Settings** → **Alerting** by the monitor owner.
+3. **Owner's login email** — the Identity email of the user who created the monitor.
+4. **Admin fallback** — all users with the `Admin` role.
+
+## User Settings
+
+Each user can configure account-wide overrides at **Settings** (accessible from the user menu):
+
+- **Alert email override** — redirect all alert emails for your monitors to a different address.
+- **Crawler User-Agent** — set a default `User-Agent` header for all monitors you own (unless the monitor explicitly sets one via headers). You can use a preset (`firefox`, `chrome`, `edge`, `safari`, `curl`) or paste a full UA string.
+
+## Test A Monitor
+
+From a monitor's detail page, click **Test** to run it immediately and see full diagnostics:
+
+- Request details (method, URL, timeout, headers, body).
+- Response headers, status code, and timing.
+- Match rule results (pass/fail per rule).
+- Response body snippet (up to 256KB).
 
 ## Import From StatusCake
 
@@ -277,6 +305,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.7` in the `.csproj` files.
+- Project version is set to `0.9.8` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.

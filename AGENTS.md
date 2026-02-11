@@ -2,7 +2,7 @@
 
 This repository is building an ASP.NET Razor Pages uptime checker and URL verifier with Hangfire-based scheduling, SQL Server storage, and Docker-first deployment.
 
-## Current State (As Of 2026-02-10)
+## Current State (As Of 2026-02-11)
 
 - Solution: `Hawk.sln`
 - Web app: `Hawk.Web` (Razor Pages + ASP.NET Core Identity)
@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.7`
+- Version: `0.9.8`
 
 ## Ports
 
@@ -146,8 +146,33 @@ Implementation:
 
 Alert policy:
 - Monitors have `AlertAfterConsecutiveFailures` (1..20) controlling when a failure incident should trigger email.
-- Policy logic lives in `Hawk.Web/Services/Monitoring/AlertPolicy.cs` and is enforced by `MonitorRunner` when saving runs.
+- Policy logic lives in `Hawk.Web/Services/Monitoring/AlertPolicy.cs` and is enforced by `MonitorExecutor` when saving runs.
 - Default behavior (`1`) is "alert on first failure after a success", not "alert on every failed run".
+
+Alert recipient resolution (in order):
+1. Per-monitor `AlertEmailOverride` field.
+2. Account-wide override from `UserAlertSettings` (set in Settings → Alerting).
+3. Monitor owner's Identity email.
+4. All Admin users (fallback).
+
+## User Settings
+
+- `Hawk.Web/Pages/Account/Settings.cshtml(.cs)` provides account-wide overrides:
+  - **Alert email override** — redirects alert emails for the user's monitors to a different address. Stored in `UserAlertSettings`.
+  - **Crawler User-Agent override** — sets a default `User-Agent` for all monitors the user owns (unless the monitor explicitly sets one via headers). Stored in `UserUrlCheckSettings`.
+- User-Agent can be a preset key (`firefox`, `chrome`, `edge`, `safari`, `curl`) or a full UA string. Resolution is in `Hawk.Web/Services/UrlChecks/UserAgentResolver.cs`.
+- Presets can be overridden via config: `Hawk:UrlChecks:UserAgentPresets:<key>`.
+
+## Monitor Execution (MonitorExecutor)
+
+- `Hawk.Web/Services/Monitoring/MonitorExecutor.cs` is the shared execution engine used by both the Hangfire scheduler (`MonitorRunner`) and the interactive test page.
+- Produces a `MonitorExecutionResult` record containing the monitor, request, result, and persisted run.
+- Handles: loading the monitor + headers + match rules, resolving User-Agent overrides, running the URL check, persisting the run, evaluating alert policy, and sending alerts.
+
+## Monitor Test Page
+
+- `Hawk.Web/Pages/Monitors/Test.cshtml(.cs)` — runs a monitor immediately via `IMonitorExecutor` and displays full diagnostics (request details, response headers, match rule results, body snippet).
+- Accessible from the monitor detail page.
 
 ## Logging
 
@@ -234,6 +259,9 @@ Service endpoints on the VM:
   - `Hawk__Email__From` (or `Hawk__Resend__From`)
   - `Hawk__Resend__BaseUrl` (Resend-compatible API base URL)
   - `Hawk__Resend__ApiKey`
+- URL checks:
+  - `Hawk__UrlChecks__UserAgent` (default `firefox`; preset key or full UA string)
+  - `Hawk__UrlChecks__UserAgentPresets__<key>` (override built-in preset values)
 
 ## Git Workflow
 
