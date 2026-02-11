@@ -1,0 +1,63 @@
+@page
+@model Hawk.Web.Areas.Identity.Pages.Account.Manage.SettingsModel
+@{
+    ViewData["Title"] = "Alerts & Crawler";
+}
+
+<div class="mb-4">
+    <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Settings</div>
+    <h2 class="text-2xl font-semibold tracking-tight">Alerts & crawler</h2>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div class="rounded-xl border border-[color:var(--border-primary)] p-4 bg-[color:var(--bg-secondary)]">
+        <div class="font-semibold mb-2">Alert recipient</div>
+        <div class="text-sm text-zinc-600 mb-4">
+            Fallback: monitor override → account override → login email.
+        </div>
+
+        <form method="post" asp-page-handler="Alerting" class="space-y-3">
+            <div>
+                <label class="hawk-label" asp-for="AlertEmail"></label>
+                <input class="hawk-input mt-2 font-mono" asp-for="AlertEmail" placeholder="alerts@yourdomain" />
+                <div class="hawk-error-message" asp-validation-for="AlertEmail"></div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button class="hawk-btn hawk-btn-primary" type="submit">Save</button>
+                <a class="hawk-btn hawk-btn-ghost" asp-page="./Settings">Reset</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="rounded-xl border border-[color:var(--border-primary)] p-4 bg-[color:var(--bg-secondary)]">
+        <div class="font-semibold mb-2">Crawler User-Agent</div>
+        <div class="text-sm text-zinc-600 mb-4">
+            Used for monitors you own unless that monitor sets its own User-Agent header.
+        </div>
+
+        <form method="post" asp-page-handler="Crawler" class="space-y-3">
+            <div>
+                <label class="hawk-label" asp-for="UserAgent"></label>
+                <input class="hawk-input mt-2 font-mono" asp-for="UserAgent" placeholder="firefox (or full UA string)" />
+                <div class="hawk-error-message" asp-validation-for="UserAgent"></div>
+                <div class="text-xs text-zinc-500 mt-2">
+                    Presets:
+                    @for (var i = 0; i < Model.PresetKeys.Count; i++)
+                    {
+                        <span class="font-mono">@Model.PresetKeys[i]</span>@(i < Model.PresetKeys.Count - 1 ? "," : "")
+                        <text> </text>
+                    }
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button class="hawk-btn hawk-btn-primary" type="submit">Save</button>
+                <a class="hawk-btn hawk-btn-ghost" asp-page="./Settings">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="/Areas/Identity/Pages/Shared/_ValidationScriptsPartial.cshtml" />
+}
+

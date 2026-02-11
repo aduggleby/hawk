@@ -48,7 +48,12 @@ public sealed class StatusCakeImporterTests
         // 240s is not an allowed interval in Production, so it should map up to 300s.
         var m124 = monitors.Single(m => m.Name.Contains("(sc:124)", StringComparison.Ordinal));
         Assert.Equal(300, m124.IntervalSeconds);
-        Assert.False(m124.Enabled);
+        Assert.True(m124.Enabled);
+        Assert.True(m124.IsPaused);
+
+        var m123 = monitors.Single(m => m.Name.Contains("(sc:123)", StringComparison.Ordinal));
+        Assert.True(m123.Enabled);
+        Assert.True(m123.IsPaused);
     }
 
     /// <summary>

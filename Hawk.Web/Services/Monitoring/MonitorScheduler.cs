@@ -53,7 +53,7 @@ public sealed class MonitorScheduler(
 
             // Enqueue due monitors in small batches to avoid long-running ticks.
             var due = await db.Monitors
-                .Where(m => m.Enabled && (m.NextRunAt == null || m.NextRunAt <= now))
+                .Where(m => m.Enabled && !m.IsPaused && (m.NextRunAt == null || m.NextRunAt <= now))
                 .OrderBy(m => m.NextRunAt)
                 .Take(50)
                 .ToListAsync(cancellationToken);

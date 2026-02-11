@@ -36,8 +36,21 @@
         <div class="hawk-card">
             <div class="font-semibold mb-3">Config</div>
             <dl class="grid grid-cols-12 gap-y-2 text-sm">
-                <dt class="col-span-4 text-zinc-600">Enabled</dt>
-                <dd class="col-span-8 font-medium">@((Model.Monitor.Enabled) ? "Yes" : "No")</dd>
+                <dt class="col-span-4 text-zinc-600">Status</dt>
+                <dd class="col-span-8 font-medium">
+                    @if (!Model.Monitor.Enabled)
+                    {
+                        <span class="hawk-badge hawk-badge-danger">Disabled</span>
+                    }
+                    else if (Model.Monitor.IsPaused)
+                    {
+                        <span class="hawk-badge hawk-badge-warning">Paused</span>
+                    }
+                    else
+                    {
+                        <span class="hawk-badge hawk-badge-success">Enabled</span>
+                    }
+                </dd>
                 <dt class="col-span-4 text-zinc-600">Interval</dt>
                 <dd class="col-span-8 font-medium">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
                 <dt class="col-span-4 text-zinc-600">Timeout</dt>

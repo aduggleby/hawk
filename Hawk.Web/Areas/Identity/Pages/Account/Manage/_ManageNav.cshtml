@@ -1,0 +1,14 @@
+@{
+    var path = (ViewContext.RouteData.Values["page"]?.ToString()) ?? string.Empty;
+    bool IsActive(string suffix) => path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
+}
+
+<div class="text-xs font-mono uppercase tracking-tight text-zinc-500 mb-3">Account</div>
+<nav class="space-y-2">
+    <a class="hawk-btn @(IsActive("/Index") ? "hawk-btn-primary" : "hawk-btn-ghost") w-full justify-start"
+       asp-page="./Index">Profile</a>
+    <a class="hawk-btn @(IsActive("/ChangePassword") ? "hawk-btn-primary" : "hawk-btn-ghost") w-full justify-start"
+       asp-page="./ChangePassword">Security</a>
+    <a class="hawk-btn @(IsActive("/Settings") ? "hawk-btn-primary" : "hawk-btn-ghost") w-full justify-start"
+       asp-page="./Settings">Alerts & Crawler</a>
+</nav>

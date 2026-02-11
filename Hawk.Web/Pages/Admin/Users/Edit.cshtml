@@ -1,0 +1,70 @@
+@page "{id}"
+@* <summary>Admin edit user page.</summary> *@
+@model Hawk.Web.Pages.Admin.Users.EditModel
+@{
+    ViewData["Title"] = "Edit user";
+}
+
+<div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-2xl font-semibold tracking-tight">Edit user</h1>
+        <p class="text-sm text-zinc-600 font-mono">@Model.Input.Email</p>
+    </div>
+    <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Users/Index">Back</a>
+</div>
+
+<form method="post" class="space-y-4 max-w-xl">
+    <input asp-for="Id" type="hidden" />
+
+    <div class="hawk-card space-y-4">
+        <div>
+            <label class="hawk-label" asp-for="Input.Name"></label>
+            <input class="hawk-input mt-2" asp-for="Input.Name" />
+            <div class="hawk-error-message" asp-validation-for="Input.Name"></div>
+        </div>
+
+        <div>
+            <label class="hawk-label" asp-for="Input.Email"></label>
+            <input class="hawk-input mt-2" asp-for="Input.Email" />
+            <div class="hawk-error-message" asp-validation-for="Input.Email"></div>
+        </div>
+    </div>
+
+    <div class="hawk-card space-y-3">
+        <div class="font-semibold">Roles</div>
+        @if (Model.AvailableRoles.Count == 0)
+        {
+            <div class="text-sm text-zinc-600">No roles available.</div>
+        }
+        else
+        {
+            @foreach (var role in Model.AvailableRoles)
+            {
+                var isChecked = Model.SelectedRoles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase));
+                <label class="flex items-center gap-2 text-sm">
+                    @if (isChecked)
+                    {
+                        <input class="h-4 w-4" type="checkbox" name="SelectedRoles" value="@role" checked />
+                    }
+                    else
+                    {
+                        <input class="h-4 w-4" type="checkbox" name="SelectedRoles" value="@role" />
+                    }
+                    <span>@role</span>
+                </label>
+            }
+        }
+        <div class="hawk-error-message" asp-validation-for="SelectedRoles"></div>
+    </div>
+
+    <div class="hawk-error-message" asp-validation-summary="All"></div>
+
+    <div class="flex items-center gap-2">
+        <button class="hawk-btn hawk-btn-primary" type="submit">Save</button>
+        <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Users/Index">Cancel</a>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

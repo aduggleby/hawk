@@ -10,10 +10,6 @@
         <h1 class="text-2xl font-semibold tracking-tight">Users</h1>
         <p class="text-sm text-zinc-600">Admin-only user management.</p>
     </div>
-    <div class="flex items-center gap-2">
-        <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
-        <a class="hawk-btn hawk-btn-primary" asp-page="/Admin/Users/Create">New user</a>
-    </div>
 </div>
 
 <div class="hawk-card p-0 overflow-hidden">
@@ -21,6 +17,7 @@
         <table class="min-w-full text-sm">
             <thead class="bg-zinc-50 text-zinc-600">
             <tr>
+                <th class="text-left font-semibold px-4 py-3">Name</th>
                 <th class="text-left font-semibold px-4 py-3">Email</th>
                 <th class="text-left font-semibold px-4 py-3">Roles</th>
                 <th class="text-right font-semibold px-4 py-3"></th>
@@ -30,10 +27,12 @@
             @foreach (var u in Model.Users)
             {
                 <tr class="hover:bg-zinc-50/70">
+                    <td class="px-4 py-3 font-mono text-xs">@u.Name</td>
                     <td class="px-4 py-3 font-mono text-xs">@u.Email</td>
                     <td class="px-4 py-3 text-xs text-zinc-700">@string.Join(", ", u.Roles)</td>
                     <td class="px-4 py-3 text-right">
-                        <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Users/ResetPassword" asp-route-id="@u.Id">Reset password</a>
+                        <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Users/Edit" asp-route-id="@u.Id">Edit</a>
+                        <a class="hawk-btn hawk-btn-ghost ml-2" asp-page="/Admin/Users/ResetPassword" asp-route-id="@u.Id">Reset password</a>
                         <a class="hawk-btn hawk-btn-ghost ml-2" asp-page="/Admin/Users/Delete" asp-route-id="@u.Id">Delete</a>
                     </td>
                 </tr>

@@ -116,13 +116,18 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
                 Name = finalName,
                 Url = url.Trim(),
                 Method = method,
-                Enabled = !paused,
+                // Imported monitors always start paused until reviewed in Hawk.
+                Enabled = true,
+                IsPaused = true,
                 TimeoutSeconds = Math.Clamp(timeout ?? 30, 1, 300),
                 IntervalSeconds = interval,
                 ContentType = null,
                 Body = body,
                 CreatedByUserId = createdByUserId,
             };
+
+            if (!paused)
+                warnings.Add($"Imported '{finalName}' as paused by default.");
 
             // Optional content check: find_string + do_not_find is supported only for the "find" case.
             var findString = TryGetStringCaseInsensitive(t, "find_string") ?? TryGetStringCaseInsensitive(t, "FindString");
@@ -135,6 +140,7 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
             {
                 // Branch: inverted match is not represented in Hawk v1.
                 monitor.Enabled = false;
+                monitor.IsPaused = false;
                 warnings.Add($"Imported '{finalName}' as disabled because StatusCake test uses DoNotFind (manual adjustment required).");
             }
 

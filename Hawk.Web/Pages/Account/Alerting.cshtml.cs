@@ -24,12 +24,11 @@ public sealed class AlertingModel : PageModel
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
-        // Back-compat: redirect to the consolidated settings page.
-        return RedirectToPage("/Account/Settings");
+        return Redirect("/Identity/Account/Manage/Settings");
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
-        return RedirectToPage("/Account/Settings");
+        return Redirect("/Identity/Account/Manage/Settings");
     }
 }

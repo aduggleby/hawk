@@ -43,6 +43,11 @@ public sealed class Monitor
     public bool Enabled { get; set; } = true;
 
     /// <summary>
+    /// True if this monitor is temporarily paused while still enabled.
+    /// </summary>
+    public bool IsPaused { get; set; }
+
+    /// <summary>
     /// Request timeout in seconds.
     /// </summary>
     public int TimeoutSeconds { get; set; } = 15;

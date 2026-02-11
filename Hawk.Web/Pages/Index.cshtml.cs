@@ -15,10 +15,12 @@ namespace Hawk.Web.Pages;
 public class IndexModel : PageModel
 {
     /// <summary>
-    /// Renders the home page.
+    /// Redirects authenticated users to monitors; shows public home for anonymous users.
     /// </summary>
-    public void OnGet()
+    public IActionResult OnGet()
     {
-
+        if (User.Identity?.IsAuthenticated == true)
+            return RedirectToPage("/Monitors/Index");
+        return Page();
     }
 }

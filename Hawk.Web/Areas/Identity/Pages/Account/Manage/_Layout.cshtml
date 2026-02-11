@@ -1,0 +1,24 @@
+@{
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Account Management</h1>
+    <p class="text-sm text-zinc-600 mt-1">Profile, security, and crawler/alert settings for your account.</p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <aside class="lg:col-span-3">
+        <div class="hawk-card">
+            <partial name="_ManageNav" />
+        </div>
+    </aside>
+    <section class="lg:col-span-9">
+        <div class="hawk-card">
+            @RenderBody()
+        </div>
+    </section>
+</div>
+
+@await RenderSectionAsync("Scripts", required: false)
+

@@ -10,7 +10,17 @@
         <h1 class="text-2xl font-semibold tracking-tight">Monitors</h1>
         <p class="text-sm text-zinc-600">Uptime and content verification checks.</p>
     </div>
-    <div>
+    <div class="flex items-center gap-2">
+        @if (User.IsInRole("Admin"))
+        {
+            <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
+        }
+        <form method="post" asp-page-handler="PauseAll">
+            <button class="hawk-btn hawk-btn-ghost" type="submit">Pause all</button>
+        </form>
+        <form method="post" asp-page-handler="ResumeAll">
+            <button class="hawk-btn hawk-btn-ghost" type="submit">Resume all</button>
+        </form>
         <a class="hawk-btn hawk-btn-primary" asp-page="/Monitors/Create">New monitor</a>
     </div>
 </div>
@@ -23,40 +33,55 @@
 }
 else
 {
-    <div class="hawk-card p-0 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-sm">
-                <thead class="bg-zinc-50 text-zinc-600">
-                <tr>
-                    <th class="text-left font-semibold px-4 py-3">Name</th>
-                    <th class="text-left font-semibold px-4 py-3">Method</th>
-                    <th class="text-left font-semibold px-4 py-3">URL</th>
-                    <th class="text-left font-semibold px-4 py-3">Enabled</th>
-                    <th class="text-left font-semibold px-4 py-3">Last run</th>
-                    <th class="text-left font-semibold px-4 py-3">Next run</th>
-                    <th class="text-right font-semibold px-4 py-3"></th>
-                </tr>
-                </thead>
-                <tbody class="divide-y divide-zinc-100">
-                @foreach (var m in Model.Monitors)
-                {
-                    <tr class="hover:bg-zinc-50/70">
-                        <td class="px-4 py-3 font-medium">@m.Name</td>
-                        <td class="px-4 py-3 font-mono text-xs"><span class="rounded-lg border border-zinc-200 bg-white px-2 py-1">@m.Method</span></td>
-                        <td class="px-4 py-3">
-                            <div class="font-mono text-xs truncate max-w-[520px]">@m.Url</div>
-                        </td>
-                        <td class="px-4 py-3 text-zinc-700">@(m.Enabled ? "Yes" : "No")</td>
-                        <td class="px-4 py-3 text-zinc-700">@(m.LastRunAt?.ToLocalTime().ToString("g") ?? "-")</td>
-                        <td class="px-4 py-3 text-zinc-700">@(m.NextRunAt?.ToLocalTime().ToString("g") ?? "-")</td>
-                        <td class="px-4 py-3 text-right">
-                            <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@m.Id">View</a>
-                            <a class="hawk-btn hawk-btn-ghost ml-2" asp-page="/Monitors/Edit" asp-route-id="@m.Id">Edit</a>
-                        </td>
+    <form method="post" asp-page-handler="Batch">
+        <div class="hawk-card p-0 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-zinc-50 text-zinc-600">
+                    <tr>
+                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Select</th>
+                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Name</th>
+                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Status</th>
+                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Last run</th>
+                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Next run</th>
                     </tr>
-                }
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-100">
+                    @foreach (var m in Model.Monitors)
+                    {
+                        <tr class="hover:bg-zinc-50/70">
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" />
+                            </td>
+                            <td class="px-4 py-3 font-medium whitespace-nowrap">
+                                <a asp-page="/Monitors/Details" asp-route-id="@m.Id" class="no-underline">@m.Name</a>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                @if (!m.Enabled)
+                                {
+                                    <span class="hawk-badge hawk-badge-danger">Disabled</span>
+                                }
+                                else if (m.IsPaused)
+                                {
+                                    <span class="hawk-badge hawk-badge-warning">Paused</span>
+                                }
+                                else
+                                {
+                                    <span class="hawk-badge hawk-badge-success">Enabled</span>
+                                }
+                            </td>
+                            <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">@(m.LastRunAt?.ToLocalTime().ToString("g") ?? "-")</td>
+                            <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">@(m.NextRunAt?.ToLocalTime().ToString("g") ?? "-")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </div>
+
+        <div class="flex items-center gap-2 mt-3">
+            <button class="hawk-btn hawk-btn-ghost" type="submit" name="BatchAction" value="pause">Pause selected</button>
+            <button class="hawk-btn hawk-btn-ghost" type="submit" name="BatchAction" value="resume">Resume selected</button>
+        </div>
+    </form>
 }

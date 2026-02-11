@@ -28,20 +28,7 @@
         <div class="mx-auto max-w-6xl px-4 py-3">
             <div class="flex items-center justify-between gap-4">
                 <div class="flex items-center gap-3">
-                    <a class="no-underline" asp-area="" asp-page="/Index">
-                        <span class="inline-flex items-center gap-2 font-mono text-sm font-semibold tracking-tight">
-                            <span class="inline-block h-3 w-3 rounded-sm bg-[color:var(--text-primary)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--text-primary)_8%,transparent)]"></span>
-                            HAWK
-                        </span>
-                    </a>
-                    <nav class="hidden sm:flex items-center gap-3 text-sm">
-                        <a class="hawk-btn hawk-btn-ghost hawk-btn-sm" asp-area="" asp-page="/Monitors/Index">Monitors</a>
-                        @if (User.Identity?.IsAuthenticated == true && User.IsInRole("Admin"))
-                        {
-                            <a class="hawk-btn hawk-btn-ghost hawk-btn-sm" asp-area="" asp-page="/Admin/Users/Index">Admin</a>
-                            <a class="hawk-btn hawk-btn-ghost hawk-btn-sm" href="/hangfire">Hangfire</a>
-                        }
-                    </nav>
+                    <a class="hawk-btn hawk-btn-ghost hawk-btn-sm no-underline" asp-area="" asp-page="/Index">Monitors</a>
                 </div>
                 <div class="flex items-center gap-3">
                     <button id="theme-toggle" type="button" class="hawk-btn hawk-btn-ghost" aria-label="Toggle theme" aria-pressed="false">
@@ -84,12 +71,7 @@
                 </button>
             </div>
             <div class="px-4 py-4 space-y-2">
-                <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="" asp-page="/Monitors/Index">Monitors</a>
-                @if (User.Identity?.IsAuthenticated == true && User.IsInRole("Admin"))
-                {
-                    <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="" asp-page="/Admin/Users/Index">Admin</a>
-                    <a class="hawk-btn hawk-btn-ghost w-full justify-start" href="/hangfire">Hangfire</a>
-                }
+                <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="" asp-page="/Index">Monitors</a>
             </div>
         </nav>
     </div>

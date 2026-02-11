@@ -1,0 +1,46 @@
+@page
+@model Hawk.Web.Areas.Identity.Pages.Account.Manage.IndexModel
+@{
+    ViewData["Title"] = "Profile";
+}
+
+<div class="flex items-start justify-between gap-3 mb-4">
+    <div>
+        <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Profile</div>
+        <h2 class="text-2xl font-semibold tracking-tight">Account profile</h2>
+    </div>
+    <a class="hawk-btn hawk-btn-ghost hawk-btn-sm" asp-page="/Monitors/Index" asp-area="">Back</a>
+</div>
+
+<dl class="grid grid-cols-12 gap-y-2 text-sm">
+    <dt class="col-span-4 text-zinc-600">Username</dt>
+    <dd class="col-span-8 font-mono break-words">@Model.Username</dd>
+
+    <dt class="col-span-4 text-zinc-600">Email</dt>
+    <dd class="col-span-8 font-mono break-words">@Model.Email</dd>
+
+    <dt class="col-span-4 text-zinc-600">Email confirmed</dt>
+    <dd class="col-span-8">
+        @if (Model.EmailConfirmed)
+        {
+            <span class="hawk-badge hawk-badge-success">Confirmed</span>
+        }
+        else
+        {
+            <span class="hawk-badge hawk-badge-danger">Unconfirmed</span>
+        }
+    </dd>
+
+    <dt class="col-span-4 text-zinc-600">Password</dt>
+    <dd class="col-span-8">
+        @if (Model.HasPassword)
+        {
+            <span class="hawk-badge">Configured</span>
+        }
+        else
+        {
+            <span class="hawk-badge hawk-badge-danger">Not set</span>
+        }
+    </dd>
+</dl>
+

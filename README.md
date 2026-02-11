@@ -229,7 +229,7 @@ Hawk can import:
 
 Import UI:
 
-- In Hawk, go to `Admin` -> `Import StatusCake`.
+- In Hawk, go to `Monitors` -> `Import StatusCake`.
 
 ### Export Tests From StatusCake (JSON)
 

@@ -5,6 +5,7 @@
 // </file>
 
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
@@ -21,15 +22,69 @@ public class IndexModel(ApplicationDbContext db) : PageModel
     /// </summary>
     public List<MonitorEntity> Monitors { get; private set; } = [];
 
+    [BindProperty]
+    public List<Guid> SelectedMonitorIds { get; set; } = [];
+
+    [BindProperty]
+    public string? BatchAction { get; set; }
+
     /// <summary>
     /// Loads the monitors list.
     /// </summary>
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         Monitors = await db.Monitors
-            .OrderByDescending(m => m.Enabled)
+            .OrderBy(m => !m.Enabled ? 2 : m.IsPaused ? 1 : 0)
             .ThenBy(m => m.Name)
             .AsNoTracking()
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IActionResult> OnPostPauseAllAsync(CancellationToken cancellationToken)
+    {
+        var updated = await db.Monitors
+            .Where(m => m.Enabled && !m.IsPaused)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, true), cancellationToken);
+
+        TempData["FlashInfo"] = $"Paused {updated} monitor(s).";
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostResumeAllAsync(CancellationToken cancellationToken)
+    {
+        var updated = await db.Monitors
+            .Where(m => m.Enabled && m.IsPaused)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, false), cancellationToken);
+
+        TempData["FlashInfo"] = $"Resumed {updated} monitor(s).";
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostBatchAsync(CancellationToken cancellationToken)
+    {
+        if (SelectedMonitorIds.Count == 0)
+        {
+            TempData["FlashError"] = "No monitors selected.";
+            return RedirectToPage();
+        }
+
+        var action = (BatchAction ?? string.Empty).Trim().ToLowerInvariant();
+        if (action is not ("pause" or "resume"))
+        {
+            TempData["FlashError"] = "Invalid batch action.";
+            return RedirectToPage();
+        }
+
+        var query = db.Monitors.Where(m => SelectedMonitorIds.Contains(m.Id));
+        var updated = action == "pause"
+            ? await query
+                .Where(m => m.Enabled && !m.IsPaused)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, true), cancellationToken)
+            : await query
+                .Where(m => m.Enabled && m.IsPaused)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, false), cancellationToken);
+
+        TempData["FlashInfo"] = $"{(action == "pause" ? "Paused" : "Resumed")} {updated} monitor(s).";
+        return RedirectToPage();
     }
 }

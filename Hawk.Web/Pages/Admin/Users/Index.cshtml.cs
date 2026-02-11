@@ -33,7 +33,11 @@ public class IndexModel(UserManager<IdentityUser> userManager) : PageModel
         foreach (var u in users)
         {
             var roles = await userManager.GetRolesAsync(u);
-            rows.Add(new UserRow(u.Id, u.Email ?? u.UserName ?? u.Id, roles.ToArray()));
+            rows.Add(new UserRow(
+                u.Id,
+                u.UserName ?? u.Email ?? u.Id,
+                u.Email ?? u.UserName ?? u.Id,
+                roles.ToArray()));
         }
         Users = rows;
     }
@@ -41,6 +45,5 @@ public class IndexModel(UserManager<IdentityUser> userManager) : PageModel
     /// <summary>
     /// Row view model.
     /// </summary>
-    public sealed record UserRow(string Id, string Email, string[] Roles);
+    public sealed record UserRow(string Id, string Name, string Email, string[] Roles);
 }
-

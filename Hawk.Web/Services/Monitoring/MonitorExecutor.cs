@@ -53,9 +53,9 @@ public sealed class MonitorExecutor(
             return null;
         }
 
-        if (!monitor.Enabled && !string.Equals(reason, "manual", StringComparison.OrdinalIgnoreCase))
+        if ((!monitor.Enabled || monitor.IsPaused) && !string.Equals(reason, "manual", StringComparison.OrdinalIgnoreCase))
         {
-            // Branch: disabled monitors should not run on schedule.
+            // Branch: disabled/paused monitors should not run on schedule.
             return null;
         }
 
