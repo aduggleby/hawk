@@ -31,9 +31,9 @@
         <div class="mx-auto max-w-6xl px-4 py-3">
             <div class="flex items-center justify-between gap-4">
                 <div class="flex items-center gap-3">
-                    <a class="inline-flex items-center gap-2 no-underline font-mono text-sm font-semibold tracking-tight" asp-area="" asp-page="/Index">
-                        <img src="~/hawk-logo.png" alt="" class="h-4 w-4" />
-                        <span>HAWK</span>
+                    <a class="inline-flex items-center gap-2 no-underline font-mono text-base font-semibold tracking-tight hawk-topbar-item px-2.5" asp-area="" asp-page="/Index">
+                        <img src="~/hawk-logo.png" alt="" class="h-6 w-6 shrink-0 align-middle" />
+                        <span class="leading-none">HAWK</span>
                     </a>
                     <a class="hawk-btn hawk-btn-ghost hawk-topbar-item no-underline" asp-area="" asp-page="/Index">Monitors</a>
                 </div>
@@ -72,9 +72,9 @@
              aria-label="Mobile navigation">
             <div class="flex items-center justify-between px-4 py-4 border-b border-[color:var(--border-primary)]">
                 <a class="no-underline" asp-area="" asp-page="/Index">
-                    <span class="inline-flex items-center gap-2 font-mono text-sm font-semibold tracking-tight">
-                        <img src="~/hawk-logo.png" alt="" class="h-4 w-4" />
-                        HAWK
+                    <span class="inline-flex items-center gap-2 font-mono text-base font-semibold tracking-tight hawk-topbar-item px-2.5">
+                        <img src="~/hawk-logo.png" alt="" class="h-6 w-6 shrink-0 align-middle" />
+                        <span class="leading-none">HAWK</span>
                     </span>
                 </a>
                 <button id="mobile-menu-close" type="button" class="hawk-btn hawk-btn-ghost" aria-label="Close menu">
@@ -96,8 +96,8 @@
 
     <footer class="mx-auto max-w-6xl px-4 py-10 text-xs text-zinc-500">
         <div class="flex items-center justify-between gap-3">
-            <div class="font-mono">hawk</div>
-            <div>&copy; 2026</div>
+            <a class="font-mono no-underline" href="https://github.com/aduggleby/hawk" target="_blank" rel="noopener noreferrer">hawk</a>
+            <div>Made by Alex Duggleby</div>
         </div>
     </footer>
 

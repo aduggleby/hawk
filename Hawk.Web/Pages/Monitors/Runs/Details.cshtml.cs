@@ -9,6 +9,7 @@ using Hawk.Web.Data.Monitoring;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Web.Pages.Monitors.Runs;
@@ -27,6 +28,25 @@ public sealed class DetailsModel(ApplicationDbContext db) : PageModel
     /// Selected run.
     /// </summary>
     public MonitorRun? Run { get; private set; }
+
+    /// <summary>
+    /// Formats raw JSON into indented JSON for diagnostics display.
+    /// </summary>
+    public string FormatJson(string? json, string fallback = "{}")
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return fallback;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return json;
+        }
+    }
 
     /// <summary>
     /// Loads monitor and run diagnostics.

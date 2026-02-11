@@ -30,8 +30,8 @@
     <div class="lg:col-span-4 space-y-4">
         <div class="hawk-card">
             <div class="font-semibold mb-3">Run metadata</div>
-            <dl class="grid grid-cols-12 gap-y-2 text-sm">
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Result</dt>
+            <dl class="grid grid-cols-12 gap-y-4 text-sm">
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Result</dt>
                 <dd class="col-span-8">
                     @if (Model.Run.Success)
                     {
@@ -42,20 +42,20 @@
                         <span class="hawk-badge hawk-badge-danger">FAIL</span>
                     }
                 </dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Reason</dt>
-                <dd class="col-span-8 font-mono text-xs break-words">@(Model.Run.Reason ?? "-")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Started</dt>
-                <dd class="col-span-8 font-mono text-xs break-words">@Model.Run.StartedAt.ToLocalTime().ToString("O")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Finished</dt>
-                <dd class="col-span-8 font-mono text-xs break-words">@Model.Run.FinishedAt.ToLocalTime().ToString("O")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Duration</dt>
-                <dd class="col-span-8 font-mono text-xs break-words">@Model.Run.DurationMs ms</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">HTTP status</dt>
-                <dd class="col-span-8 font-mono text-xs break-words">@(Model.Run.StatusCode?.ToString() ?? "NO_RESPONSE")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert</dt>
-                <dd class="col-span-8 font-mono text-xs break-words">@(Model.Run.AlertSent ? "sent" : (Model.Run.AlertError ?? "not sent"))</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Error</dt>
-                <dd class="col-span-8 font-mono text-xs break-words">@(string.IsNullOrWhiteSpace(Model.Run.ErrorMessage) ? "-" : Model.Run.ErrorMessage)</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Reason</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.Reason ?? "-")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Started</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@Model.Run.StartedAt.ToLocalTime().ToString("O")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Finished</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@Model.Run.FinishedAt.ToLocalTime().ToString("O")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Duration</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@Model.Run.DurationMs ms</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">HTTP status</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.StatusCode?.ToString() ?? "NO_RESPONSE")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Alert</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.AlertSent ? "sent" : (Model.Run.AlertError ?? "not sent"))</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Error</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@(string.IsNullOrWhiteSpace(Model.Run.ErrorMessage) ? "-" : Model.Run.ErrorMessage)</dd>
             </dl>
         </div>
     </div>
@@ -86,7 +86,7 @@
                 <div class="break-words"><span class="text-[color:var(--text-secondary)]">Content-Length:</span> @(Model.Run.ResponseContentLength?.ToString() ?? "-")</div>
                 <div>
                     <div class="text-[color:var(--text-secondary)] mb-1">Headers</div>
-                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@((string.IsNullOrWhiteSpace(Model.Run.ResponseHeadersJson) ? "{}" : Model.Run.ResponseHeadersJson))</pre>
+                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@Model.FormatJson(Model.Run.ResponseHeadersJson, "{}")</pre>
                 </div>
                 <div>
                     <div class="text-[color:var(--text-secondary)] mb-1">Response snippet</div>

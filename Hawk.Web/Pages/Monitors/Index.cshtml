@@ -70,7 +70,15 @@ else
                                     <span class="hawk-badge hawk-badge-success">Enabled</span>
                                 }
                             </td>
-                            <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">@(m.LastRunAt?.ToLocalTime().ToString("g") ?? "-")</td>
+                            <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
+                                @(m.LastRunAt?.ToLocalTime().ToString("g") ?? "-")
+                                @if (m.LastRunAt is not null &&
+                                     Model.LastRunSuccessByMonitor.TryGetValue(m.Id, out var lastRunSuccess) &&
+                                     !lastRunSuccess)
+                                {
+                                    <span class="hawk-badge hawk-badge-danger ml-2">FAIL</span>
+                                }
+                            </td>
                             <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">@(m.NextRunAt?.ToLocalTime().ToString("g") ?? "-")</td>
                         </tr>
                     }

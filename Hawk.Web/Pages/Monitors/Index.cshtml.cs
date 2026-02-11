@@ -22,6 +22,11 @@ public class IndexModel(ApplicationDbContext db) : PageModel
     /// </summary>
     public List<MonitorEntity> Monitors { get; private set; } = [];
 
+    /// <summary>
+    /// Latest run success state by monitor id.
+    /// </summary>
+    public Dictionary<Guid, bool> LastRunSuccessByMonitor { get; private set; } = [];
+
     [BindProperty]
     public List<Guid> SelectedMonitorIds { get; set; } = [];
 
@@ -38,6 +43,16 @@ public class IndexModel(ApplicationDbContext db) : PageModel
             .ThenBy(m => m.Name)
             .AsNoTracking()
             .ToListAsync(cancellationToken);
+
+        LastRunSuccessByMonitor = await db.MonitorRuns
+            .AsNoTracking()
+            .GroupBy(r => r.MonitorId)
+            .Select(g => g
+                .OrderByDescending(r => r.StartedAt)
+                .ThenByDescending(r => r.Id)
+                .Select(r => new { r.MonitorId, r.Success })
+                .First())
+            .ToDictionaryAsync(x => x.MonitorId, x => x.Success, cancellationToken);
     }
 
     public async Task<IActionResult> OnPostPauseAllAsync(CancellationToken cancellationToken)

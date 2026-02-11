@@ -4,43 +4,39 @@
     ViewData["Title"] = "Profile";
 }
 
-<div class="flex items-start justify-between gap-3 mb-4">
-    <div>
-        <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Profile</div>
-        <h2 class="text-2xl font-semibold tracking-tight">Account profile</h2>
-    </div>
-    <a class="hawk-btn hawk-btn-ghost hawk-btn-sm" asp-page="/Monitors/Index" asp-area="">Back</a>
+<div class="mb-5">
+    <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Profile</div>
+    <h2 class="text-2xl font-semibold tracking-tight">Account profile</h2>
 </div>
 
-<dl class="grid grid-cols-12 gap-y-2 text-sm">
-    <dt class="col-span-4 text-zinc-600">Username</dt>
-    <dd class="col-span-8 font-mono break-words">@Model.Username</dd>
+<dl class="grid grid-cols-12 gap-y-5 text-sm">
+    <dt class="col-span-4 text-zinc-600 pt-1">Username</dt>
+    <dd class="col-span-8 font-mono break-words py-1">@Model.Username</dd>
 
-    <dt class="col-span-4 text-zinc-600">Email</dt>
-    <dd class="col-span-8 font-mono break-words">@Model.Email</dd>
+    <dt class="col-span-4 text-zinc-600 pt-1">Email</dt>
+    <dd class="col-span-8 font-mono break-words py-1">@Model.Email</dd>
 
-    <dt class="col-span-4 text-zinc-600">Email confirmed</dt>
-    <dd class="col-span-8">
+    <dt class="col-span-4 text-zinc-600 pt-1">Email confirmed</dt>
+    <dd class="col-span-8 py-1">
         @if (Model.EmailConfirmed)
         {
-            <span class="hawk-badge hawk-badge-success">Confirmed</span>
+            <span class="hawk-badge hawk-badge-success inline-flex min-w-[8.5rem] justify-center">Confirmed</span>
         }
         else
         {
-            <span class="hawk-badge hawk-badge-danger">Unconfirmed</span>
+            <span class="hawk-badge hawk-badge-danger inline-flex min-w-[8.5rem] justify-center">Unconfirmed</span>
         }
     </dd>
 
-    <dt class="col-span-4 text-zinc-600">Password</dt>
-    <dd class="col-span-8">
+    <dt class="col-span-4 text-zinc-600 pt-1">Password</dt>
+    <dd class="col-span-8 py-1">
         @if (Model.HasPassword)
         {
-            <span class="hawk-badge">Configured</span>
+            <span class="hawk-badge inline-flex min-w-[8.5rem] justify-center">Configured</span>
         }
         else
         {
-            <span class="hawk-badge hawk-badge-danger">Not set</span>
+            <span class="hawk-badge hawk-badge-danger inline-flex min-w-[8.5rem] justify-center">Not set</span>
         }
     </dd>
 </dl>
-

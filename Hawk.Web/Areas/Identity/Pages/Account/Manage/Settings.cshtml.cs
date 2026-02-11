@@ -33,6 +33,8 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
 
     public IReadOnlyList<string> PresetKeys { get; private set; } = [];
 
+    public string ServerDefaultUserAgent { get; private set; } = "firefox";
+
     private void LoadPresets()
     {
         var keys = UrlCheckHttpOptions.BuiltInUserAgentPresets.Keys
@@ -42,6 +44,9 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
             .ToList();
 
         PresetKeys = keys;
+        ServerDefaultUserAgent = (config["Hawk:UrlChecks:UserAgent"] ?? "firefox").Trim();
+        if (string.IsNullOrWhiteSpace(ServerDefaultUserAgent))
+            ServerDefaultUserAgent = "firefox";
     }
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
@@ -70,7 +75,7 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
         return Page();
     }
 
-    public async Task<IActionResult> OnPostAlertingAsync(CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
         var userId = userManager.GetUserId(User);
         if (string.IsNullOrWhiteSpace(userId))
@@ -82,20 +87,15 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
             return Page();
 
         var email = string.IsNullOrWhiteSpace(AlertEmail) ? null : AlertEmail.Trim();
-        var existing = await db.UserAlertSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        var ua = string.IsNullOrWhiteSpace(UserAgent) ? null : UserAgent.Trim();
 
-        if (string.IsNullOrWhiteSpace(email))
+        var alertSettings = await db.UserAlertSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (email is null)
         {
-            if (existing is not null)
-            {
-                db.UserAlertSettings.Remove(existing);
-                await db.SaveChangesAsync(cancellationToken);
-            }
-            TempData["FlashInfo"] = "Alert email override cleared.";
-            return RedirectToPage();
+            if (alertSettings is not null)
+                db.UserAlertSettings.Remove(alertSettings);
         }
-
-        if (existing is null)
+        else if (alertSettings is null)
         {
             db.UserAlertSettings.Add(new UserAlertSettings
             {
@@ -106,41 +106,17 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
         }
         else
         {
-            existing.AlertEmail = email;
-            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            alertSettings.AlertEmail = email;
+            alertSettings.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
-        await db.SaveChangesAsync(cancellationToken);
-        TempData["FlashInfo"] = "Alert email override saved.";
-        return RedirectToPage();
-    }
-
-    public async Task<IActionResult> OnPostCrawlerAsync(CancellationToken cancellationToken)
-    {
-        var userId = userManager.GetUserId(User);
-        if (string.IsNullOrWhiteSpace(userId))
-            return Challenge();
-
-        LoadPresets();
-
-        if (!ModelState.IsValid)
-            return Page();
-
-        var ua = string.IsNullOrWhiteSpace(UserAgent) ? null : UserAgent.Trim();
-        var existing = await db.UserUrlCheckSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(ua))
+        var crawlerSettings = await db.UserUrlCheckSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (ua is null)
         {
-            if (existing is not null)
-            {
-                db.UserUrlCheckSettings.Remove(existing);
-                await db.SaveChangesAsync(cancellationToken);
-            }
-            TempData["FlashInfo"] = "Crawler User-Agent override cleared.";
-            return RedirectToPage();
+            if (crawlerSettings is not null)
+                db.UserUrlCheckSettings.Remove(crawlerSettings);
         }
-
-        if (existing is null)
+        else if (crawlerSettings is null)
         {
             db.UserUrlCheckSettings.Add(new UserUrlCheckSettings
             {
@@ -151,39 +127,17 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
         }
         else
         {
-            existing.UserAgent = ua;
-            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            crawlerSettings.UserAgent = ua;
+            crawlerSettings.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
-        await db.SaveChangesAsync(cancellationToken);
-        TempData["FlashInfo"] = "Crawler User-Agent override saved.";
-        return RedirectToPage();
-    }
-
-    public async Task<IActionResult> OnPostRetentionAsync(CancellationToken cancellationToken)
-    {
-        var userId = userManager.GetUserId(User);
-        if (string.IsNullOrWhiteSpace(userId))
-            return Challenge();
-
-        LoadPresets();
-
-        if (!ModelState.IsValid)
-            return Page();
-
-        var existing = await db.UserMonitorSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        var monitorSettings = await db.UserMonitorSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (RunRetentionDays is null)
         {
-            if (existing is not null)
-            {
-                db.UserMonitorSettings.Remove(existing);
-                await db.SaveChangesAsync(cancellationToken);
-            }
-            TempData["FlashInfo"] = "Run retention override cleared.";
-            return RedirectToPage();
+            if (monitorSettings is not null)
+                db.UserMonitorSettings.Remove(monitorSettings);
         }
-
-        if (existing is null)
+        else if (monitorSettings is null)
         {
             db.UserMonitorSettings.Add(new UserMonitorSettings
             {
@@ -194,12 +148,12 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
         }
         else
         {
-            existing.RunRetentionDays = RunRetentionDays;
-            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            monitorSettings.RunRetentionDays = RunRetentionDays;
+            monitorSettings.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        TempData["FlashInfo"] = "Run retention override saved.";
+        TempData["FlashInfo"] = "Settings saved.";
         return RedirectToPage();
     }
 }

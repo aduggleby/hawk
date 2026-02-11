@@ -35,9 +35,9 @@
     <div class="lg:col-span-5 space-y-4">
         <div class="hawk-card">
             <div class="font-semibold mb-3">Config</div>
-            <dl class="grid grid-cols-12 gap-y-2 text-sm">
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Status</dt>
-                <dd class="col-span-8 font-medium">
+            <dl class="grid grid-cols-12 gap-y-4 text-sm">
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Status</dt>
+                <dd class="col-span-8 font-medium py-1">
                     @if (!Model.Monitor.Enabled)
                     {
                         <span class="hawk-badge hawk-badge-danger">Disabled</span>
@@ -51,18 +51,18 @@
                         <span class="hawk-badge hawk-badge-success">Enabled</span>
                     }
                 </dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Interval</dt>
-                <dd class="col-span-8 font-medium">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Timeout</dt>
-                <dd class="col-span-8 font-medium">@Model.Monitor.TimeoutSeconds s</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Last run</dt>
-                <dd class="col-span-8">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Next run</dt>
-                <dd class="col-span-8">@((Model.Monitor.NextRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert email</dt>
-                <dd class="col-span-8 font-mono text-xs break-words">@(!string.IsNullOrWhiteSpace(Model.Monitor.AlertEmailOverride) ? Model.Monitor.AlertEmailOverride : "-")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)]">Run retention</dt>
-                <dd class="col-span-8 font-medium">@(Model.Monitor.RunRetentionDays is > 0 ? $"{Model.Monitor.RunRetentionDays} days (override)" : "Account/default policy")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Interval</dt>
+                <dd class="col-span-8 font-medium py-1">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Timeout</dt>
+                <dd class="col-span-8 font-medium py-1">@Model.Monitor.TimeoutSeconds s</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Last run</dt>
+                <dd class="col-span-8 py-1">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Next run</dt>
+                <dd class="col-span-8 py-1">@((Model.Monitor.NextRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Alert email</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@(!string.IsNullOrWhiteSpace(Model.Monitor.AlertEmailOverride) ? Model.Monitor.AlertEmailOverride : "-")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Run retention</dt>
+                <dd class="col-span-8 font-medium py-1">@(Model.Monitor.RunRetentionDays is > 0 ? $"{Model.Monitor.RunRetentionDays} days (override)" : "Account/default policy")</dd>
             </dl>
         </div>
 
@@ -74,10 +74,10 @@
             }
             else
             {
-                <ul class="space-y-1 text-xs font-mono">
+                <ul class="space-y-3 text-xs font-mono">
                     @foreach (var h in Model.Monitor.Headers)
                     {
-                        <li><span class="text-[color:var(--text-secondary)]">@h.Name</span>: <span>@h.Value</span></li>
+                        <li class="py-1"><span class="text-[color:var(--text-secondary)]">@h.Name</span>: <span>@h.Value</span></li>
                     }
                 </ul>
             }
@@ -91,10 +91,10 @@
             }
             else
             {
-                <ul class="space-y-1 text-xs font-mono">
+                <ul class="space-y-3 text-xs font-mono">
                     @foreach (var r in Model.Monitor.MatchRules)
                     {
-                        <li><span class="text-[color:var(--text-secondary)]">@r.Mode</span>: <span>@r.Pattern</span></li>
+                        <li class="py-1"><span class="text-[color:var(--text-secondary)]">@r.Mode</span>: <span>@r.Pattern</span></li>
                     }
                 </ul>
             }
