@@ -5,6 +5,7 @@
 // </file>
 
 using System.Diagnostics;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -28,10 +29,44 @@ public class ErrorModel : PageModel
     public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
 
     /// <summary>
+    /// Request path that failed.
+    /// </summary>
+    public string? Path { get; private set; }
+
+    /// <summary>
+    /// Exception type name.
+    /// </summary>
+    public string? ExceptionType { get; private set; }
+
+    /// <summary>
+    /// Top-level exception message.
+    /// </summary>
+    public string? ErrorMessage { get; private set; }
+
+    /// <summary>
+    /// Full exception details (including inner exceptions and stack trace).
+    /// </summary>
+    public string? ExceptionDetails { get; private set; }
+
+    /// <summary>
+    /// True if diagnostics are available for rendering.
+    /// </summary>
+    public bool HasDiagnostics => !string.IsNullOrWhiteSpace(ExceptionDetails);
+
+    /// <summary>
     /// Loads request metadata for rendering.
     /// </summary>
     public void OnGet()
     {
         RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+
+        var feature = HttpContext.Features.Get<IExceptionHandlerPathFeature>();
+        if (feature?.Error is null)
+            return;
+
+        Path = feature.Path;
+        ExceptionType = feature.Error.GetType().FullName;
+        ErrorMessage = feature.Error.Message;
+        ExceptionDetails = feature.Error.ToString();
     }
 }
