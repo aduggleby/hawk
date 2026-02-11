@@ -222,6 +222,14 @@ Admin users can manage other users from the Admin panel:
 - **Reset Password**: reset a user's password.
 - **Delete**: remove a user.
 
+## Allowed Status Codes
+
+By default, Hawk treats any 2xx response as success and everything else as failure. You can override this per monitor by setting **Allowed Status Codes** — a comma-separated list of additional HTTP status codes that should count as success (e.g. `404,429`).
+
+- 2xx codes are always treated as success regardless of this setting.
+- Codes must be in the range 100–599.
+- Useful for monitoring endpoints that intentionally return non-2xx responses (health checks behind auth returning 401, soft 404 pages, rate-limited APIs, etc.).
+
 ## Alert Policy
 
 Each monitor has an `AlertAfterConsecutiveFailures` setting (1–20, default 1).
@@ -371,6 +379,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.12` in the `.csproj` files.
+- Project version is set to `0.9.13` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.

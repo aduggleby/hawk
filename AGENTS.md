@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.12`
+- Version: `0.9.13`
 
 ## Ports
 
@@ -46,6 +46,14 @@ Admin users can manage other users via Admin -> Users (edit name/email/roles, re
 - The app currently calls `db.Database.MigrateAsync()` during startup seeding.
 - Goal: keep this behavior for container deployments (web container applies migrations against the SQL Server container at boot).
 - Current behavior includes retries to handle SQL Server still starting.
+
+## Allowed Status Codes
+
+- `Monitor.AllowedStatusCodes` — optional comma-separated list of additional HTTP status codes treated as success (e.g. `404,429`).
+- 2xx codes are always success regardless of this setting.
+- Parsed by `Hawk.Web/Services/Monitoring/AllowedStatusCodesParser.cs` (validates range 100–599, normalizes/deduplicates).
+- Evaluated in `MonitorExecutor` when determining run pass/fail.
+- Shown on Create/Edit forms and on the monitor Details page.
 
 ## URL Checking Core
 
