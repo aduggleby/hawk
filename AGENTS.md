@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.8`
+- Version: `0.9.9`
 
 ## Ports
 
@@ -39,7 +39,7 @@ Environment overrides (preferred for Docker/CI):
 - `Hawk__SeedAdmin__Email`
 - `Hawk__SeedAdmin__Password`
 
-Admin users can manage other users via Admin -> Users (CRUD + password reset).
+Admin users can manage other users via Admin -> Users (edit name/email/roles, reset password, delete).
 
 ## Migrations On Startup
 
@@ -155,9 +155,25 @@ Alert recipient resolution (in order):
 3. Monitor owner's Identity email.
 4. All Admin users (fallback).
 
+## Monitor Pause State
+
+- `Monitor.IsPaused` — a boolean flag that temporarily pauses a monitor while keeping it enabled.
+- Paused monitors are skipped by `MonitorScheduler` (the query filters `!m.IsPaused`) and by `MonitorExecutor` (unless reason is `"manual"`).
+- The monitors index page shows Enabled/Paused/Disabled badges and supports batch pause/resume (selected or all).
+- Paused monitors can still be tested manually via the Test page.
+
+## Account Manage Pages
+
+- Account settings have been restructured under `/Identity/Account/Manage/` with a sidebar layout:
+  - **Profile** (`/Identity/Account/Manage/Index`) — display name and email.
+  - **Security** (`/Identity/Account/Manage/ChangePassword`) — change password.
+  - **Alerts & Crawler** (`/Identity/Account/Manage/Settings`) — alert email override + User-Agent override.
+- Old routes (`/Account/Settings`, `/Account/Alerting`) redirect to the new locations for back-compat.
+- Navigation uses an Account dropdown in the topbar with links to Profile, Security, Alerts & Crawler, plus Admin/Hangfire for admins.
+
 ## User Settings
 
-- `Hawk.Web/Pages/Account/Settings.cshtml(.cs)` provides account-wide overrides:
+- `Hawk.Web/Areas/Identity/Pages/Account/Manage/Settings.cshtml(.cs)` provides account-wide overrides:
   - **Alert email override** — redirects alert emails for the user's monitors to a different address. Stored in `UserAlertSettings`.
   - **Crawler User-Agent override** — sets a default `User-Agent` for all monitors the user owns (unless the monitor explicitly sets one via headers). Stored in `UserUrlCheckSettings`.
 - User-Agent can be a preset key (`firefox`, `chrome`, `edge`, `safari`, `curl`) or a full UA string. Resolution is in `Hawk.Web/Services/UrlChecks/UserAgentResolver.cs`.
@@ -285,6 +301,7 @@ Service endpoints on the VM:
 
 - Privacy page (`/Privacy`) — removed; no longer in nav or routes.
 - External auth provider buttons — removed from Login and Register Identity pages (app uses local accounts only).
+- Admin user Create page (`/Admin/Users/Create`) — replaced by Edit page (`/Admin/Users/Edit/{id}`).
 
 ## Local Tooling Quirks
 

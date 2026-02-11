@@ -184,7 +184,7 @@ Then set `image: ghcr.io/aduggleby/hawk:latest` in the YAML (or your own org if 
 Admin users can manage other users from the Admin panel:
 
 - **Admin** -> **Users**: list all users.
-- **Create**: add a new user with email, password, and optional Admin role.
+- **Edit**: edit a user's name, email, and role assignments.
 - **Reset Password**: reset a user's password.
 - **Delete**: remove a user.
 
@@ -204,9 +204,22 @@ When a monitor fails, the alert email recipient is resolved in this order:
 3. **Owner's login email** — the Identity email of the user who created the monitor.
 4. **Admin fallback** — all users with the `Admin` role.
 
+## Monitor Pause
+
+Monitors can be temporarily paused without disabling them. A paused monitor:
+
+- Skips scheduled checks (the scheduler ignores it).
+- Can still be tested manually via the **Test** button on the details page.
+- Shows a **Paused** badge in the monitors list (vs. **Enabled** or **Disabled**).
+
+Pause and resume from the monitors list:
+
+- **Pause all / Resume all** — applies to all monitors.
+- **Pause selected / Resume selected** — batch action on checked monitors.
+
 ## User Settings
 
-Each user can configure account-wide overrides at **Settings** (accessible from the user menu):
+Each user can configure account-wide overrides from the **Account** dropdown (Profile, Security, Alerts & Crawler):
 
 - **Alert email override** — redirect all alert emails for your monitors to a different address.
 - **Crawler User-Agent** — set a default `User-Agent` header for all monitors you own (unless the monitor explicitly sets one via headers). You can use a preset (`firefox`, `chrome`, `edge`, `safari`, `curl`) or paste a full UA string.
@@ -305,6 +318,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.8` in the `.csproj` files.
+- Project version is set to `0.9.9` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.
