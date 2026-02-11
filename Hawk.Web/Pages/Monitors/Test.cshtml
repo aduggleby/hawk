@@ -1,0 +1,176 @@
+@page "{id:guid}"
+@* <summary>Run a monitor immediately and show full diagnostics.</summary> *@
+@model Hawk.Web.Pages.Monitors.TestModel
+@{
+    ViewData["Title"] = "Test monitor";
+    var ex = Model.Execution;
+}
+
+@if (ex is null)
+{
+    <div class="hawk-card border-[color:var(--text-primary)] border-dashed">
+        <div class="text-sm">Monitor not found.</div>
+    </div>
+    return;
+}
+
+<div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-2xl font-semibold tracking-tight mb-1">Test: @ex.Monitor.Name</h1>
+        <div class="text-sm text-zinc-600 font-mono">
+            <span class="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs">@ex.Request.Method.Method</span>
+            <span class="mx-2 text-zinc-400">·</span>
+            <span class="break-words">@ex.Request.Url</span>
+        </div>
+    </div>
+    <div class="flex items-center gap-2">
+        <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@ex.Monitor.Id">Back</a>
+        <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Edit" asp-route-id="@ex.Monitor.Id">Edit</a>
+        <a class="hawk-btn hawk-btn-primary" asp-page="/Monitors/Test" asp-route-id="@ex.Monitor.Id">Run again</a>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <div class="lg:col-span-5 space-y-4">
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Result</div>
+            <div class="flex items-center gap-2 mb-3">
+                @if (ex.Result.Success)
+                {
+                    <span class="hawk-badge hawk-badge-success">OK</span>
+                }
+                else
+                {
+                    <span class="hawk-badge hawk-badge-danger">FAIL</span>
+                }
+                <span class="text-sm text-zinc-600">@(ex.Result.StatusCode is null ? "NO_RESPONSE" : $"{(int)ex.Result.StatusCode} ({ex.Result.StatusCode})")</span>
+                <span class="text-sm text-zinc-600">·</span>
+                <span class="text-sm text-zinc-600">@((int)ex.Result.Duration.TotalMilliseconds) ms</span>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(ex.Result.ErrorMessage))
+            {
+                <div class="hawk-alert hawk-alert-error" role="alert">
+                    <div class="text-sm">@ex.Result.ErrorMessage</div>
+                </div>
+            }
+
+            @if (!ex.Result.Success)
+            {
+                <div class="text-xs text-zinc-600 mt-3">
+                    Alert: @((ex.Run.AlertSent) ? "sent" : (ex.Run.AlertError ?? "not sent"))
+                </div>
+            }
+        </div>
+
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Request</div>
+            <dl class="grid grid-cols-12 gap-y-2 text-sm">
+                <dt class="col-span-4 text-zinc-600">Timeout</dt>
+                <dd class="col-span-8 font-medium">@ex.Request.Timeout.TotalSeconds s</dd>
+                <dt class="col-span-4 text-zinc-600">Content-Type</dt>
+                <dd class="col-span-8">@(!string.IsNullOrWhiteSpace(ex.Request.ContentType) ? ex.Request.ContentType : "-")</dd>
+                <dt class="col-span-4 text-zinc-600">Body bytes</dt>
+                <dd class="col-span-8">@((ex.Request.Body is null) ? "-" : System.Text.Encoding.UTF8.GetByteCount(ex.Request.Body))</dd>
+            </dl>
+
+            <div class="font-semibold mt-4 mb-2 text-sm">Headers</div>
+            @if (ex.Request.Headers.Count == 0)
+            {
+                <div class="text-sm text-zinc-600">None.</div>
+            }
+            else
+            {
+                <ul class="space-y-1 text-xs font-mono">
+                    @foreach (var kv in ex.Request.Headers.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                    {
+                        <li><span class="text-zinc-600">@kv.Key</span>: <span>@kv.Value</span></li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+
+    <div class="lg:col-span-7 space-y-4">
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Response</div>
+            <dl class="grid grid-cols-12 gap-y-2 text-sm">
+                <dt class="col-span-3 text-zinc-600">Type</dt>
+                <dd class="col-span-9">@(!string.IsNullOrWhiteSpace(ex.Result.ResponseContentType) ? ex.Result.ResponseContentType : "-")</dd>
+                <dt class="col-span-3 text-zinc-600">Length</dt>
+                <dd class="col-span-9">@((ex.Result.ResponseContentLength is null) ? "-" : $"{ex.Result.ResponseContentLength} bytes")</dd>
+            </dl>
+
+            <div class="font-semibold mt-4 mb-2 text-sm">Headers</div>
+            @if (ex.Result.ResponseHeaders.Count == 0)
+            {
+                <div class="text-sm text-zinc-600">None.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs font-mono">
+                        <tbody class="divide-y divide-zinc-100">
+                        @foreach (var kv in ex.Result.ResponseHeaders.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                        {
+                            <tr>
+                                <td class="py-2 pr-3 text-zinc-600">@kv.Key</td>
+                                <td class="py-2 break-words">@kv.Value</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Match rules</div>
+            @if (ex.Result.MatchResults.Count == 0)
+            {
+                <div class="text-sm text-zinc-600">None.</div>
+            }
+            else
+            {
+                <ul class="space-y-2 text-sm">
+                    @foreach (var mr in ex.Result.MatchResults)
+                    {
+                        <li class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="font-mono text-xs text-zinc-600">@mr.Rule.Mode</div>
+                                <div class="font-mono text-xs break-words">@mr.Rule.Pattern</div>
+                                @if (!string.IsNullOrWhiteSpace(mr.Details))
+                                {
+                                    <div class="text-xs text-zinc-600 mt-1">@mr.Details</div>
+                                }
+                            </div>
+                            <div>
+                                @if (mr.Matched)
+                                {
+                                    <span class="hawk-badge hawk-badge-success">PASS</span>
+                                }
+                                else
+                                {
+                                    <span class="hawk-badge hawk-badge-danger">FAIL</span>
+                                }
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Body snippet</div>
+            @if (string.IsNullOrWhiteSpace(ex.Result.ResponseBodySnippet))
+            {
+                <div class="text-sm text-zinc-600">No response body captured.</div>
+            }
+            else
+            {
+                <pre class="text-xs font-mono overflow-x-auto">@ex.Result.ResponseBodySnippet</pre>
+            }
+        </div>
+    </div>
+</div>
+

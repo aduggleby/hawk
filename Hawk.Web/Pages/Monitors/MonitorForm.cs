@@ -64,6 +64,14 @@ public sealed class MonitorForm
     public int AlertAfterConsecutiveFailures { get; set; } = 1;
 
     /// <summary>
+    /// Optional per-monitor override for alert recipient email.
+    /// </summary>
+    [Display(Name = "Alert email override")]
+    [EmailAddress]
+    [MaxLength(320)]
+    public string? AlertEmailOverride { get; set; }
+
+    /// <summary>
     /// POST content-type.
     /// </summary>
     [Display(Name = "Content-Type")]
@@ -109,6 +117,13 @@ public sealed class MonitorForm
 
         if (AlertAfterConsecutiveFailures < 1 || AlertAfterConsecutiveFailures > 20)
             yield return new ValidationResult("Alert threshold must be between 1 and 20.", [nameof(AlertAfterConsecutiveFailures)]);
+
+        if (!string.IsNullOrWhiteSpace(AlertEmailOverride))
+        {
+            var emailAttr = new EmailAddressAttribute();
+            if (!emailAttr.IsValid(AlertEmailOverride))
+                yield return new ValidationResult("Alert email override must be a valid email address.", [nameof(AlertEmailOverride)]);
+        }
 
         var method = (Method ?? string.Empty).Trim().ToUpperInvariant();
         if (method is not ("GET" or "POST"))

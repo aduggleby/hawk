@@ -68,6 +68,12 @@
                 <div class="hawk-error-message" asp-validation-for="Form.AlertAfterConsecutiveFailures"></div>
                 <div class="text-xs text-zinc-500 mt-1">Email is sent only when the failure streak reaches this number (once per incident).</div>
             </div>
+            <div>
+                <label class="hawk-label" asp-for="Form.AlertEmailOverride"></label>
+                <input class="hawk-input mt-2 font-mono" asp-for="Form.AlertEmailOverride" placeholder="alerts@yourdomain" />
+                <div class="hawk-error-message" asp-validation-for="Form.AlertEmailOverride"></div>
+                <div class="text-xs text-zinc-500 mt-1">Optional. Overrides the alert recipient for this monitor.</div>
+            </div>
         </div>
     </div>
 

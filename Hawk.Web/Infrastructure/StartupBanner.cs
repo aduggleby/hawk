@@ -7,11 +7,12 @@ internal static class StartupBanner
     public static void Write()
     {
         var art = """
- _   _   ___  _   _ _  __
-| | | | / _ \| | | | |/ /
-| |_| || (_) | |_| | ' / 
-|  _  | \__, |\__,_| . \ 
-|_| |_|   /_/     |_|\\_\\
+██╗  ██╗ █████╗ ██╗    ██╗██╗  ██╗
+██║  ██║██╔══██╗██║    ██║██║ ██╔╝
+███████║███████║██║ █╗ ██║█████╔╝
+██╔══██║██╔══██║██║███╗██║██╔═██╗
+██║  ██║██║  ██║╚███╔███╔╝██║  ██╗
+╚═╝  ╚═╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝
 """;
 
         WriteBold(art.TrimEnd());
@@ -45,4 +46,3 @@ internal static class StartupBanner
         return asm.GetName().Version?.ToString() ?? "0.0.0";
     }
 }
-

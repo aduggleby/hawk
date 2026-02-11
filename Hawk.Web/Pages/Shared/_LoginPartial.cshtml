@@ -6,7 +6,8 @@
 <div class="flex items-center gap-2">
 @if (SignInManager.IsSignedIn(User))
 {
-    <a class="hawk-btn hawk-btn-ghost font-mono" asp-area="Identity" asp-page="/Account/Manage/Index" title="Manage">@(User.Identity?.Name ?? "Account")</a>
+    <a class="hawk-btn hawk-btn-ghost font-mono" asp-area="Identity" asp-page="/Account/Manage/Index" title="Account">@(User.Identity?.Name ?? "Account")</a>
+    <a class="hawk-btn hawk-btn-ghost" asp-area="" asp-page="/Account/Settings" title="Settings">Settings</a>
     <form asp-area="Identity" asp-page="/Account/Logout" asp-route-returnUrl="@Url.Page("/Index", new { area = "" })">
         <button type="submit" class="hawk-btn hawk-btn-ghost">Logout</button>
     </form>

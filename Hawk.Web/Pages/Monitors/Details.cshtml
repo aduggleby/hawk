@@ -46,6 +46,8 @@
                 <dd class="col-span-8">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
                 <dt class="col-span-4 text-zinc-600">Next run</dt>
                 <dd class="col-span-8">@((Model.Monitor.NextRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+                <dt class="col-span-4 text-zinc-600">Alert email</dt>
+                <dd class="col-span-8 font-mono text-xs break-words">@(!string.IsNullOrWhiteSpace(Model.Monitor.AlertEmailOverride) ? Model.Monitor.AlertEmailOverride : "-")</dd>
             </dl>
         </div>
 

@@ -1,0 +1,7 @@
+@page
+@* <summary>Back-compat route: redirect to /Account/Settings.</summary> *@
+@model Hawk.Web.Pages.Account.AlertingModel
+@{
+    Response.Redirect(Url.Page("/Account/Settings")!);
+}
+

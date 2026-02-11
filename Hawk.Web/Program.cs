@@ -21,6 +21,7 @@ using Hawk.Web.Services.Monitoring;
 using Hawk.Web.Services;
 using Hawk.Web.Services.Import;
 using Hawk.Web.Infrastructure;
+using Hawk.Web.Services.UrlChecks;
 
 StartupBanner.Write();
 
@@ -51,6 +52,12 @@ builder.Services.AddHttpClient("urlchecks", c =>
 {
     // We implement timeouts via CancellationTokenSource to capture them as "timeout" results.
     c.Timeout = Timeout.InfiniteTimeSpan;
+
+    // Default crawler UA. Can be either a preset key (e.g., "firefox") or a full UA string.
+    var ua = UserAgentResolver.Resolve(builder.Configuration, builder.Configuration["Hawk:UrlChecks:UserAgent"]);
+
+    // Use TryAddWithoutValidation so odd-but-real UA strings don't throw.
+    c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", ua);
 });
 builder.Services.AddScoped<IUrlChecker>(sp =>
     new UrlChecker(sp.GetRequiredService<IHttpClientFactory>().CreateClient("urlchecks")));
@@ -122,6 +129,7 @@ builder.Services.AddRazorPages(options =>
 });
 
 builder.Services.AddScoped<IMonitorRunner, MonitorRunner>();
+builder.Services.AddScoped<IMonitorExecutor, MonitorExecutor>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
 builder.Services.AddScoped<StatusCakeImporter>();
 

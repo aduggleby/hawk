@@ -65,7 +65,10 @@ public sealed record UrlCheckResult(
     TimeSpan Duration,
     string? ErrorMessage,
     IReadOnlyList<UrlCheckMatchResult> MatchResults,
-    string? ResponseBodySnippet
+    string? ResponseBodySnippet,
+    IReadOnlyDictionary<string, string> ResponseHeaders,
+    string? ResponseContentType,
+    long? ResponseContentLength
 );
 
 /// <summary>
@@ -101,6 +104,14 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
             using var httpRequest = new HttpRequestMessage(request.Method, request.Url);
             foreach (var (k, v) in request.Headers)
             {
+                if (string.Equals(k, "User-Agent", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Allow per-monitor headers to override the default HttpClient UA cleanly.
+                    httpRequest.Headers.UserAgent.Clear();
+                    httpRequest.Headers.TryAddWithoutValidation(k, v);
+                    continue;
+                }
+
                 // Try "regular" headers first; fall back to content headers when we have content.
                 if (!httpRequest.Headers.TryAddWithoutValidation(k, v))
                 {
@@ -120,6 +131,12 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
             using var response = await httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
             var bodyText = await ReadBodyAsStringAsync(response, timeoutCts.Token);
 
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (k, v) in response.Headers)
+                headers[k] = string.Join(", ", v);
+            foreach (var (k, v) in response.Content.Headers)
+                headers[k] = string.Join(", ", v);
+
             var matchResults = EvaluateMatches(request.MatchRules, bodyText);
             var ok = response.IsSuccessStatusCode && matchResults.All(m => m.Matched);
 
@@ -130,7 +147,10 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
                 Duration: sw.Elapsed,
                 ErrorMessage: ok ? null : BuildFailureMessage(response.StatusCode, matchResults),
                 MatchResults: matchResults,
-                ResponseBodySnippet: MakeSnippet(bodyText)
+                ResponseBodySnippet: MakeSnippet(bodyText),
+                ResponseHeaders: headers,
+                ResponseContentType: response.Content.Headers.ContentType?.ToString(),
+                ResponseContentLength: response.Content.Headers.ContentLength
             );
         }
         catch (OperationCanceledException oce) when (!cancellationToken.IsCancellationRequested)
@@ -143,7 +163,10 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
                 Duration: sw.Elapsed,
                 ErrorMessage: $"Timeout after {request.Timeout.TotalSeconds:0.##}s: {oce.Message}",
                 MatchResults: request.MatchRules.Select(r => new UrlCheckMatchResult(r, false, "Not evaluated (timeout)")).ToArray(),
-                ResponseBodySnippet: null
+                ResponseBodySnippet: null,
+                ResponseHeaders: new Dictionary<string, string>(),
+                ResponseContentType: null,
+                ResponseContentLength: null
             );
         }
         catch (Exception ex)
@@ -156,7 +179,10 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
                 Duration: sw.Elapsed,
                 ErrorMessage: ex.Message,
                 MatchResults: request.MatchRules.Select(r => new UrlCheckMatchResult(r, false, "Not evaluated (request error)")).ToArray(),
-                ResponseBodySnippet: null
+                ResponseBodySnippet: null,
+                ResponseHeaders: new Dictionary<string, string>(),
+                ResponseContentType: null,
+                ResponseContentLength: null
             );
         }
     }

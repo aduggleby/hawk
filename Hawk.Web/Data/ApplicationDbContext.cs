@@ -9,6 +9,8 @@
 using Microsoft.EntityFrameworkCore;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 using Hawk.Web.Data.Monitoring;
+using Hawk.Web.Data.Alerting;
+using Hawk.Web.Data.UrlChecks;
 
 namespace Hawk.Web.Data;
 
@@ -38,6 +40,16 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     /// </summary>
     public DbSet<MonitorRun> MonitorRuns => Set<MonitorRun>();
 
+    /// <summary>
+    /// Per-user alerting settings (alert recipient email override).
+    /// </summary>
+    public DbSet<UserAlertSettings> UserAlertSettings => Set<UserAlertSettings>();
+
+    /// <summary>
+    /// Per-user HTTP settings for URL checks (e.g., User-Agent override).
+    /// </summary>
+    public DbSet<UserUrlCheckSettings> UserUrlCheckSettings => Set<UserUrlCheckSettings>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -54,6 +66,17 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         builder.Entity<MonitorRun>(b =>
         {
             b.HasIndex(x => new { x.MonitorId, x.StartedAt });
+        });
+
+        builder.Entity<UserAlertSettings>(b =>
+        {
+            b.HasKey(x => x.UserId);
+            b.HasIndex(x => x.AlertEmail);
+        });
+
+        builder.Entity<UserUrlCheckSettings>(b =>
+        {
+            b.HasKey(x => x.UserId);
         });
     }
 }

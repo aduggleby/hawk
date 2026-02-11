@@ -69,6 +69,13 @@ public sealed class Monitor
     public int AlertAfterConsecutiveFailures { get; set; } = 1;
 
     /// <summary>
+    /// Optional override for alert recipient email address for this monitor.
+    /// If not set, falls back to the owner's account-wide override, then the owner's Identity email.
+    /// </summary>
+    [MaxLength(320)]
+    public string? AlertEmailOverride { get; set; }
+
+    /// <summary>
     /// Optional request content-type (used for POST/PUT/PATCH).
     /// </summary>
     [MaxLength(200)]
