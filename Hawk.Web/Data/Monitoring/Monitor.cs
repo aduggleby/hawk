@@ -81,6 +81,14 @@ public sealed class Monitor
     public string? AlertEmailOverride { get; set; }
 
     /// <summary>
+    /// Optional additional HTTP status codes that should count as success.
+    /// Comma-separated numeric list (for example: 404,429).
+    /// 2xx status codes are always treated as success.
+    /// </summary>
+    [MaxLength(256)]
+    public string? AllowedStatusCodes { get; set; }
+
+    /// <summary>
     /// Optional run history retention override in days for this monitor.
     /// If not set, falls back to the owner's account-wide setting, then the server default.
     /// </summary>

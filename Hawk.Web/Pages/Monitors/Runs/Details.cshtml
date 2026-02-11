@@ -90,7 +90,20 @@
                 </div>
                 <div>
                     <div class="text-[color:var(--text-secondary)] mb-1">Response snippet</div>
-                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@(string.IsNullOrWhiteSpace(Model.Run.ResponseSnippet) ? "-" : Model.Run.ResponseSnippet)</pre>
+                    @{
+                        var snippet = string.IsNullOrWhiteSpace(Model.Run.ResponseSnippet) ? "-" : Model.Run.ResponseSnippet!;
+                        const int previewLimit = 600;
+                        var hasMore = snippet.Length > previewLimit;
+                        var preview = hasMore ? snippet[..previewLimit] + "..." : snippet;
+                    }
+                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@preview</pre>
+                    @if (hasMore)
+                    {
+                        <details class="mt-2">
+                            <summary class="cursor-pointer select-none text-[color:var(--text-secondary)]">Show full response snippet</summary>
+                            <pre class="mt-2 p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@snippet</pre>
+                        </details>
+                    }
                 </div>
                 <div>
                     <div class="text-[color:var(--text-secondary)] mb-1">Match results</div>

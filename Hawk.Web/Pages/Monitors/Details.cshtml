@@ -23,13 +23,35 @@
         </div>
     </div>
     <div class="flex items-center gap-2">
-        <form method="post" asp-page-handler="RunNow">
+        <form id="run-now-form" method="post" asp-page-handler="RunNow">
             <button class="hawk-btn hawk-btn-primary" type="submit">Run now</button>
         </form>
         <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Edit" asp-route-id="@Model.Monitor.Id">Edit</a>
         <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const intervalSeconds = @Model.Monitor.IntervalSeconds;
+            if (!Number.isFinite(intervalSeconds) || intervalSeconds < 1) return;
+
+            const refreshMs = intervalSeconds * 1000;
+            let timer = window.setTimeout(() => {
+                window.location.reload();
+            }, refreshMs);
+
+            // Keep the page update cadence aligned with the monitor interval.
+            const runNowForm = document.getElementById("run-now-form");
+            if (runNowForm) {
+                runNowForm.addEventListener("submit", () => {
+                    window.clearTimeout(timer);
+                });
+            }
+        })();
+    </script>
+}
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
     <div class="lg:col-span-5 space-y-4">
@@ -55,6 +77,8 @@
                 <dd class="col-span-8 font-medium py-1">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Timeout</dt>
                 <dd class="col-span-8 font-medium py-1">@Model.Monitor.TimeoutSeconds s</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Allowed status</dt>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">@(string.IsNullOrWhiteSpace(Model.Monitor.AllowedStatusCodes) ? "2xx only" : $"2xx + {Model.Monitor.AllowedStatusCodes}")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Last run</dt>
                 <dd class="col-span-8 py-1">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Next run</dt>

@@ -65,7 +65,7 @@
     </div>
 
     <div class="hawk-card">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
                 <label class="hawk-label" asp-for="Form.AlertAfterConsecutiveFailures"></label>
                 <input class="hawk-input mt-2" asp-for="Form.AlertAfterConsecutiveFailures" type="number" min="1" max="20" />
@@ -77,6 +77,12 @@
                 <input class="hawk-input mt-2 font-mono" asp-for="Form.AlertEmailOverride" placeholder="alerts@yourdomain" />
                 <div class="hawk-error-message" asp-validation-for="Form.AlertEmailOverride"></div>
                 <div class="text-xs text-zinc-500 mt-1">Optional. Overrides the alert recipient for this monitor.</div>
+            </div>
+            <div>
+                <label class="hawk-label" asp-for="Form.AllowedStatusCodes"></label>
+                <input class="hawk-input mt-2 font-mono" asp-for="Form.AllowedStatusCodes" placeholder="404,429" />
+                <div class="hawk-error-message" asp-validation-for="Form.AllowedStatusCodes"></div>
+                <div class="text-xs text-zinc-500 mt-1">Optional additional OK codes. 2xx always counts as OK.</div>
             </div>
             <div>
                 <label class="hawk-label" asp-for="Form.RunRetentionDays"></label>

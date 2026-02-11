@@ -103,6 +103,9 @@ public sealed class MonitorExecutor(
         var started = DateTimeOffset.UtcNow;
         var res = await urlChecker.CheckAsync(req, cancellationToken);
         var finished = started.Add(res.Duration);
+        var statusIsSuccess = AllowedStatusCodesParser.IsSuccessStatusCode(res.StatusCode, monitor.AllowedStatusCodes);
+        var matchesPassed = res.MatchResults.All(m => m.Matched);
+        var success = statusIsSuccess && matchesPassed;
 
         var run = new MonitorRun
         {
@@ -118,8 +121,8 @@ public sealed class MonitorExecutor(
             RequestBodySnippet = TrimOrNull(req.Body, 4000),
             DurationMs = (int)Math.Clamp(res.Duration.TotalMilliseconds, 0, int.MaxValue),
             StatusCode = res.StatusCode is null ? null : (int)res.StatusCode.Value,
-            Success = res.Success,
-            ErrorMessage = res.ErrorMessage,
+            Success = success,
+            ErrorMessage = success ? null : BuildFailureMessage(res.StatusCode, statusIsSuccess, res.MatchResults),
             ResponseSnippet = res.ResponseBodySnippet,
             ResponseHeadersJson = SerializeHeaders(res.ResponseHeaders),
             ResponseContentType = res.ResponseContentType,
@@ -341,5 +344,28 @@ public sealed class MonitorExecutor(
 
         var defaultDays = config.GetValue("Hawk:Monitoring:RunRetentionDaysDefault", 90);
         return Math.Clamp(defaultDays, 1, 3650);
+    }
+
+    private static string BuildFailureMessage(HttpStatusCode? statusCode, bool statusIsSuccess, IReadOnlyList<UrlCheckMatchResult> matchResults)
+    {
+        var parts = new List<string>();
+
+        if (!statusIsSuccess)
+        {
+            if (statusCode is null)
+            {
+                parts.Add("No HTTP response");
+            }
+            else
+            {
+                parts.Add($"HTTP {(int)statusCode.Value} ({statusCode.Value})");
+            }
+        }
+
+        var failed = matchResults.Count(m => !m.Matched);
+        if (failed > 0)
+            parts.Add($"{failed} match rule(s) failed");
+
+        return string.Join("; ", parts);
     }
 }

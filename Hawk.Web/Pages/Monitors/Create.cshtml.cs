@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Identity;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Monitoring;
 using Hawk.Web.Services;
+using Hawk.Web.Services.Monitoring;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Web.Pages.Monitors;
@@ -62,6 +63,7 @@ public class CreateModel(ApplicationDbContext db, IHostEnvironment env, UserMana
             IntervalSeconds = Form.IntervalSeconds,
             AlertAfterConsecutiveFailures = Form.AlertAfterConsecutiveFailures,
             AlertEmailOverride = string.IsNullOrWhiteSpace(Form.AlertEmailOverride) ? null : Form.AlertEmailOverride.Trim(),
+            AllowedStatusCodes = AllowedStatusCodesParser.Normalize(Form.AllowedStatusCodes),
             RunRetentionDays = Form.RunRetentionDays,
             ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim(),
             Body = Form.Body,

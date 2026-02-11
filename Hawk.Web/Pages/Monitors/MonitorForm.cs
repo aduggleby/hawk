@@ -72,6 +72,13 @@ public sealed class MonitorForm
     public string? AlertEmailOverride { get; set; }
 
     /// <summary>
+    /// Optional additional HTTP status codes that count as success.
+    /// </summary>
+    [Display(Name = "Allowed HTTP status codes (additional OK)")]
+    [MaxLength(256)]
+    public string? AllowedStatusCodes { get; set; }
+
+    /// <summary>
     /// Optional run history retention override in days.
     /// </summary>
     [Display(Name = "Run retention (days) override")]
@@ -131,6 +138,9 @@ public sealed class MonitorForm
             if (!emailAttr.IsValid(AlertEmailOverride))
                 yield return new ValidationResult("Alert email override must be a valid email address.", [nameof(AlertEmailOverride)]);
         }
+
+        if (!AllowedStatusCodesParser.TryParse(AllowedStatusCodes, out _, out var statusCodeError))
+            yield return new ValidationResult(statusCodeError ?? "Allowed HTTP status codes are invalid.", [nameof(AllowedStatusCodes)]);
 
         if (RunRetentionDays is < 1 or > 3650)
             yield return new ValidationResult("Run retention override must be between 1 and 3650 days.", [nameof(RunRetentionDays)]);
