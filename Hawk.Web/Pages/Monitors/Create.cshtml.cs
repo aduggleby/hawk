@@ -47,8 +47,7 @@ public class CreateModel(ApplicationDbContext db, IHostEnvironment env, UserMana
     {
         AllowedIntervals = Services.Monitoring.MonitorIntervals.AllowedSeconds(env);
 
-        foreach (var vr in Form.Validate(env))
-            ModelState.AddModelError(string.Join(".", vr.MemberNames), vr.ErrorMessage ?? "Invalid value.");
+        MonitorFormValidation.AddResults(ModelState, Form.Validate(env));
 
         if (!ModelState.IsValid)
             return Page();

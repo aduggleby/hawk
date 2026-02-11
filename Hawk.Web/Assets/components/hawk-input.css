@@ -23,7 +23,7 @@
 }
 
 .hawk-input::placeholder {
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 68%, var(--bg-secondary));
 }
 
 @utility hawk-select {

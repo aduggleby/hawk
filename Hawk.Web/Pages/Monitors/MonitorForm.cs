@@ -90,7 +90,7 @@ public sealed class MonitorForm
     /// </summary>
     [Display(Name = "Content-Type")]
     [MaxLength(200)]
-    public string? ContentType { get; set; }
+    public string? ContentType { get; set; } = "application/json";
 
     /// <summary>
     /// POST body.

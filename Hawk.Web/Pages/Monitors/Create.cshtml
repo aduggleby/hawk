@@ -3,6 +3,15 @@
 @model Hawk.Web.Pages.Monitors.CreateModel
 @{
     ViewData["Title"] = "New monitor";
+    var hasPostValues =
+        string.Equals(Model.Form.Method, "POST", StringComparison.OrdinalIgnoreCase) ||
+        !string.IsNullOrWhiteSpace(Model.Form.Body) ||
+        (!string.IsNullOrWhiteSpace(Model.Form.ContentType) &&
+         !string.Equals(Model.Form.ContentType, "application/json", StringComparison.OrdinalIgnoreCase));
+    var hasHeaderValues = Model.Form.HeaderNames.Any(h => !string.IsNullOrWhiteSpace(h)) ||
+                          Model.Form.HeaderValues.Any(v => !string.IsNullOrWhiteSpace(v));
+    var hasMatchRuleValues = Model.Form.MatchModes.Any(m => m != Hawk.Web.Services.ContentMatchMode.None) ||
+                             Model.Form.MatchPatterns.Any(p => !string.IsNullOrWhiteSpace(p));
 }
 
 <div class="flex items-start justify-between gap-4 mb-6">
@@ -14,6 +23,9 @@
 </div>
 
 <form method="post" class="space-y-4">
+    <div asp-validation-summary="ModelOnly" class="hawk-error-message"></div>
+    <div asp-validation-summary="All" class="hawk-error-message"></div>
+
     <div class="hawk-card">
         <label class="hawk-label" asp-for="Form.Name"></label>
         <input class="hawk-input mt-2" asp-for="Form.Name" />
@@ -27,7 +39,7 @@
     </div>
 
     <div class="hawk-card">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
                 <label class="hawk-label" asp-for="Form.Method"></label>
                 <select class="hawk-select mt-2" asp-for="Form.Method">
@@ -90,60 +102,76 @@
     </div>
 
     <div class="hawk-card">
-        <div class="flex items-start justify-between gap-3">
-            <div>
-                <div class="font-semibold">POST options</div>
-                <div class="text-sm text-zinc-600">Only used when Method=POST.</div>
+        <details @if (hasPostValues) { <text>open</text> }>
+            <summary class="cursor-pointer select-none">
+                <div class="font-semibold inline">POST options</div>
+                <div class="text-sm text-zinc-600 inline ml-2">Only used when Method=POST.</div>
+            </summary>
+
+            <div class="mt-4">
+                <label class="hawk-label" asp-for="Form.ContentType"></label>
+                <input class="hawk-input mt-2 font-mono" asp-for="Form.ContentType" placeholder="application/json" />
+                <div class="hawk-error-message" asp-validation-for="Form.ContentType"></div>
             </div>
-        </div>
 
-        <div class="mt-4">
-            <label class="hawk-label" asp-for="Form.ContentType"></label>
-            <input class="hawk-input mt-2 font-mono" asp-for="Form.ContentType" placeholder="application/json" />
-            <div class="hawk-error-message" asp-validation-for="Form.ContentType"></div>
-        </div>
-
-        <div class="mt-4">
-            <label class="hawk-label" asp-for="Form.Body"></label>
-            <textarea class="hawk-input mt-2 font-mono" asp-for="Form.Body" rows="6" placeholder="{\"ping\":true}"></textarea>
-            <div class="hawk-error-message" asp-validation-for="Form.Body"></div>
-        </div>
+            <div class="mt-4">
+                <label class="hawk-label" asp-for="Form.Body"></label>
+                <textarea class="hawk-input mt-2 font-mono" asp-for="Form.Body" rows="6" placeholder='{
+  "ping": true,
+  "source": "hawk",
+  "timestamp": "2026-02-11T00:00:00Z"
+}'></textarea>
+                <div class="hawk-error-message" asp-validation-for="Form.Body"></div>
+            </div>
+        </details>
     </div>
 
     <div class="hawk-card">
-        <div class="font-semibold mb-2">Headers</div>
-        <div class="text-sm text-zinc-600 mb-3">Optional request headers.</div>
-        @for (var i = 0; i < 5; i++)
-        {
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-2 mb-2">
-                <div class="md:col-span-4">
-                    <input class="hawk-input font-mono" name="Form.HeaderNames[@i]" value="@Model.Form.HeaderNames[i]" placeholder="X-Token" />
-                </div>
-                <div class="md:col-span-8">
-                    <input class="hawk-input font-mono" name="Form.HeaderValues[@i]" value="@Model.Form.HeaderValues[i]" placeholder="secret" />
-                </div>
+        <details @if (hasHeaderValues) { <text>open</text> }>
+            <summary class="cursor-pointer select-none">
+                <div class="font-semibold inline">Headers</div>
+                <div class="text-sm text-zinc-600 inline ml-2">Optional request headers.</div>
+            </summary>
+            <div class="mt-3">
+                @for (var i = 0; i < 5; i++)
+                {
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-2 mb-2">
+                        <div class="md:col-span-4">
+                            <input class="hawk-input font-mono" name="Form.HeaderNames[@i]" value="@Model.Form.HeaderNames[i]" placeholder="X-Token" />
+                        </div>
+                        <div class="md:col-span-8">
+                            <input class="hawk-input font-mono" name="Form.HeaderValues[@i]" value="@Model.Form.HeaderValues[i]" placeholder="secret" />
+                        </div>
+                    </div>
+                }
             </div>
-        }
+        </details>
     </div>
 
     <div class="hawk-card">
-        <div class="font-semibold mb-2">Match rules</div>
-        <div class="text-sm text-zinc-600 mb-3">All rules must pass for the run to be marked successful.</div>
-        @for (var i = 0; i < 5; i++)
-        {
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-2 mb-2">
-                <div class="md:col-span-3">
-                    <select class="hawk-select" name="Form.MatchModes[@i]">
-                        <option value="None" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.None)">None</option>
-                        <option value="Contains" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.Contains)">Contains</option>
-                        <option value="Regex" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.Regex)">Regex</option>
-                    </select>
-                </div>
-                <div class="md:col-span-9">
-                    <input class="hawk-input font-mono" name="Form.MatchPatterns[@i]" value="@Model.Form.MatchPatterns[i]" placeholder="Example Domain" />
-                </div>
+        <details @if (hasMatchRuleValues) { <text>open</text> }>
+            <summary class="cursor-pointer select-none">
+                <div class="font-semibold inline">Match rules</div>
+                <div class="text-sm text-zinc-600 inline ml-2">All rules must pass for the run to be marked successful.</div>
+            </summary>
+            <div class="mt-3">
+                @for (var i = 0; i < 5; i++)
+                {
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-2 mb-2">
+                        <div class="md:col-span-3">
+                            <select class="hawk-select" name="Form.MatchModes[@i]">
+                                <option value="None" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.None)">None</option>
+                                <option value="Contains" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.Contains)">Contains</option>
+                                <option value="Regex" selected="@(Model.Form.MatchModes[i] == Hawk.Web.Services.ContentMatchMode.Regex)">Regex</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-9">
+                            <input class="hawk-input font-mono" name="Form.MatchPatterns[@i]" value="@Model.Form.MatchPatterns[i]" placeholder="Example Domain" />
+                        </div>
+                    </div>
+                }
             </div>
-        }
+        </details>
     </div>
 
     <div class="flex items-center gap-2">
