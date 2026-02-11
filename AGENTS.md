@@ -8,11 +8,11 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - Web app: `Hawk.Web` (Razor Pages + ASP.NET Core Identity)
 - Unit tests: `Hawk.Tests` (xUnit)
 - E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs)
-- Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture)
+- Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture + `/flaky` alternating endpoint)
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.9`
+- Version: `0.9.10`
 
 ## Ports
 
@@ -167,7 +167,7 @@ Alert recipient resolution (in order):
 - Account settings have been restructured under `/Identity/Account/Manage/` with a sidebar layout:
   - **Profile** (`/Identity/Account/Manage/Index`) — display name and email.
   - **Security** (`/Identity/Account/Manage/ChangePassword`) — change password.
-  - **Alerts & Crawler** (`/Identity/Account/Manage/Settings`) — alert email override + User-Agent override.
+  - **Alerts & Crawler** (`/Identity/Account/Manage/Settings`) — alert email override + User-Agent override + run retention override.
 - Old routes (`/Account/Settings`, `/Account/Alerting`) redirect to the new locations for back-compat.
 - Navigation uses an Account dropdown in the topbar with links to Profile, Security, Alerts & Crawler, plus Admin/Hangfire for admins.
 
@@ -176,6 +176,7 @@ Alert recipient resolution (in order):
 - `Hawk.Web/Areas/Identity/Pages/Account/Manage/Settings.cshtml(.cs)` provides account-wide overrides:
   - **Alert email override** — redirects alert emails for the user's monitors to a different address. Stored in `UserAlertSettings`.
   - **Crawler User-Agent override** — sets a default `User-Agent` for all monitors the user owns (unless the monitor explicitly sets one via headers). Stored in `UserUrlCheckSettings`.
+  - **Run retention override** — account-wide default run history retention (in days). Stored in `UserMonitorSettings`. Per-monitor override takes precedence.
 - User-Agent can be a preset key (`firefox`, `chrome`, `edge`, `safari`, `curl`) or a full UA string. Resolution is in `Hawk.Web/Services/UrlChecks/UserAgentResolver.cs`.
 - Presets can be overridden via config: `Hawk:UrlChecks:UserAgentPresets:<key>`.
 
@@ -184,6 +185,18 @@ Alert recipient resolution (in order):
 - `Hawk.Web/Services/Monitoring/MonitorExecutor.cs` is the shared execution engine used by both the Hangfire scheduler (`MonitorRunner`) and the interactive test page.
 - Produces a `MonitorExecutionResult` record containing the monitor, request, result, and persisted run.
 - Handles: loading the monitor + headers + match rules, resolving User-Agent overrides, running the URL check, persisting the run, evaluating alert policy, and sending alerts.
+- Each run now stores full request/response diagnostics on the `MonitorRun` entity: `Reason`, `RequestUrl`, `RequestMethod`, `RequestContentType`, `RequestTimeoutMs`, `RequestHeadersJson`, `RequestBodySnippet`, `ResponseHeadersJson`, `ResponseContentType`, `ResponseContentLength`.
+- After persisting a run, `MonitorExecutor` calls `PruneRunHistoryAsync` to delete runs older than the resolved retention period.
+
+## Run Retention
+
+- `Monitor.RunRetentionDays` — optional per-monitor run history retention override (1–3650 days).
+- `UserMonitorSettings.RunRetentionDays` — optional account-wide retention default, stored in `Hawk.Web/Data/Monitoring/UserMonitorSettings.cs`.
+- Resolution order (in `MonitorExecutor.ResolveRunRetentionDaysAsync`):
+  1. Per-monitor `RunRetentionDays`.
+  2. Account-wide `UserMonitorSettings.RunRetentionDays`.
+  3. Server default `Hawk:Monitoring:RunRetentionDaysDefault` (default 90).
+- Pruning runs `ExecuteDeleteAsync` on `MonitorRuns` older than the cutoff after every run.
 
 ## Monitor Test Page
 
@@ -278,6 +291,8 @@ Service endpoints on the VM:
 - URL checks:
   - `Hawk__UrlChecks__UserAgent` (default `firefox`; preset key or full UA string)
   - `Hawk__UrlChecks__UserAgentPresets__<key>` (override built-in preset values)
+- Monitoring:
+  - `Hawk__Monitoring__RunRetentionDaysDefault` (default 90; server-wide fallback for run history retention)
 
 ## Git Workflow
 

@@ -257,6 +257,15 @@ Each user can configure account-wide overrides from the **Account** dropdown (Pr
 
 - **Alert email override** — redirect all alert emails for your monitors to a different address.
 - **Crawler User-Agent** — set a default `User-Agent` header for all monitors you own (unless the monitor explicitly sets one via headers). You can use a preset (`firefox`, `chrome`, `edge`, `safari`, `curl`) or paste a full UA string.
+- **Run retention** — account-wide default run history retention (in days) for your monitors. Per-monitor override takes precedence. If empty, Hawk uses the server default (90 days).
+
+## Run Retention
+
+Run history is automatically pruned after each check. Retention is resolved in this order:
+
+1. **Per-monitor override** — the `RunRetentionDays` field on the monitor (1–3650).
+2. **Account-wide default** — set in **Settings** → **Alerts & Crawler** by the monitor owner.
+3. **Server default** — `Hawk__Monitoring__RunRetentionDaysDefault` (default 90 days).
 
 ## Test A Monitor
 
@@ -352,6 +361,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.9` in the `.csproj` files.
+- Project version is set to `0.9.10` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.
