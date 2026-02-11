@@ -3,6 +3,7 @@
 @model Hawk.Web.Pages.Monitors.CreateModel
 @{
     ViewData["Title"] = "New monitor";
+    var isPostMethod = string.Equals(Model.Form.Method, "POST", StringComparison.OrdinalIgnoreCase);
     var hasPostValues =
         string.Equals(Model.Form.Method, "POST", StringComparison.OrdinalIgnoreCase) ||
         !string.IsNullOrWhiteSpace(Model.Form.Body) ||
@@ -70,11 +71,6 @@
                     <span class="font-medium">@Html.DisplayNameFor(m => m.Form.Enabled)</span>
                 </label>
             </div>
-        </div>
-    </div>
-
-    <div class="hawk-card">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
                 <label class="hawk-label" asp-for="Form.AlertAfterConsecutiveFailures"></label>
                 <input class="hawk-input mt-2" asp-for="Form.AlertAfterConsecutiveFailures" type="number" min="1" max="20" />
@@ -102,7 +98,7 @@
         </div>
     </div>
 
-    <div class="hawk-card">
+    <div class="hawk-card" id="post-options-card" hidden="@(!isPostMethod)">
         <details @if (hasPostValues) { <text>open</text> }>
             <summary class="cursor-pointer select-none">
                 <div class="font-semibold inline">POST options</div>
@@ -183,4 +179,19 @@
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const methodSelect = document.getElementById("Form_Method");
+            const postOptionsCard = document.getElementById("post-options-card");
+            if (!methodSelect || !postOptionsCard) return;
+
+            const sync = () => {
+                const isPost = (methodSelect.value || "").toUpperCase() === "POST";
+                postOptionsCard.hidden = !isPost;
+            };
+
+            methodSelect.addEventListener("change", sync);
+            sync();
+        })();
+    </script>
 }

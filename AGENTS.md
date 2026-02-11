@@ -235,6 +235,7 @@ Alert recipient resolution (in order):
 - `Hawk.Web/Pages/Monitors/MonitorFormValidation.cs` maps custom `ValidationResult` errors to Razor `ModelStateDictionary` keys (prefixed with `Form.`).
 - Create and Edit pages call `MonitorFormValidation.AddResults()` to surface server-side validation errors inline.
 - Optional form sections (headers, match rules, advanced settings) are collapsed by default and expand via `<details>` elements.
+- **Create/Edit parity rule:** when changing monitor form UI/behavior on `Hawk.Web/Pages/Monitors/Create.cshtml`, apply the equivalent change to `Hawk.Web/Pages/Monitors/Edit.cshtml` (and vice versa) unless explicitly requested otherwise.
 
 ## Dev Tooling
 
