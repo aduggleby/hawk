@@ -50,6 +50,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     /// </summary>
     public DbSet<UserUrlCheckSettings> UserUrlCheckSettings => Set<UserUrlCheckSettings>();
 
+    /// <summary>
+    /// Per-user monitor behavior settings (e.g., run retention).
+    /// </summary>
+    public DbSet<UserMonitorSettings> UserMonitorSettings => Set<UserMonitorSettings>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -75,6 +80,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         });
 
         builder.Entity<UserUrlCheckSettings>(b =>
+        {
+            b.HasKey(x => x.UserId);
+        });
+
+        builder.Entity<UserMonitorSettings>(b =>
         {
             b.HasKey(x => x.UserId);
         });

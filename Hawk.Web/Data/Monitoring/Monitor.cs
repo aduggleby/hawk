@@ -81,6 +81,12 @@ public sealed class Monitor
     public string? AlertEmailOverride { get; set; }
 
     /// <summary>
+    /// Optional run history retention override in days for this monitor.
+    /// If not set, falls back to the owner's account-wide setting, then the server default.
+    /// </summary>
+    public int? RunRetentionDays { get; set; }
+
+    /// <summary>
     /// Optional request content-type (used for POST/PUT/PATCH).
     /// </summary>
     [MaxLength(200)]

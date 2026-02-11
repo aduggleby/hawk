@@ -61,8 +61,9 @@ public sealed class MonitorExecutor(
 
         if (!Uri.TryCreate(monitor.Url, UriKind.Absolute, out var uri))
         {
-            var invalidRun = await PersistInvalidConfigAsync(monitor, "Invalid URL", cancellationToken);
             var invalidReq = new UrlCheckRequest(uri ?? new Uri("http://invalid.local/"), HttpMethod.Get, new Dictionary<string, string>(), null, null, TimeSpan.Zero, []);
+            var invalidRun = await PersistInvalidConfigAsync(monitor, "Invalid URL", reason, invalidReq, cancellationToken);
+            await PruneRunHistoryAsync(monitor, cancellationToken);
             var invalidRes = new UrlCheckResult(false, null, TimeSpan.Zero, "Invalid URL", [], null, new Dictionary<string, string>(), null, null);
             return new MonitorExecutionResult(monitor, invalidReq, invalidRes, invalidRun);
         }
@@ -108,11 +109,21 @@ public sealed class MonitorExecutor(
             MonitorId = monitor.Id,
             StartedAt = started,
             FinishedAt = finished,
+            Reason = NormalizeReason(reason),
+            RequestUrl = req.Url.ToString(),
+            RequestMethod = req.Method.Method,
+            RequestContentType = req.ContentType,
+            RequestTimeoutMs = (int)Math.Clamp(req.Timeout.TotalMilliseconds, 0, int.MaxValue),
+            RequestHeadersJson = SerializeHeaders(req.Headers),
+            RequestBodySnippet = TrimOrNull(req.Body, 4000),
             DurationMs = (int)Math.Clamp(res.Duration.TotalMilliseconds, 0, int.MaxValue),
             StatusCode = res.StatusCode is null ? null : (int)res.StatusCode.Value,
             Success = res.Success,
             ErrorMessage = res.ErrorMessage,
             ResponseSnippet = res.ResponseBodySnippet,
+            ResponseHeadersJson = SerializeHeaders(res.ResponseHeaders),
+            ResponseContentType = res.ResponseContentType,
+            ResponseContentLength = res.ResponseContentLength,
             MatchResultsJson = JsonSerializer.Serialize(res.MatchResults.Select(m => new
             {
                 Mode = m.Rule.Mode.ToString(),
@@ -140,11 +151,17 @@ public sealed class MonitorExecutor(
         monitor.LastRunAt = started;
         db.MonitorRuns.Add(run);
         await db.SaveChangesAsync(cancellationToken);
+        await PruneRunHistoryAsync(monitor, cancellationToken);
 
         return new MonitorExecutionResult(monitor, req, res, run);
     }
 
-    private async Task<MonitorRun> PersistInvalidConfigAsync(MonitorEntity monitor, string error, CancellationToken cancellationToken)
+    private async Task<MonitorRun> PersistInvalidConfigAsync(
+        MonitorEntity monitor,
+        string error,
+        string? reason,
+        UrlCheckRequest req,
+        CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         monitor.LastRunAt = now;
@@ -153,11 +170,21 @@ public sealed class MonitorExecutor(
             MonitorId = monitor.Id,
             StartedAt = now,
             FinishedAt = now,
+            Reason = NormalizeReason(reason),
+            RequestUrl = req.Url.ToString(),
+            RequestMethod = req.Method.Method,
+            RequestContentType = req.ContentType,
+            RequestTimeoutMs = (int)Math.Clamp(req.Timeout.TotalMilliseconds, 0, int.MaxValue),
+            RequestHeadersJson = SerializeHeaders(req.Headers),
+            RequestBodySnippet = TrimOrNull(req.Body, 4000),
             DurationMs = 0,
             StatusCode = null,
             Success = false,
             ErrorMessage = error,
             ResponseSnippet = null,
+            ResponseHeadersJson = "{}",
+            ResponseContentType = null,
+            ResponseContentLength = null,
             MatchResultsJson = "[]",
         };
         db.MonitorRuns.Add(run);
@@ -188,7 +215,7 @@ public sealed class MonitorExecutor(
         }
 
         var status = run.StatusCode is null ? "NO_RESPONSE" : run.StatusCode.ToString()!;
-        var subject = $"[Hawk] FAIL {monitor.Name} ({status})";
+        var subject = $"[Alert FAIL] {monitor.Name} ({status})";
         var html = $"""
             <h2>Monitor failed</h2>
             <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
@@ -263,5 +290,56 @@ public sealed class MonitorExecutor(
             count++;
         }
         return count;
+    }
+
+    private static string SerializeHeaders(IReadOnlyDictionary<string, string>? headers)
+    {
+        if (headers is null || headers.Count == 0)
+            return "{}";
+        return JsonSerializer.Serialize(headers);
+    }
+
+    private static string? TrimOrNull(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        return value.Length <= maxLength ? value : value[..maxLength];
+    }
+
+    private static string NormalizeReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            return "unknown";
+        return reason.Trim().ToLowerInvariant();
+    }
+
+    private async Task PruneRunHistoryAsync(MonitorEntity monitor, CancellationToken cancellationToken)
+    {
+        var retentionDays = await ResolveRunRetentionDaysAsync(monitor, cancellationToken);
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-retentionDays);
+
+        await db.MonitorRuns
+            .Where(r => r.MonitorId == monitor.Id && r.StartedAt < cutoff)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    private async Task<int> ResolveRunRetentionDaysAsync(MonitorEntity monitor, CancellationToken cancellationToken)
+    {
+        if (monitor.RunRetentionDays is > 0)
+            return Math.Clamp(monitor.RunRetentionDays.Value, 1, 3650);
+
+        if (!string.IsNullOrWhiteSpace(monitor.CreatedByUserId))
+        {
+            var accountRetention = await db.UserMonitorSettings
+                .Where(x => x.UserId == monitor.CreatedByUserId)
+                .Select(x => x.RunRetentionDays)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (accountRetention is > 0)
+                return Math.Clamp(accountRetention.Value, 1, 3650);
+        }
+
+        var defaultDays = config.GetValue("Hawk:Monitoring:RunRetentionDaysDefault", 90);
+        return Math.Clamp(defaultDays, 1, 3650);
     }
 }

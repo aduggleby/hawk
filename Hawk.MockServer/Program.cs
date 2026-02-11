@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
 var sentEmails = new ConcurrentQueue<object>();
+var flakyCounter = 0;
 
 app.MapGet("/", () => Results.Text("hawk-mockserver"));
 
@@ -20,6 +21,15 @@ app.MapGet("/ok", () => Results.Text("OK: Example Domain"));
 app.MapGet("/nomatch", () => Results.Text("OK: but does not contain the expected phrase"));
 
 app.MapGet("/error", () => Results.StatusCode(500));
+
+app.MapGet("/flaky", () =>
+{
+    // Intermittent endpoint: alternates between success and failure.
+    var n = Interlocked.Increment(ref flakyCounter);
+    return (n % 2) == 0
+        ? Results.Text($"FLAKY_OK #{n}")
+        : Results.StatusCode(503);
+});
 
 app.MapGet("/slow", async (HttpContext ctx) =>
 {

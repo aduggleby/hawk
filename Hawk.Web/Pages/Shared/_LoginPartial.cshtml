@@ -7,21 +7,23 @@
 @if (SignInManager.IsSignedIn(User))
 {
     <details class="relative">
-        <summary class="hawk-btn hawk-btn-ghost font-mono cursor-pointer select-none list-none">Account</summary>
+        <summary class="hawk-btn hawk-btn-ghost hawk-topbar-item font-mono cursor-pointer select-none list-none">Account</summary>
         <div class="absolute z-50 mt-2 right-0 w-72 max-w-[85vw]">
-            <div class="hawk-card p-3">
-                <div class="text-xs font-mono uppercase tracking-tight text-zinc-500 mb-2">@((User.Identity?.Name ?? "Account"))</div>
-                <div class="space-y-2">
-                    <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="Identity" asp-page="/Account/Manage/Index">Profile</a>
-                    <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="Identity" asp-page="/Account/Manage/ChangePassword">Security</a>
-                    <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="Identity" asp-page="/Account/Manage/Settings">Alerts & Crawler</a>
+            <div class="border border-[color:var(--border-primary)] bg-[color:var(--bg-secondary)] p-0">
+                <div class="px-3 py-2 text-xs font-mono uppercase tracking-tight text-zinc-500 border-b border-[color:var(--border-primary)]">@((User.Identity?.Name ?? "Account"))</div>
+                <div class="py-1">
+                    <a class="hawk-btn hawk-menu-item" asp-area="Identity" asp-page="/Account/Manage/Index">Profile</a>
+                    <a class="hawk-btn hawk-menu-item" asp-area="Identity" asp-page="/Account/Manage/ChangePassword">Security</a>
+                    <a class="hawk-btn hawk-menu-item" asp-area="Identity" asp-page="/Account/Manage/Settings">Alerts & Crawler</a>
                     @if (User.IsInRole("Admin"))
                     {
-                        <a class="hawk-btn hawk-btn-ghost w-full justify-start" asp-area="" asp-page="/Admin/Users/Index">Admin</a>
-                        <a class="hawk-btn hawk-btn-ghost w-full justify-start" href="/hangfire">Hangfire</a>
+                        <div class="border-t border-[color:var(--border-primary)] my-1"></div>
+                        <a class="hawk-btn hawk-menu-item" asp-area="" asp-page="/Admin/Users/Index">Admin</a>
+                        <a class="hawk-btn hawk-menu-item" href="/hangfire">Hangfire</a>
                     }
+                    <div class="border-t border-[color:var(--border-primary)] my-1"></div>
                     <form asp-area="Identity" asp-page="/Account/Logout" asp-route-returnUrl="@Url.Page("/Index", new { area = "" })">
-                        <button type="submit" class="hawk-btn hawk-btn-ghost w-full justify-start">Logout</button>
+                        <button type="submit" class="hawk-btn hawk-menu-item">Logout</button>
                     </form>
                 </div>
             </div>
@@ -30,7 +32,7 @@
 }
 else
 {
-    <a class="hawk-btn hawk-btn-ghost" asp-area="Identity" asp-page="/Account/Login">Login</a>
-    <a class="hawk-btn hawk-btn-primary" asp-area="Identity" asp-page="/Account/Register">Register</a>
+    <a class="hawk-btn hawk-btn-ghost hawk-topbar-item" asp-area="Identity" asp-page="/Account/Login">Login</a>
+    <a class="hawk-btn hawk-btn-primary hawk-topbar-item" asp-area="Identity" asp-page="/Account/Register">Register</a>
 }
 </div>

@@ -11,8 +11,9 @@
 /* Theme tokens (Tailwind v4 @theme). */
 @theme {
   /* Typography */
-  --font-sans: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+  --font-sans: "Monaspace Krypton", "Mona Sans", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  --font-mono: "Monaspace Krypton", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
 
   /* Brand (monochrome; keep names to avoid chasing class renames). */
@@ -65,17 +66,17 @@
   --spacing-22: 5.5rem;
 
   /* Radius (technical; tighter corners) */
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
-  --radius-2xl: 1.25rem;
-  --radius-full: 9999px;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-full: 0;
 
   /* Shadows (minimal; rely on borders). */
-  --shadow-soft: 0 1px 0 0 rgb(0 0 0 / 0.08);
-  --shadow-medium: 0 2px 0 0 rgb(0 0 0 / 0.10);
-  --shadow-hard: 0 3px 0 0 rgb(0 0 0 / 0.12);
+  --shadow-soft: 0 0 0 0 transparent;
+  --shadow-medium: 0 0 0 0 transparent;
+  --shadow-hard: 0 0 0 0 transparent;
 }
 
 @layer base {
@@ -128,6 +129,33 @@
 
   a:hover {
     text-decoration-color: color-mix(in srgb, var(--text-primary) 42%, transparent);
+  }
+}
+
+@layer utilities {
+  .dark .text-zinc-400 { color: var(--text-muted); }
+  .dark .text-zinc-500 { color: var(--text-secondary); }
+  .dark .text-zinc-600 { color: var(--text-secondary); }
+  .dark .text-zinc-700 { color: var(--text-primary); }
+
+  .dark .bg-zinc-50 { background-color: color-mix(in srgb, var(--bg-secondary) 92%, var(--bg-primary) 8%); }
+  .dark .bg-white { background-color: var(--bg-secondary); }
+
+  .dark .border-zinc-100 { border-color: var(--border-primary); }
+  .dark .border-zinc-200 { border-color: var(--border-primary); }
+  .dark .divide-zinc-100 > :not(:last-child) { border-color: var(--border-primary); }
+
+  /* Recent runs table: only show strong separators while hovering a row. */
+  .hawk-runs-tbody > tr > td {
+    border-top: 1px solid transparent;
+    border-bottom: 1px solid transparent;
+    transition: border-color 120ms ease;
+  }
+
+  .hawk-runs-tbody > tr:hover > td,
+  .hawk-runs-tbody > tr:focus-within > td {
+    border-top-color: var(--border-primary);
+    border-bottom-color: var(--border-primary);
   }
 }
 

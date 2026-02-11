@@ -66,6 +66,62 @@ public sealed class MonitorRun
     public string MatchResultsJson { get; set; } = "[]";
 
     /// <summary>
+    /// Trigger reason for this run (for example: schedule, manual, import).
+    /// </summary>
+    [MaxLength(32)]
+    public string? Reason { get; set; }
+
+    /// <summary>
+    /// Request URL used for this run.
+    /// </summary>
+    [MaxLength(2048)]
+    public string? RequestUrl { get; set; }
+
+    /// <summary>
+    /// Request HTTP method used for this run.
+    /// </summary>
+    [MaxLength(16)]
+    public string? RequestMethod { get; set; }
+
+    /// <summary>
+    /// Request content-type for this run (if any).
+    /// </summary>
+    [MaxLength(200)]
+    public string? RequestContentType { get; set; }
+
+    /// <summary>
+    /// Request timeout used for this run (milliseconds).
+    /// </summary>
+    public int? RequestTimeoutMs { get; set; }
+
+    /// <summary>
+    /// Request headers (JSON object).
+    /// </summary>
+    public string RequestHeadersJson { get; set; } = "{}";
+
+    /// <summary>
+    /// Request body snippet for diagnostics (if any).
+    /// </summary>
+    [MaxLength(4000)]
+    public string? RequestBodySnippet { get; set; }
+
+    /// <summary>
+    /// Response headers (JSON object).
+    /// </summary>
+    public string ResponseHeadersJson { get; set; } = "{}";
+
+    /// <summary>
+    /// Response content-type.
+    /// </summary>
+    [MaxLength(200)]
+    public string? ResponseContentType { get; set; }
+
+    /// <summary>
+    /// Response content length.
+    /// </summary>
+    public long? ResponseContentLength { get; set; }
+
+    /// <summary>
     /// True if an alert was sent for this run (best-effort).
     /// </summary>
     public bool AlertSent { get; set; }
@@ -81,4 +137,3 @@ public sealed class MonitorRun
     /// </summary>
     public Monitor? Monitor { get; set; }
 }
-

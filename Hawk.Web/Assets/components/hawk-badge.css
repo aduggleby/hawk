@@ -19,6 +19,12 @@
   border-color: var(--text-primary);
 }
 
+.dark .hawk-badge-success {
+  background: color-mix(in srgb, var(--bg-secondary) 88%, var(--text-primary) 12%);
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
 @utility hawk-badge-danger {
   background: var(--bg-secondary);
   color: var(--text-primary);

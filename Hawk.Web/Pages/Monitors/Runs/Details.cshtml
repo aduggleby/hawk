@@ -1,0 +1,102 @@
+@page "{monitorId:guid}/{runId:guid}"
+@model Hawk.Web.Pages.Monitors.Runs.DetailsModel
+@{
+    ViewData["Title"] = "Run diagnostics";
+}
+
+@if (Model.Monitor is null || Model.Run is null)
+{
+    <div class="hawk-card border-[color:var(--text-primary)] border-dashed">
+        <div class="text-sm">Run not found.</div>
+    </div>
+    return;
+}
+
+<div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-2xl font-semibold tracking-tight mb-1">Run diagnostics</h1>
+        <div class="text-sm text-[color:var(--text-secondary)]">
+            <a class="underline decoration-dotted underline-offset-2 hover:no-underline"
+               asp-page="/Monitors/Details"
+               asp-route-id="@Model.Monitor.Id">@Model.Monitor.Name</a>
+            <span class="mx-2 text-[color:var(--text-muted)]">·</span>
+            <span>@Model.Run.StartedAt.ToLocalTime().ToString("g")</span>
+        </div>
+    </div>
+    <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@Model.Monitor.Id">Back to monitor</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <div class="lg:col-span-4 space-y-4">
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Run metadata</div>
+            <dl class="grid grid-cols-12 gap-y-2 text-sm">
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Result</dt>
+                <dd class="col-span-8">
+                    @if (Model.Run.Success)
+                    {
+                        <span class="hawk-badge hawk-badge-success">OK</span>
+                    }
+                    else
+                    {
+                        <span class="hawk-badge hawk-badge-danger">FAIL</span>
+                    }
+                </dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Reason</dt>
+                <dd class="col-span-8 font-mono text-xs break-words">@(Model.Run.Reason ?? "-")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Started</dt>
+                <dd class="col-span-8 font-mono text-xs break-words">@Model.Run.StartedAt.ToLocalTime().ToString("O")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Finished</dt>
+                <dd class="col-span-8 font-mono text-xs break-words">@Model.Run.FinishedAt.ToLocalTime().ToString("O")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Duration</dt>
+                <dd class="col-span-8 font-mono text-xs break-words">@Model.Run.DurationMs ms</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">HTTP status</dt>
+                <dd class="col-span-8 font-mono text-xs break-words">@(Model.Run.StatusCode?.ToString() ?? "NO_RESPONSE")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert</dt>
+                <dd class="col-span-8 font-mono text-xs break-words">@(Model.Run.AlertSent ? "sent" : (Model.Run.AlertError ?? "not sent"))</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Error</dt>
+                <dd class="col-span-8 font-mono text-xs break-words">@(string.IsNullOrWhiteSpace(Model.Run.ErrorMessage) ? "-" : Model.Run.ErrorMessage)</dd>
+            </dl>
+        </div>
+    </div>
+
+    <div class="lg:col-span-8 space-y-4">
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Request</div>
+            <div class="space-y-2 text-xs font-mono">
+                <div class="break-words"><span class="text-[color:var(--text-secondary)]">URL:</span> @(Model.Run.RequestUrl ?? "-")</div>
+                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Method:</span> @(Model.Run.RequestMethod ?? "-")</div>
+                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Content-Type:</span> @(Model.Run.RequestContentType ?? "-")</div>
+                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Timeout:</span> @(Model.Run.RequestTimeoutMs?.ToString() ?? "-") ms</div>
+                <div>
+                    <div class="text-[color:var(--text-secondary)] mb-1">Headers</div>
+                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@((string.IsNullOrWhiteSpace(Model.Run.RequestHeadersJson) ? "{}" : Model.Run.RequestHeadersJson))</pre>
+                </div>
+                <div>
+                    <div class="text-[color:var(--text-secondary)] mb-1">Body snippet</div>
+                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@(string.IsNullOrWhiteSpace(Model.Run.RequestBodySnippet) ? "-" : Model.Run.RequestBodySnippet)</pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="hawk-card">
+            <div class="font-semibold mb-3">Response</div>
+            <div class="space-y-2 text-xs font-mono">
+                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Content-Type:</span> @(Model.Run.ResponseContentType ?? "-")</div>
+                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Content-Length:</span> @(Model.Run.ResponseContentLength?.ToString() ?? "-")</div>
+                <div>
+                    <div class="text-[color:var(--text-secondary)] mb-1">Headers</div>
+                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@((string.IsNullOrWhiteSpace(Model.Run.ResponseHeadersJson) ? "{}" : Model.Run.ResponseHeadersJson))</pre>
+                </div>
+                <div>
+                    <div class="text-[color:var(--text-secondary)] mb-1">Response snippet</div>
+                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@(string.IsNullOrWhiteSpace(Model.Run.ResponseSnippet) ? "-" : Model.Run.ResponseSnippet)</pre>
+                </div>
+                <div>
+                    <div class="text-[color:var(--text-secondary)] mb-1">Match results</div>
+                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@((string.IsNullOrWhiteSpace(Model.Run.MatchResultsJson) ? "[]" : Model.Run.MatchResultsJson))</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

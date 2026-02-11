@@ -16,9 +16,9 @@
 <div class="flex items-start justify-between gap-4 mb-6">
     <div>
         <h1 class="text-2xl font-semibold tracking-tight mb-1">@Model.Monitor.Name</h1>
-        <div class="text-sm text-zinc-600 font-mono">
-            <span class="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs">@Model.Monitor.Method</span>
-            <span class="mx-2 text-zinc-400">·</span>
+        <div class="text-sm text-[color:var(--text-secondary)] font-mono">
+            <span class="rounded-lg border border-[color:var(--border-primary)] bg-[color:var(--bg-secondary)] px-2 py-1 text-xs text-[color:var(--text-primary)]">@Model.Monitor.Method</span>
+            <span class="mx-2 text-[color:var(--text-muted)]">·</span>
             <span>@Model.Monitor.Url</span>
         </div>
     </div>
@@ -36,7 +36,7 @@
         <div class="hawk-card">
             <div class="font-semibold mb-3">Config</div>
             <dl class="grid grid-cols-12 gap-y-2 text-sm">
-                <dt class="col-span-4 text-zinc-600">Status</dt>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Status</dt>
                 <dd class="col-span-8 font-medium">
                     @if (!Model.Monitor.Enabled)
                     {
@@ -51,16 +51,18 @@
                         <span class="hawk-badge hawk-badge-success">Enabled</span>
                     }
                 </dd>
-                <dt class="col-span-4 text-zinc-600">Interval</dt>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Interval</dt>
                 <dd class="col-span-8 font-medium">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
-                <dt class="col-span-4 text-zinc-600">Timeout</dt>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Timeout</dt>
                 <dd class="col-span-8 font-medium">@Model.Monitor.TimeoutSeconds s</dd>
-                <dt class="col-span-4 text-zinc-600">Last run</dt>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Last run</dt>
                 <dd class="col-span-8">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
-                <dt class="col-span-4 text-zinc-600">Next run</dt>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Next run</dt>
                 <dd class="col-span-8">@((Model.Monitor.NextRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
-                <dt class="col-span-4 text-zinc-600">Alert email</dt>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert email</dt>
                 <dd class="col-span-8 font-mono text-xs break-words">@(!string.IsNullOrWhiteSpace(Model.Monitor.AlertEmailOverride) ? Model.Monitor.AlertEmailOverride : "-")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Run retention</dt>
+                <dd class="col-span-8 font-medium">@(Model.Monitor.RunRetentionDays is > 0 ? $"{Model.Monitor.RunRetentionDays} days (override)" : "Account/default policy")</dd>
             </dl>
         </div>
 
@@ -68,14 +70,14 @@
             <div class="font-semibold mb-3">Headers</div>
             @if (Model.Monitor.Headers.Count == 0)
             {
-                <div class="text-sm text-zinc-600">None.</div>
+                <div class="text-sm text-[color:var(--text-secondary)]">None.</div>
             }
             else
             {
                 <ul class="space-y-1 text-xs font-mono">
                     @foreach (var h in Model.Monitor.Headers)
                     {
-                        <li><span class="text-zinc-600">@h.Name</span>: <span>@h.Value</span></li>
+                        <li><span class="text-[color:var(--text-secondary)]">@h.Name</span>: <span>@h.Value</span></li>
                     }
                 </ul>
             }
@@ -85,14 +87,14 @@
             <div class="font-semibold mb-3">Match rules</div>
             @if (Model.Monitor.MatchRules.Count == 0)
             {
-                <div class="text-sm text-zinc-600">None.</div>
+                <div class="text-sm text-[color:var(--text-secondary)]">None.</div>
             }
             else
             {
                 <ul class="space-y-1 text-xs font-mono">
                     @foreach (var r in Model.Monitor.MatchRules)
                     {
-                        <li><span class="text-zinc-600">@r.Mode</span>: <span>@r.Pattern</span></li>
+                        <li><span class="text-[color:var(--text-secondary)]">@r.Mode</span>: <span>@r.Pattern</span></li>
                     }
                 </ul>
             }
@@ -101,33 +103,41 @@
 
     <div class="lg:col-span-7">
         <div class="hawk-card p-0 overflow-hidden">
-            <div class="px-4 py-4 border-b border-zinc-100">
+            <div class="px-4 py-4 border-b border-[color:var(--border-primary)]">
                 <div class="font-semibold">Recent runs</div>
             </div>
             @if (Model.Runs.Count == 0)
             {
-                <div class="px-4 py-6 text-sm text-zinc-600">No runs yet.</div>
+                <div class="px-4 py-6 text-sm text-[color:var(--text-secondary)]">No runs yet.</div>
             }
             else
             {
                 <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead class="bg-zinc-50 text-zinc-600">
+                    <table class="min-w-full text-xs">
+                        <thead class="bg-[color:var(--bg-secondary)] text-[color:var(--text-secondary)]">
                         <tr>
                             <th class="text-left font-semibold px-4 py-3">When</th>
-                            <th class="text-left font-semibold px-4 py-3">Status</th>
                             <th class="text-left font-semibold px-4 py-3">Duration</th>
                             <th class="text-left font-semibold px-4 py-3">Result</th>
-                            <th class="text-left font-semibold px-4 py-3">Alert</th>
                         </tr>
                         </thead>
-                        <tbody class="divide-y divide-zinc-100">
+                        <tbody class="hawk-runs-tbody">
                         @foreach (var r in Model.Runs)
                         {
-                            <tr class="hover:bg-zinc-50/70">
-                                <td class="px-4 py-3">@r.StartedAt.ToLocalTime().ToString("g")</td>
-                                <td class="px-4 py-3 font-mono text-xs"><span class="rounded-lg border border-zinc-200 bg-white px-2 py-1">@(r.StatusCode?.ToString() ?? "-")</span></td>
-                                <td class="px-4 py-3 text-zinc-700">@r.DurationMs ms</td>
+                            <tr class="hover:bg-[color:var(--bg-secondary)] cursor-pointer"
+                                role="link"
+                                tabindex="0"
+                                onclick="window.location.href='@Url.Page("/Monitors/Runs/Details", new { monitorId = Model.Monitor.Id, runId = r.Id })'"
+                                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); window.location.href='@Url.Page("/Monitors/Runs/Details", new { monitorId = Model.Monitor.Id, runId = r.Id })'; }">
+                                <td class="px-4 py-3">
+                                    <a class="underline decoration-dotted underline-offset-2 hover:no-underline"
+                                       asp-page="/Monitors/Runs/Details"
+                                       asp-route-monitorId="@Model.Monitor.Id"
+                                       asp-route-runId="@r.Id">
+                                        @r.StartedAt.ToLocalTime().ToString("g")
+                                    </a>
+                                </td>
+                                <td class="px-4 py-3 text-[color:var(--text-secondary)]">@r.DurationMs ms</td>
                                 <td class="px-4 py-3">
                                     @if (r.Success)
                                     {
@@ -136,17 +146,7 @@
                                     else
                                     {
                                         <span class="hawk-badge hawk-badge-danger">FAIL</span>
-                                        <span class="text-xs text-zinc-600 ml-2">@r.ErrorMessage</span>
-                                    }
-                                </td>
-                                <td class="px-4 py-3 text-xs text-zinc-600">
-                                    @if (!r.Success)
-                                    {
-                                        @((r.AlertSent) ? "sent" : (r.AlertError ?? "not sent"))
-                                    }
-                                    else
-                                    {
-                                        <span>-</span>
+                                        <span class="text-xs text-[color:var(--text-secondary)] ml-2">@((r.ErrorMessage ?? "-").Length > 120 ? (r.ErrorMessage![..120] + "...") : (r.ErrorMessage ?? "-"))</span>
                                     }
                                 </td>
                             </tr>

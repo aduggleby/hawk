@@ -3,6 +3,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  min-height: 2.25rem;
   padding: 0.5rem 1rem;
   border-radius: var(--radius-md);
   font-weight: 600;
@@ -65,6 +66,18 @@
   background: var(--text-primary);
   color: var(--bg-primary);
   border-style: solid;
+}
+
+@utility hawk-menu-item {
+  width: 100%;
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.hawk-menu-item:hover:not(:disabled) {
+  background: var(--bg-primary);
 }
 
 @utility hawk-btn-sm {

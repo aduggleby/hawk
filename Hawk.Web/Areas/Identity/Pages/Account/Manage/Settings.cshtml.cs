@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Alerting;
+using Hawk.Web.Data.Monitoring;
 using Hawk.Web.Data.UrlChecks;
 using Hawk.Web.Services.UrlChecks;
 using Microsoft.AspNetCore.Authorization;
@@ -24,6 +25,11 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
     [Display(Name = "Crawler User-Agent (account-wide override)")]
     [MaxLength(512)]
     public string? UserAgent { get; set; }
+
+    [BindProperty]
+    [Display(Name = "Run retention (days, account-wide override)")]
+    [Range(1, 3650)]
+    public int? RunRetentionDays { get; set; }
 
     public IReadOnlyList<string> PresetKeys { get; private set; } = [];
 
@@ -54,6 +60,11 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
         UserAgent = await db.UserUrlCheckSettings
             .Where(x => x.UserId == userId)
             .Select(x => x.UserAgent)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        RunRetentionDays = await db.UserMonitorSettings
+            .Where(x => x.UserId == userId)
+            .Select(x => x.RunRetentionDays)
             .FirstOrDefaultAsync(cancellationToken);
 
         return Page();
@@ -148,5 +159,47 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
         TempData["FlashInfo"] = "Crawler User-Agent override saved.";
         return RedirectToPage();
     }
-}
 
+    public async Task<IActionResult> OnPostRetentionAsync(CancellationToken cancellationToken)
+    {
+        var userId = userManager.GetUserId(User);
+        if (string.IsNullOrWhiteSpace(userId))
+            return Challenge();
+
+        LoadPresets();
+
+        if (!ModelState.IsValid)
+            return Page();
+
+        var existing = await db.UserMonitorSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (RunRetentionDays is null)
+        {
+            if (existing is not null)
+            {
+                db.UserMonitorSettings.Remove(existing);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            TempData["FlashInfo"] = "Run retention override cleared.";
+            return RedirectToPage();
+        }
+
+        if (existing is null)
+        {
+            db.UserMonitorSettings.Add(new UserMonitorSettings
+            {
+                UserId = userId,
+                RunRetentionDays = RunRetentionDays,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        }
+        else
+        {
+            existing.RunRetentionDays = RunRetentionDays;
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        TempData["FlashInfo"] = "Run retention override saved.";
+        return RedirectToPage();
+    }
+}

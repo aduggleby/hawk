@@ -140,6 +140,7 @@ var app = builder.Build();
 // - Ensures an Admin role exists.
 // - In Development/Testing, also creates a seed admin user for convenience/E2E.
 await app.Services.SeedIdentityAsync();
+await app.Services.SeedDevelopmentMonitorsAsync();
 await using (var scope = app.Services.CreateAsyncScope())
 {
     // Start the scheduler loop.

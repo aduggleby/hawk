@@ -50,6 +50,14 @@
             </div>
 
             <button id="login-submit" type="submit" class="hawk-btn hawk-btn-primary w-full">Log in</button>
+            @if (Model.ShowDevelopmentUserLogin)
+            {
+                <button type="submit"
+                        asp-page-handler="DevelopmentUser"
+                        class="hawk-btn hawk-btn-ghost w-full">
+                    Log in (Development User)
+                </button>
+            }
 
             <div class="flex items-center justify-between gap-3 pt-2 border-t border-[color:var(--border-primary)]">
                 <a asp-page="./Register" asp-route-returnUrl="@Model.ReturnUrl" class="hawk-btn hawk-btn-ghost hawk-btn-sm">

@@ -5,3 +5,7 @@
   border-bottom: 1px solid var(--border-primary);
   background: var(--bg-primary);
 }
+
+@utility hawk-topbar-item {
+  min-height: 2.25rem;
+}

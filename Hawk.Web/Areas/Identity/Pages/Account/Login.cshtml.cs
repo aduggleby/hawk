@@ -13,6 +13,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Hawk.Web.Areas.Identity.Pages.Account
@@ -21,14 +23,25 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
     {
         private readonly SignInManager<IdentityUser> _signInManager;
         private readonly UserManager<IdentityUser> _userManager;
+        private readonly IConfiguration _configuration;
+        private readonly IHostEnvironment _environment;
         private readonly ILogger<LoginModel> _logger;
 
-        public LoginModel(SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager, ILogger<LoginModel> logger)
+        public LoginModel(
+            SignInManager<IdentityUser> signInManager,
+            UserManager<IdentityUser> userManager,
+            IConfiguration configuration,
+            IHostEnvironment environment,
+            ILogger<LoginModel> logger)
         {
             _signInManager = signInManager;
             _userManager = userManager;
+            _configuration = configuration;
+            _environment = environment;
             _logger = logger;
         }
+
+        public bool ShowDevelopmentUserLogin => _environment.IsDevelopment();
 
         /// <summary>
         ///     This API supports the ASP.NET Core Identity default UI infrastructure and is not intended to be used
@@ -138,6 +151,45 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
             }
 
             // If we got this far, something failed, redisplay form
+            return Page();
+        }
+
+        public async Task<IActionResult> OnPostDevelopmentUserAsync(string returnUrl = null)
+        {
+            if (!_environment.IsDevelopment())
+                return NotFound();
+
+            returnUrl ??= Url.Content("~/");
+            ReturnUrl = returnUrl;
+            ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
+
+            var seedEmail = _configuration["Hawk:SeedAdmin:Email"] ?? "ad@dualconsult.com";
+            var seedPassword = _configuration["Hawk:SeedAdmin:Password"] ?? "Hawk!2026-Admin#1";
+            var seedUser = await _userManager.FindByEmailAsync(seedEmail);
+
+            if (seedUser is null)
+            {
+                ModelState.AddModelError(string.Empty, "Development seed user was not found.");
+                return Page();
+            }
+
+            var loginName = seedUser.UserName ?? seedUser.Email ?? seedEmail;
+            var result = await _signInManager.PasswordSignInAsync(
+                loginName,
+                seedPassword,
+                isPersistent: false,
+                lockoutOnFailure: false);
+
+            if (result.Succeeded)
+            {
+                _logger.LogInformation("Development seed user logged in via shortcut.");
+                return LocalRedirect(returnUrl);
+            }
+
+            if (result.IsLockedOut)
+                return RedirectToPage("./Lockout");
+
+            ModelState.AddModelError(string.Empty, "Unable to sign in as development user.");
             return Page();
         }
     }

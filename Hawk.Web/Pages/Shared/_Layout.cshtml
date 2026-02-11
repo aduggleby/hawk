@@ -11,15 +11,15 @@
             try {
                 const stored = localStorage.getItem("hawk.theme");
                 const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-                const isDark = stored === "dark" || (!stored && prefersDark);
+                const mode = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+                const isDark = mode === "dark" || (mode === "system" && prefersDark);
                 if (isDark) document.documentElement.classList.add("dark");
             } catch { /* ignore */ }
         })();
     </script>
     <script type="importmap"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/%40fontsource/monaspace-krypton@5.2.5/index.css" />
+    <link rel="stylesheet" href="https://unpkg.com/%40fontsource-variable/mona-sans@5.2.8/index.css" />
     <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
 </head>
 <body class="hawk-shell">
@@ -28,18 +28,25 @@
         <div class="mx-auto max-w-6xl px-4 py-3">
             <div class="flex items-center justify-between gap-4">
                 <div class="flex items-center gap-3">
-                    <a class="hawk-btn hawk-btn-ghost hawk-btn-sm no-underline" asp-area="" asp-page="/Index">Monitors</a>
+                    <a class="no-underline font-mono text-sm font-semibold tracking-tight" asp-area="" asp-page="/Index">HAWK</a>
+                    <a class="hawk-btn hawk-btn-ghost hawk-topbar-item no-underline" asp-area="" asp-page="/Index">Monitors</a>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button id="theme-toggle" type="button" class="hawk-btn hawk-btn-ghost" aria-label="Toggle theme" aria-pressed="false">
-                        <svg class="h-5 w-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707" />
+                    <button id="theme-toggle" type="button" class="hawk-btn hawk-btn-ghost hawk-topbar-item px-2.5" aria-label="Theme: system" aria-pressed="false" title="Theme: system">
+                        <svg data-theme-icon="system" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                            <rect x="4" y="5" width="16" height="11" rx="1.5" stroke-width="1.8" />
+                            <path d="M9 19h6M12 16v3" stroke-width="1.8" stroke-linecap="round" />
                         </svg>
-                        <svg class="h-5 w-5 dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                        <svg data-theme-icon="light" class="h-5 w-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                            <circle cx="12" cy="12" r="4.2" stroke-width="1.8" />
+                            <path d="M12 2.5v2.2M12 19.3v2.2M4.7 4.7l1.6 1.6M17.7 17.7l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.7 19.3l1.6-1.6M17.7 6.3l1.6-1.6" stroke-width="1.8" stroke-linecap="round" />
                         </svg>
+                        <svg data-theme-icon="dark" class="h-5 w-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                            <path d="M20.5 14.8A8.6 8.6 0 1 1 9.2 3.5 7 7 0 1 0 20.5 14.8Z" stroke-width="1.8" stroke-linejoin="round" />
+                        </svg>
+                        <span data-theme-label class="text-[11px] font-semibold tracking-[0.08em] uppercase">Sys</span>
                     </button>
-                    <button id="mobile-menu-toggle" type="button" class="hawk-btn hawk-btn-ghost sm:hidden" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false">
+                    <button id="mobile-menu-toggle" type="button" class="hawk-btn hawk-btn-ghost hawk-topbar-item sm:hidden" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false">
                         <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                         </svg>

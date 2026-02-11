@@ -2,6 +2,40 @@
 
 ASP.NET Razor Pages uptime checker and URL verifier with Hangfire scheduling, SQL Server storage, and Docker-first deployment. Styled with Tailwind CSS v4 and supports dark mode.
 
+## Screenshots
+
+- [All screenshots](screenshots/)
+- [Monitor details screenshot](screenshots/13-monitor-details-with-runs.png)
+
+![Monitor details](screenshots/13-monitor-details-with-runs.png)
+
+## Local Dev Scripts
+
+From the repo root:
+
+```bash
+./run-dev.sh
+```
+
+This script:
+- Restores .NET packages
+- Installs/builds Tailwind assets
+- Starts `db` + `mock` via Docker Compose
+- Runs `Hawk.Web` with `dotnet watch` in Development mode on `http://localhost:17800`
+
+Optional tmux mode:
+
+```bash
+./run-dev.sh --tmux
+tmux attach -t hawk-dev
+```
+
+Stop all dev processes started by the script:
+
+```bash
+./stop-dev.sh
+```
+
 ## Using An External SQL Server
 
 Hawk uses a single SQL Server connection string for EF Core (Identity + app data) and Hangfire storage.

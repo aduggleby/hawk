@@ -72,6 +72,13 @@ public sealed class MonitorForm
     public string? AlertEmailOverride { get; set; }
 
     /// <summary>
+    /// Optional run history retention override in days.
+    /// </summary>
+    [Display(Name = "Run retention (days) override")]
+    [Range(1, 3650)]
+    public int? RunRetentionDays { get; set; }
+
+    /// <summary>
     /// POST content-type.
     /// </summary>
     [Display(Name = "Content-Type")]
@@ -124,6 +131,9 @@ public sealed class MonitorForm
             if (!emailAttr.IsValid(AlertEmailOverride))
                 yield return new ValidationResult("Alert email override must be a valid email address.", [nameof(AlertEmailOverride)]);
         }
+
+        if (RunRetentionDays is < 1 or > 3650)
+            yield return new ValidationResult("Run retention override must be between 1 and 3650 days.", [nameof(RunRetentionDays)]);
 
         var method = (Method ?? string.Empty).Trim().ToUpperInvariant();
         if (method is not ("GET" or "POST"))

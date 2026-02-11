@@ -59,6 +59,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
             IntervalSeconds = AllowedIntervals.Contains(m.IntervalSeconds) ? m.IntervalSeconds : AllowedIntervals.FirstOrDefault(),
             AlertAfterConsecutiveFailures = Math.Clamp(m.AlertAfterConsecutiveFailures, 1, 20),
             AlertEmailOverride = m.AlertEmailOverride,
+            RunRetentionDays = m.RunRetentionDays,
             ContentType = m.ContentType,
             Body = m.Body,
         };
@@ -106,6 +107,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         m.IntervalSeconds = Form.IntervalSeconds;
         m.AlertAfterConsecutiveFailures = Form.AlertAfterConsecutiveFailures;
         m.AlertEmailOverride = string.IsNullOrWhiteSpace(Form.AlertEmailOverride) ? null : Form.AlertEmailOverride.Trim();
+        m.RunRetentionDays = Form.RunRetentionDays;
         m.ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim();
         m.Body = Form.Body;
 
