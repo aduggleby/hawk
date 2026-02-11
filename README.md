@@ -276,6 +276,16 @@ From a monitor's detail page, click **Test** to run it immediately and see full 
 - Match rule results (pass/fail per rule).
 - Response body snippet (up to 256KB).
 
+Alternatively, click **Run now** on the detail page to enqueue an immediate Hangfire job (the result appears in the run history once complete).
+
+## Run Diagnostics
+
+Click any run in the monitor's run history table to view full diagnostics:
+
+- **Run metadata** — result (OK/FAIL), reason, timestamps, duration, HTTP status, alert status, error message.
+- **Request** — URL, method, content-type, timeout, headers (JSON), body snippet.
+- **Response** — content-type, content-length, headers (JSON), response body snippet, match results (JSON).
+
 ## Import From StatusCake
 
 Hawk can import:
@@ -361,6 +371,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.10` in the `.csproj` files.
+- Project version is set to `0.9.11` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.

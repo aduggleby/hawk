@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.10`
+- Version: `0.9.11`
 
 ## Ports
 
@@ -198,10 +198,40 @@ Alert recipient resolution (in order):
   3. Server default `Hawk:Monitoring:RunRetentionDaysDefault` (default 90).
 - Pruning runs `ExecuteDeleteAsync` on `MonitorRuns` older than the cutoff after every run.
 
+## Monitor Detail Page
+
+- `Hawk.Web/Pages/Monitors/Details.cshtml(.cs)` shows monitor configuration, headers, match rules, and the 25 most recent runs.
+- **Run now** button enqueues an immediate Hangfire job for the monitor (reason `"manual"`).
+- Each run in the history table links to the run diagnostics page.
+
+## Run Diagnostics Page
+
+- `Hawk.Web/Pages/Monitors/Runs/Details.cshtml(.cs)` — displays full diagnostics for a single run:
+  - Run metadata: result, reason, timestamps, duration, HTTP status, alert status, error.
+  - Request: URL, method, content-type, timeout, headers JSON, body snippet.
+  - Response: content-type, content-length, headers JSON, response snippet, match results JSON.
+- Accessible from the run history table on the monitor detail page.
+
 ## Monitor Test Page
 
 - `Hawk.Web/Pages/Monitors/Test.cshtml(.cs)` — runs a monitor immediately via `IMonitorExecutor` and displays full diagnostics (request details, response headers, match rule results, body snippet).
 - Accessible from the monitor detail page.
+
+## Dev Tooling
+
+### run-dev.sh / stop-dev.sh
+
+- `run-dev.sh` starts the full local dev environment: restores .NET packages, installs/builds Tailwind, starts `db` + `mock` via Docker Compose, and runs `Hawk.Web` with `dotnet watch`.
+- Runs in tmux by default (`hawk-dev` session); use `--no-tmux` for foreground mode, `--no-deps` to skip Docker services.
+- `stop-dev.sh` stops all processes started by `run-dev.sh` (dotnet watch, Docker containers, tmux session).
+
+### Monitor Seeder
+
+- `Hawk.Web/Data/Seeding/MonitorSeeder.cs` seeds sample monitors in Development/Testing environments using MockServer endpoints.
+- Creates monitors named `[Seed] *` (GET contains, GET regex, POST echo, HTTP 500, timeout, flaky, DNS failure).
+- All seeded monitors start paused (`IsPaused = true`) so they don't trigger scheduled runs immediately.
+- Mock base URL resolved from `Hawk:SeedMocks:BaseUrl`, then `Hawk:Resend:BaseUrl` if it looks local, then defaults to `http://localhost:17801`.
+- Called from `Program.cs` during startup.
 
 ## Logging
 
