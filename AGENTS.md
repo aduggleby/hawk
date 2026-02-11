@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.16`
+- Version: `0.9.17`
 
 ## Ports
 
@@ -93,6 +93,10 @@ Run:
   - Note: this writes screenshots to host `./screenshots` (mounted into the Playwright container).
   - Preferred: `npm --prefix e2e test` which performs `docker compose down` first to guarantee a fresh DB each run.
 
+## URL Routing
+
+- Lowercase URLs and lowercase query strings are enforced via `AddRouting` options in `Program.cs`.
+
 ## HTTPS Redirection Toggle (For E2E)
 
 `Hawk.Web/Program.cs` has a guard:
@@ -138,7 +142,7 @@ Handy commands:
 ## App Version Footer
 
 - `Hawk.Web/Infrastructure/AppVersion.cs` reads the assembly `InformationalVersion` (stripping the `+commit` suffix) and falls back to the assembly version.
-- The footer in `_Layout.cshtml` displays the version (e.g. `v0.9.16`) alongside a link to the GitHub repo and author.
+- The footer in `_Layout.cshtml` displays the version (e.g. `v0.9.17`) alongside a link to the GitHub repo and author.
 
 ## Flash Messages
 
@@ -235,6 +239,7 @@ Alert recipient resolution (in order):
 - `Hawk.Web/Pages/Monitors/MonitorFormValidation.cs` maps custom `ValidationResult` errors to Razor `ModelStateDictionary` keys (prefixed with `Form.`).
 - Create and Edit pages call `MonitorFormValidation.AddResults()` to surface server-side validation errors inline.
 - Optional form sections (headers, match rules, advanced settings) are collapsed by default and expand via `<details>` elements.
+- The POST options section (body, content-type) is hidden when the selected HTTP method is not POST, and shown dynamically via JavaScript when the user selects POST.
 - **Create/Edit parity rule:** when changing monitor form UI/behavior on `Hawk.Web/Pages/Monitors/Create.cshtml`, apply the equivalent change to `Hawk.Web/Pages/Monitors/Edit.cshtml` (and vice versa) unless explicitly requested otherwise.
 
 ## Dev Tooling
