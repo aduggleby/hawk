@@ -175,6 +175,21 @@ if (!app.Configuration.GetValue("Hawk:DisableHttpsRedirection", false))
 
 app.UseSerilogRequestLogging();
 
+// Preserve exception details in HttpContext.Items so /Error can render diagnostics
+// even if the exception feature is not populated by upstream middleware.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        context.Items["Hawk.Exception"] = ex;
+        throw;
+    }
+});
+
 app.UseRouting();
 
 app.UseAuthentication();

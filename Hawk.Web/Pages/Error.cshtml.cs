@@ -58,15 +58,29 @@ public class ErrorModel : PageModel
     /// </summary>
     public void OnGet()
     {
-        RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+        RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier ?? "(unknown)";
 
-        var feature = HttpContext.Features.Get<IExceptionHandlerPathFeature>();
-        if (feature?.Error is null)
+        var pathFeature = HttpContext.Features.Get<IExceptionHandlerPathFeature>();
+        var exceptionFeature = HttpContext.Features.Get<IExceptionHandlerFeature>();
+        var ex = pathFeature?.Error
+                 ?? exceptionFeature?.Error
+                 ?? HttpContext.Items["Hawk.Exception"] as Exception;
+
+        Path = pathFeature?.Path ?? HttpContext.Request.Path.Value;
+        if (ex is null)
+        {
+            ExceptionType = "Unknown";
+            ErrorMessage = "No exception details were captured for this request.";
+            ExceptionDetails = $"""
+                No exception object was available in the current request context.
+                Path: {Path}
+                Request ID: {RequestId}
+                """;
             return;
+        }
 
-        Path = feature.Path;
-        ExceptionType = feature.Error.GetType().FullName;
-        ErrorMessage = feature.Error.Message;
-        ExceptionDetails = feature.Error.ToString();
+        ExceptionType = ex.GetType().FullName;
+        ErrorMessage = ex.Message;
+        ExceptionDetails = ex.ToString();
     }
 }

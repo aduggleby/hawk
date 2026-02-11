@@ -47,15 +47,12 @@
         </div>
     </div>
 
-    @if (Model.HasDiagnostics)
-    {
-        <div class="hawk-card mt-4">
-            <details>
-                <summary class="cursor-pointer select-none font-semibold">Show technical details (stack trace)</summary>
-                <div class="mt-3">
-                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words text-xs font-mono">@Model.ExceptionDetails</pre>
-                </div>
-            </details>
-        </div>
-    }
+    <div class="hawk-card mt-4">
+        <details>
+            <summary class="cursor-pointer select-none font-semibold">Show technical details (stack trace)</summary>
+            <div class="mt-3">
+                <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words text-xs font-mono">@Model.ExceptionDetails</pre>
+            </div>
+        </details>
+    </div>
 </div>
