@@ -218,7 +218,7 @@ public sealed class MonitorExecutor(
         }
 
         var status = run.StatusCode is null ? "NO_RESPONSE" : run.StatusCode.ToString()!;
-        var subject = $"[Alert FAIL] {monitor.Name} ({status})";
+        var subject = $"[ALERT FAIL] {monitor.Name} ({status})";
         var html = $"""
             <h2>Monitor failed</h2>
             <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
