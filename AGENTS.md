@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.15`
+- Version: `0.9.16`
 
 ## Ports
 
@@ -138,7 +138,7 @@ Handy commands:
 ## App Version Footer
 
 - `Hawk.Web/Infrastructure/AppVersion.cs` reads the assembly `InformationalVersion` (stripping the `+commit` suffix) and falls back to the assembly version.
-- The footer in `_Layout.cshtml` displays the version (e.g. `v0.9.15`) alongside a link to the GitHub repo and author.
+- The footer in `_Layout.cshtml` displays the version (e.g. `v0.9.16`) alongside a link to the GitHub repo and author.
 
 ## Flash Messages
 
