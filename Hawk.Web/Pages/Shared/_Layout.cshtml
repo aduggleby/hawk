@@ -94,10 +94,18 @@
         @RenderBody()
     </main>
 
+    @{
+        var version = Hawk.Web.Infrastructure.AppVersion.Get();
+    }
     <footer class="mx-auto max-w-6xl px-4 py-10 text-xs text-zinc-500">
         <div class="flex items-center justify-between gap-3">
-            <a class="font-mono no-underline" href="https://github.com/aduggleby/hawk" target="_blank" rel="noopener noreferrer">hawk</a>
-            <div>Made by Alex Duggleby</div>
+            <div class="inline-flex items-center gap-2 font-mono">
+                <a class="no-underline" href="https://github.com/aduggleby/hawk" target="_blank" rel="noopener noreferrer">hawk</a>
+                <span class="text-zinc-500">v@version</span>
+            </div>
+            <div>
+                Made by <a class="no-underline" href="https://github.com/aduggleby" target="_blank" rel="noopener noreferrer">Alex Duggleby</a>
+            </div>
         </div>
     </footer>
 
