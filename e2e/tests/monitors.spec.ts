@@ -32,6 +32,16 @@ async function openSection(page, title: string) {
   }
 }
 
+async function waitForRunDiagnosticsResult(page, expected: 'OK' | 'FAIL', timeoutMs = 60_000) {
+  await expect(page.getByRole('heading', { name: /run diagnostics/i })).toBeVisible();
+  const badge = page.locator('dl .hawk-badge').first();
+
+  await expect.poll(
+    async () => (await badge.textContent())?.trim() ?? '',
+    { timeout: timeoutMs }
+  ).toBe(expected);
+}
+
 test('create GET monitor (contains) and observe scheduled runs (5s interval in Testing)', async ({ page }) => {
   await loginAsSeedAdmin(page);
   await gotoMonitors(page);
@@ -85,9 +95,8 @@ test('create POST monitor with headers/body and run now succeeds', async ({ page
   await snap(page, '20-post-monitor-details');
 
   await page.getByRole('button', { name: /^run now$/i }).click();
-  await pollForAtLeastRuns(page, 1, 30_000);
-  await expect(page.locator('tbody tr').first()).toContainText('OK');
-  await snap(page, '21-post-monitor-after-run');
+  await waitForRunDiagnosticsResult(page, 'OK', 30_000);
+  await snap(page, '21-post-monitor-run-diagnostics-ok');
 });
 
 test('error states: non-2xx and match failure trigger a FAIL result (and alert is sent)', async ({ page, request }) => {
@@ -102,8 +111,7 @@ test('error states: non-2xx and match failure trigger a FAIL result (and alert i
   await page.getByLabel(/^interval$/i).selectOption('60');
   await page.getByRole('button', { name: /^create$/i }).click();
   await page.getByRole('button', { name: /^run now$/i }).click();
-  await pollForAtLeastRuns(page, 1, 30_000);
-  await expect(page.locator('tbody tr').first()).toContainText('FAIL');
+  await waitForRunDiagnosticsResult(page, 'FAIL', 30_000);
   await snap(page, '30-error-500-fail');
 
   // Index should group this into "Failing monitors".
@@ -132,8 +140,7 @@ test('error states: non-2xx and match failure trigger a FAIL result (and alert i
   await page.locator('input[name="Form.MatchPatterns[0]"]').fill('Example Domain');
   await page.getByRole('button', { name: /^create$/i }).click();
   await page.getByRole('button', { name: /^run now$/i }).click();
-  await pollForAtLeastRuns(page, 1, 30_000);
-  await expect(page.locator('tbody tr').first()).toContainText('FAIL');
+  await waitForRunDiagnosticsResult(page, 'FAIL', 30_000);
   await snap(page, '31-nomatch-fail');
 });
 
@@ -156,14 +163,17 @@ test('alert threshold: only alert after N consecutive failures', async ({ page, 
 
   // Run 1: fail, but no alert yet.
   await page.getByRole('button', { name: /^run now$/i }).click();
-  await pollForAtLeastRuns(page, 1, 30_000);
+  await waitForRunDiagnosticsResult(page, 'FAIL', 30_000);
   let emailsRes = await request.get(`${MOCK_BASE}/emails`);
   let emails = await emailsRes.json();
   expect(emails.length).toBe(0);
 
+  await page.getByRole('link', { name: /back to monitor/i }).click();
+  await expect(page.getByRole('heading', { name: /threshold 2/i })).toBeVisible();
+
   // Run 2: second consecutive failure should alert.
   await page.getByRole('button', { name: /^run now$/i }).click();
-  await pollForAtLeastRuns(page, 2, 30_000);
+  await waitForRunDiagnosticsResult(page, 'FAIL', 30_000);
   emailsRes = await request.get(`${MOCK_BASE}/emails`);
   emails = await emailsRes.json();
   expect(emails.length).toBe(1);
@@ -217,9 +227,11 @@ test('edit monitor after running once: add second contains rule and save succeed
 
   // Run once, to reproduce the bug where editing after a run could throw a 500.
   await page.getByRole('button', { name: /^run now$/i }).click();
-  await pollForAtLeastRuns(page, 1, 30_000);
-  await expect(page.locator('tbody tr').first()).toContainText('OK');
+  await waitForRunDiagnosticsResult(page, 'OK', 30_000);
   await snap(page, '23-edit-after-run-after-run');
+
+  await page.getByRole('link', { name: /back to monitor/i }).click();
+  await expect(page.getByRole('heading', { name: new RegExp(name, 'i') })).toBeVisible();
 
   await page.getByRole('link', { name: /^edit$/i }).click();
   await expect(page.getByRole('heading', { name: /edit monitor/i })).toBeVisible();

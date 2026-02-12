@@ -149,6 +149,7 @@
                         <tbody class="hawk-runs-tbody">
                         @foreach (var r in Model.Runs)
                         {
+                            var runState = string.IsNullOrWhiteSpace(r.State) ? "completed" : r.State;
                             <tr class="hover:bg-[color:var(--bg-secondary)] cursor-pointer"
                                 role="link"
                                 tabindex="0"
@@ -164,7 +165,11 @@
                                 </td>
                                 <td class="px-4 py-3 text-[color:var(--text-secondary)]">@r.DurationMs ms</td>
                                 <td class="px-4 py-3">
-                                    @if (r.Success)
+                                    @if (!string.Equals(runState, "completed", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="hawk-badge hawk-badge-warning">@runState.ToUpperInvariant()</span>
+                                    }
+                                    else if (r.Success)
                                     {
                                         <span class="hawk-badge hawk-badge-success">OK</span>
                                     }

@@ -34,6 +34,12 @@ public sealed class MonitorRun
     public DateTimeOffset FinishedAt { get; set; }
 
     /// <summary>
+    /// Execution state (queued/running/completed).
+    /// </summary>
+    [MaxLength(16)]
+    public string State { get; set; } = "completed";
+
+    /// <summary>
     /// Total duration in milliseconds.
     /// </summary>
     public int DurationMs { get; set; }

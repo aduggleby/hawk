@@ -17,6 +17,8 @@ public interface IMonitorRunner
     /// <param name="monitorId">Monitor id.</param>
     /// <param name="reason">Optional reason (schedule/manual).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task RunAsync(Guid monitorId, string? reason, CancellationToken cancellationToken);
+    /// <param name="runId">
+    /// Optional run id to update. Used by UI-triggered runs to create a run record up front and then fill it in.
+    /// </param>
+    Task RunAsync(Guid monitorId, string? reason, CancellationToken cancellationToken, Guid? runId = null);
 }
-

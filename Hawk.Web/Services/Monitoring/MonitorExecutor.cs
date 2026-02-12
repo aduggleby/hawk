@@ -28,7 +28,7 @@ public sealed record MonitorExecutionResult(
 
 public interface IMonitorExecutor
 {
-    Task<MonitorExecutionResult?> ExecuteAsync(Guid monitorId, string? reason, CancellationToken cancellationToken);
+    Task<MonitorExecutionResult?> ExecuteAsync(Guid monitorId, string? reason, CancellationToken cancellationToken, Guid? runId = null);
 }
 
 public sealed class MonitorExecutor(
@@ -39,7 +39,7 @@ public sealed class MonitorExecutor(
     ILogger<MonitorExecutor> logger,
     IConfiguration config) : IMonitorExecutor
 {
-    public async Task<MonitorExecutionResult?> ExecuteAsync(Guid monitorId, string? reason, CancellationToken cancellationToken)
+    public async Task<MonitorExecutionResult?> ExecuteAsync(Guid monitorId, string? reason, CancellationToken cancellationToken, Guid? runId = null)
     {
         // Branch: monitor not found or deleted.
         var monitor = await db.Monitors
@@ -62,7 +62,7 @@ public sealed class MonitorExecutor(
         if (!Uri.TryCreate(monitor.Url, UriKind.Absolute, out var uri))
         {
             var invalidReq = new UrlCheckRequest(uri ?? new Uri("http://invalid.local/"), HttpMethod.Get, new Dictionary<string, string>(), null, null, TimeSpan.Zero, []);
-            var invalidRun = await PersistInvalidConfigAsync(monitor, "Invalid URL", reason, invalidReq, cancellationToken);
+            var invalidRun = await PersistInvalidConfigAsync(monitor, "Invalid URL", reason, invalidReq, cancellationToken, runId);
             await PruneRunHistoryAsync(monitor, cancellationToken);
             var invalidRes = new UrlCheckResult(false, null, TimeSpan.Zero, "Invalid URL", [], null, new Dictionary<string, string>(), null, null);
             return new MonitorExecutionResult(monitor, invalidReq, invalidRes, invalidRun);
@@ -101,40 +101,69 @@ public sealed class MonitorExecutor(
         );
 
         var started = DateTimeOffset.UtcNow;
+
+        // If the UI created a run record up front, fill it in; otherwise create a new one.
+        var existingRun = runId is null
+            ? null
+            : await db.MonitorRuns.FirstOrDefaultAsync(r => r.Id == runId.Value && r.MonitorId == monitor.Id, cancellationToken);
+
+        MonitorRun run;
+        if (existingRun is not null)
+        {
+            run = existingRun;
+            run.State = "running";
+            run.StartedAt = started;
+            run.FinishedAt = started;
+            run.Reason = NormalizeReason(reason);
+            run.RequestUrl = req.Url.ToString();
+            run.RequestMethod = req.Method.Method;
+            run.RequestContentType = req.ContentType;
+            run.RequestTimeoutMs = (int)Math.Clamp(req.Timeout.TotalMilliseconds, 0, int.MaxValue);
+            run.RequestHeadersJson = SerializeHeaders(req.Headers);
+            run.RequestBodySnippet = TrimOrNull(req.Body, 4000);
+
+            // Persist early so the run diagnostics page can show RUNNING quickly.
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        else
+        {
+            // Scheduled runs don't need an early write; we save once at the end.
+            run = new MonitorRun { MonitorId = monitor.Id };
+            run.State = "running";
+            run.StartedAt = started;
+            run.FinishedAt = started;
+            run.Reason = NormalizeReason(reason);
+            run.RequestUrl = req.Url.ToString();
+            run.RequestMethod = req.Method.Method;
+            run.RequestContentType = req.ContentType;
+            run.RequestTimeoutMs = (int)Math.Clamp(req.Timeout.TotalMilliseconds, 0, int.MaxValue);
+            run.RequestHeadersJson = SerializeHeaders(req.Headers);
+            run.RequestBodySnippet = TrimOrNull(req.Body, 4000);
+        }
+
         var res = await urlChecker.CheckAsync(req, cancellationToken);
         var finished = started.Add(res.Duration);
         var statusIsSuccess = AllowedStatusCodesParser.IsSuccessStatusCode(res.StatusCode, monitor.AllowedStatusCodes);
         var matchesPassed = res.MatchResults.All(m => m.Matched);
         var success = statusIsSuccess && matchesPassed;
 
-        var run = new MonitorRun
+        run.State = "completed";
+        run.FinishedAt = finished;
+        run.DurationMs = (int)Math.Clamp(res.Duration.TotalMilliseconds, 0, int.MaxValue);
+        run.StatusCode = res.StatusCode is null ? null : (int)res.StatusCode.Value;
+        run.Success = success;
+        run.ErrorMessage = success ? null : BuildFailureMessage(res.StatusCode, statusIsSuccess, res.MatchResults);
+        run.ResponseSnippet = res.ResponseBodySnippet;
+        run.ResponseHeadersJson = SerializeHeaders(res.ResponseHeaders);
+        run.ResponseContentType = res.ResponseContentType;
+        run.ResponseContentLength = res.ResponseContentLength;
+        run.MatchResultsJson = JsonSerializer.Serialize(res.MatchResults.Select(m => new
         {
-            MonitorId = monitor.Id,
-            StartedAt = started,
-            FinishedAt = finished,
-            Reason = NormalizeReason(reason),
-            RequestUrl = req.Url.ToString(),
-            RequestMethod = req.Method.Method,
-            RequestContentType = req.ContentType,
-            RequestTimeoutMs = (int)Math.Clamp(req.Timeout.TotalMilliseconds, 0, int.MaxValue),
-            RequestHeadersJson = SerializeHeaders(req.Headers),
-            RequestBodySnippet = TrimOrNull(req.Body, 4000),
-            DurationMs = (int)Math.Clamp(res.Duration.TotalMilliseconds, 0, int.MaxValue),
-            StatusCode = res.StatusCode is null ? null : (int)res.StatusCode.Value,
-            Success = success,
-            ErrorMessage = success ? null : BuildFailureMessage(res.StatusCode, statusIsSuccess, res.MatchResults),
-            ResponseSnippet = res.ResponseBodySnippet,
-            ResponseHeadersJson = SerializeHeaders(res.ResponseHeaders),
-            ResponseContentType = res.ResponseContentType,
-            ResponseContentLength = res.ResponseContentLength,
-            MatchResultsJson = JsonSerializer.Serialize(res.MatchResults.Select(m => new
-            {
-                Mode = m.Rule.Mode.ToString(),
-                m.Rule.Pattern,
-                m.Matched,
-                m.Details
-            })),
-        };
+            Mode = m.Rule.Mode.ToString(),
+            m.Rule.Pattern,
+            m.Matched,
+            m.Details
+        }));
 
         var threshold = Math.Clamp(monitor.AlertAfterConsecutiveFailures, 1, 20);
         var repeatHours = config.GetValue("Hawk:Alerting:RepeatFailureAlertEveryHours", 24);
@@ -205,7 +234,8 @@ public sealed class MonitorExecutor(
         }
 
         monitor.LastRunAt = started;
-        db.MonitorRuns.Add(run);
+        if (existingRun is null)
+            db.MonitorRuns.Add(run);
         await db.SaveChangesAsync(cancellationToken);
         await PruneRunHistoryAsync(monitor, cancellationToken);
 
@@ -264,33 +294,40 @@ public sealed class MonitorExecutor(
         string error,
         string? reason,
         UrlCheckRequest req,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? runId)
     {
         var now = DateTimeOffset.UtcNow;
         monitor.LastRunAt = now;
-        var run = new MonitorRun
-        {
-            MonitorId = monitor.Id,
-            StartedAt = now,
-            FinishedAt = now,
-            Reason = NormalizeReason(reason),
-            RequestUrl = req.Url.ToString(),
-            RequestMethod = req.Method.Method,
-            RequestContentType = req.ContentType,
-            RequestTimeoutMs = (int)Math.Clamp(req.Timeout.TotalMilliseconds, 0, int.MaxValue),
-            RequestHeadersJson = SerializeHeaders(req.Headers),
-            RequestBodySnippet = TrimOrNull(req.Body, 4000),
-            DurationMs = 0,
-            StatusCode = null,
-            Success = false,
-            ErrorMessage = error,
-            ResponseSnippet = null,
-            ResponseHeadersJson = "{}",
-            ResponseContentType = null,
-            ResponseContentLength = null,
-            MatchResultsJson = "[]",
-        };
-        db.MonitorRuns.Add(run);
+
+        var existingRun = runId is null
+            ? null
+            : await db.MonitorRuns.FirstOrDefaultAsync(r => r.Id == runId.Value && r.MonitorId == monitor.Id, cancellationToken);
+
+        var run = existingRun ?? new MonitorRun { MonitorId = monitor.Id };
+        run.State = "completed";
+        run.StartedAt = now;
+        run.FinishedAt = now;
+        run.Reason = NormalizeReason(reason);
+        run.RequestUrl = req.Url.ToString();
+        run.RequestMethod = req.Method.Method;
+        run.RequestContentType = req.ContentType;
+        run.RequestTimeoutMs = (int)Math.Clamp(req.Timeout.TotalMilliseconds, 0, int.MaxValue);
+        run.RequestHeadersJson = SerializeHeaders(req.Headers);
+        run.RequestBodySnippet = TrimOrNull(req.Body, 4000);
+        run.DurationMs = 0;
+        run.StatusCode = null;
+        run.Success = false;
+        run.ErrorMessage = error;
+        run.ResponseSnippet = null;
+        run.ResponseHeadersJson = "{}";
+        run.ResponseContentType = null;
+        run.ResponseContentLength = null;
+        run.MatchResultsJson = "[]";
+
+        if (existingRun is null)
+            db.MonitorRuns.Add(run);
+
         await db.SaveChangesAsync(cancellationToken);
         return run;
     }

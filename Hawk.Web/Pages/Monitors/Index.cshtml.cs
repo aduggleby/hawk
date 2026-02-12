@@ -58,6 +58,7 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
 
         LastRunSuccessByMonitor = await db.MonitorRuns
             .AsNoTracking()
+            .Where(r => r.State == "completed" || r.State == "")
             .GroupBy(r => r.MonitorId)
             .Select(g => g
                 .OrderByDescending(r => r.StartedAt)

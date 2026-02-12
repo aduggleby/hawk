@@ -60,12 +60,39 @@ public class DetailsModel(ApplicationDbContext db, IBackgroundJobClient jobs) : 
     /// </summary>
     public async Task<IActionResult> OnPostRunNowAsync(Guid id, CancellationToken cancellationToken)
     {
-        var exists = await db.Monitors.AnyAsync(m => m.Id == id, cancellationToken);
-        if (!exists)
+        var monitor = await db.Monitors
+            .AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+        if (monitor is null)
             return NotFound();
 
-        jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(id, "manual", CancellationToken.None));
-        return RedirectToPage("/Monitors/Details", new { id });
+        // Create a run record up front so we can redirect to diagnostics immediately.
+        var run = new MonitorRun
+        {
+            Id = Guid.NewGuid(),
+            MonitorId = id,
+            State = "queued",
+            StartedAt = DateTimeOffset.UtcNow,
+            FinishedAt = DateTimeOffset.UtcNow,
+            DurationMs = 0,
+            StatusCode = null,
+            Success = false,
+            ErrorMessage = "Queued",
+            Reason = "manual",
+            RequestUrl = monitor.Url,
+            RequestMethod = monitor.Method,
+            RequestContentType = monitor.ContentType,
+            RequestTimeoutMs = (int)Math.Clamp(monitor.TimeoutSeconds * 1000, 0, int.MaxValue),
+            MatchResultsJson = "[]",
+            RequestHeadersJson = "{}",
+            ResponseHeadersJson = "{}",
+        };
+
+        db.MonitorRuns.Add(run);
+        await db.SaveChangesAsync(cancellationToken);
+
+        jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(id, "manual", CancellationToken.None, run.Id));
+        return RedirectToPage("/Monitors/Runs/Details", new { monitorId = id, runId = run.Id });
     }
 
     /// <summary>

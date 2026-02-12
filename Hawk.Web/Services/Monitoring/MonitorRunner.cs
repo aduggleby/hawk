@@ -15,8 +15,8 @@ public sealed class MonitorRunner(IMonitorExecutor executor) : IMonitorRunner
 {
     /// <inheritdoc />
     [AutomaticRetry(Attempts = 0)]
-    public async Task RunAsync(Guid monitorId, string? reason, CancellationToken cancellationToken)
+    public async Task RunAsync(Guid monitorId, string? reason, CancellationToken cancellationToken, Guid? runId = null)
     {
-        await executor.ExecuteAsync(monitorId, reason, cancellationToken);
+        await executor.ExecuteAsync(monitorId, reason, cancellationToken, runId);
     }
 }
