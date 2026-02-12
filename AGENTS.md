@@ -2,7 +2,7 @@
 
 This repository is building an ASP.NET Razor Pages uptime checker and URL verifier with Hangfire-based scheduling, SQL Server storage, and Docker-first deployment.
 
-## Current State (As Of 2026-02-11)
+## Current State (As Of 2026-02-12)
 
 - Solution: `Hawk.sln`
 - Web app: `Hawk.Web` (Razor Pages + ASP.NET Core Identity)
@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.21`
+- Version: `0.9.22`
 
 ## Ports
 
@@ -151,6 +151,7 @@ Handy commands:
 - Displays request ID, failing path, exception type, and message in a grid layout.
 - An expandable `<details>` section shows the full stack trace and inner exception chain when diagnostics are available.
 - Exception capture uses multiple fallback sources: `IExceptionHandlerPathFeature`, `HttpContext.Items["UnhandledException"]` (set by custom middleware in `Program.cs`), and `IExceptionHandlerFeature`. This ensures diagnostics render even when the primary feature is unavailable.
+- A **Copy technical details** button copies the error info (request ID, path, exception type, message, stack trace) to the clipboard for easy bug reporting.
 
 ## Flash Messages
 
@@ -171,8 +172,18 @@ Implementation:
 
 Alert policy:
 - Monitors have `AlertAfterConsecutiveFailures` (1..20) controlling when a failure incident should trigger email.
-- Policy logic lives in `Hawk.Web/Services/Monitoring/AlertPolicy.cs` and is enforced by `MonitorExecutor` when saving runs.
+- Alert logic is driven by `MonitorAlertingDecider` (deterministic, stateless decider) operating on a persisted `MonitorAlertState` entity per monitor.
 - Default behavior (`1`) is "alert on first failure after a success", not "alert on every failed run".
+
+Alert types:
+- **Failure** — sent when consecutive failures reach the threshold.
+- **Failure reminder** — re-sent every N hours while the monitor is still failing (default 24h, configurable via `Hawk:Alerting:RepeatFailureAlertEveryHours`, min 1h, max 720h).
+- **Recovery** — sent when a monitor returns to success after an alerted failure incident. If the recovery email fails to send, it is retried on subsequent successful runs.
+
+Alert state:
+- `Hawk.Web/Data/Alerting/MonitorAlertState.cs` — per-monitor persisted state tracking consecutive failures, incident timestamps, last alert timestamps, pending recovery, and errors.
+- State transitions are handled by `MonitorAlertingDecider.OnFailure` / `OnSuccess` in `Hawk.Web/Services/Monitoring/MonitorAlertingDecider.cs`.
+- `MonitorExecutor` orchestrates: calls the decider, sends the appropriate email, and updates the state.
 
 Alert recipient resolution (in order):
 1. Per-monitor `AlertEmailOverride` field.
@@ -223,6 +234,18 @@ Alert recipient resolution (in order):
   3. Server default `Hawk:Monitoring:RunRetentionDaysDefault` (default 90).
 - Pruning runs `ExecuteDeleteAsync` on `MonitorRuns` older than the cutoff after every run.
 
+## Monitor Edit Concurrency
+
+- `Monitor.RowVersion` — a SQL Server `rowversion` column used for optimistic concurrency control on the Edit page.
+- `MonitorForm.RowVersion` carries the token through the form as a hidden field (base64-encoded).
+- `Edit.cshtml.cs` catches `DbUpdateConcurrencyException` and returns an error message asking the user to reload and retry.
+
+## Monitors Index — Failing Group
+
+- The monitors index page groups monitors into two sections: **Failing** (most recent run failed) and **All monitors**.
+- Failing monitors are queried separately using a join on the most recent `MonitorRun` where `Success == false`.
+- Failing monitors appear at the top in a distinct section so operators can immediately see what needs attention.
+
 ## Monitor Detail Page
 
 - `Hawk.Web/Pages/Monitors/Details.cshtml(.cs)` shows monitor configuration, headers, match rules, and the 25 most recent runs.
@@ -233,11 +256,11 @@ Alert recipient resolution (in order):
 
 - `Hawk.Web/Pages/Monitors/MonitorJsonPort.cs` contains the JSON model (`MonitorExportEnvelope`, `MonitorExportModel`) and mapping helpers.
 - **Export** — `Details.cshtml.cs` has an `OnGetExport` handler that serializes a single monitor to a JSON file download.
-- **Import** — `Index.cshtml.cs` has an `OnPostImportAsync` handler that accepts a `.json` file upload, parses it via `MonitorJsonPort.TryParse`, validates each monitor via `MonitorJsonPort.TryCreateMonitor`, and persists valid monitors.
+- **Import** — `Create.cshtml.cs` has an `OnPostImport` handler that accepts a `.json` file upload, parses it via `MonitorJsonPort.TryParse`, and prefills the create form with the first monitor's values. The user reviews/edits the prefilled form and then clicks Create. For multi-monitor files, only the first monitor is loaded (the rest are noted via flash message).
 - The parser accepts three JSON shapes: an envelope object with `monitors` array, a bare array of monitor objects, or a single monitor object.
 - Export uses `System.Text.Json` with `JsonStringEnumConverter` (camelCase) and `WriteIndented`.
 - Each imported monitor goes through the same `MonitorForm.Validate()` pipeline as the create form.
-- Invalid monitors are skipped; errors are reported via `TempData` flash messages.
+- Invalid monitors are reported via `TempData` flash messages.
 - E2E tests cover export and re-import in `e2e/tests/monitors.spec.ts`.
 
 ## Run Diagnostics Page
@@ -367,6 +390,8 @@ Service endpoints on the VM:
   - `Hawk__UrlChecks__UserAgentPresets__<key>` (override built-in preset values)
 - Monitoring:
   - `Hawk__Monitoring__RunRetentionDaysDefault` (default 90; server-wide fallback for run history retention)
+- Alerting:
+  - `Hawk__Alerting__RepeatFailureAlertEveryHours` (default 24; how often to re-send failure reminders while a monitor is still failing, min 1, max 720)
 
 ## Git Workflow
 

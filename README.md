@@ -237,9 +237,15 @@ Each monitor has an `AlertAfterConsecutiveFailures` setting (1–20, default 1).
 - `1`: alert on first failure after a success (default).
 - `N > 1`: alert only after `N` consecutive failures, reducing noise from transient blips.
 
+### Alert Types
+
+- **Failure alert** — sent when consecutive failures reach the configured threshold.
+- **Failure reminder** — re-sent periodically while the monitor remains failing (default every 24 hours). Configure via `Hawk__Alerting__RepeatFailureAlertEveryHours` (min 1h, max 720h).
+- **Recovery alert** — sent when a monitor returns to success after an alerted failure incident. If the recovery email fails to deliver, Hawk retries on subsequent successful runs.
+
 ### Alert Recipient Resolution
 
-When a monitor fails, the alert email recipient is resolved in this order:
+When a monitor triggers an alert, the email recipient is resolved in this order:
 
 1. **Per-monitor override** — the `AlertEmailOverride` field on the monitor.
 2. **Account-wide override** — set in **Settings** → **Alerting** by the monitor owner.
@@ -366,13 +372,14 @@ Hawk supports exporting and importing monitor configurations as JSON. This is us
 
 ### Import
 
-- On the monitors index page, use the **Import JSON** file picker and click **Import JSON**.
+- On the **New monitor** (create) page, click **Import JSON** and select a previously exported `.json` file.
+- The first monitor in the file prefills the create form. Review or edit the values, then click **Create**.
 - Accepted formats:
   - An envelope object with a `monitors` array (the export format).
   - A bare JSON array of monitor objects.
   - A single monitor object.
-- Each imported monitor is validated using the same rules as the create form. Invalid monitors are skipped and reported via flash messages.
-- Imported monitors are assigned to the current user.
+- The imported monitor is validated using the same rules as the create form. Invalid fields are reported via flash messages.
+- The created monitor is assigned to the current user.
 
 ### JSON Schema (per monitor)
 
@@ -424,6 +431,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.21` in the `.csproj` files.
+- Project version is set to `0.9.22` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.

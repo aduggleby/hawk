@@ -96,10 +96,10 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
 				<article class="card card--dark">
 					<div class="card__kicker"><span class="pill">Alerting</span><span>Resend-compatible</span></div>
-					<h3 class="card__title">Alert after consecutive failures</h3>
+					<h3 class="card__title">Alert, remind, recover</h3>
 					<p class="card__body">
-						Configurable <code style="font-family: var(--font-mono);">AlertAfterConsecutiveFailures</code> so you alert on real incidents,
-						not every blip. Per-monitor email overrides and account-wide alert routing.
+						Configurable failure threshold, periodic reminders while still failing (default 24h), and automatic recovery emails
+						when the monitor comes back. Per-monitor email overrides and account-wide alert routing.
 					</p>
 				</article>
 
@@ -208,7 +208,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 					<div class="card__kicker"><span class="pill">Policy</span><span>Noise control</span></div>
 					<h3 class="card__title">Alert when it flips</h3>
 					<p class="card__body">
-						Default behavior is “alert on first failure after a success”, not “alert on every failed run”.
+						Alert on first failure after a success, send reminders while still down, and notify when it recovers.
 					</p>
 				</article>
 			</div>
