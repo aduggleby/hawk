@@ -15,17 +15,29 @@
         <p class="text-sm text-zinc-600">Uptime and content verification checks.</p>
     </div>
     <div class="flex items-center gap-2">
-        @if (User.IsInRole("Admin"))
-        {
-            <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
-        }
-        <form method="post" asp-page-handler="PauseAll">
-            <button class="hawk-btn hawk-btn-ghost" type="submit">Pause all</button>
-        </form>
-        <form method="post" asp-page-handler="ResumeAll">
-            <button class="hawk-btn hawk-btn-ghost" type="submit">Resume all</button>
-        </form>
-        <a class="hawk-btn hawk-btn-primary" asp-page="/Monitors/Create">New monitor</a>
+        <div id="monitors-actions-default" class="flex items-center gap-2">
+            @if (User.IsInRole("Admin"))
+            {
+                <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
+            }
+            <form method="post" asp-page-handler="PauseAll">
+                <button class="hawk-btn hawk-btn-ghost" type="submit">Pause all</button>
+            </form>
+            <form method="post" asp-page-handler="ResumeAll">
+                <button class="hawk-btn hawk-btn-ghost" type="submit">Resume all</button>
+            </form>
+            <a class="hawk-btn hawk-btn-primary" asp-page="/Monitors/Create">New monitor</a>
+        </div>
+
+        <div id="monitors-actions-selected" class="flex items-center gap-2" hidden>
+            <div class="text-xs text-zinc-500 select-none mr-1">
+                Selected: <span id="monitors-selected-count">0</span>
+            </div>
+            <button class="hawk-btn hawk-btn-ghost" type="submit" form="batch-form" name="BatchAction" value="run">Run now</button>
+            <button class="hawk-btn hawk-btn-ghost" type="submit" form="batch-form" name="BatchAction" value="pause">Pause</button>
+            <button class="hawk-btn hawk-btn-ghost" type="submit" form="batch-form" name="BatchAction" value="resume">Resume</button>
+            <button class="hawk-btn hawk-btn-ghost" type="button" id="monitors-uncheck-all">Uncheck all</button>
+        </div>
     </div>
 </div>
 
@@ -37,7 +49,7 @@
 }
 else
 {
-    <form method="post" asp-page-handler="Batch">
+    <form method="post" asp-page-handler="Batch" id="batch-form">
         @if (Model.FailingMonitors.Count != 0)
         {
             <div class="hawk-card p-0 overflow-hidden mb-4">
@@ -148,10 +160,36 @@ else
                 </table>
             </div>
         </div>
-
-        <div class="flex items-center gap-2 mt-3">
-            <button class="hawk-btn hawk-btn-ghost" type="submit" name="BatchAction" value="pause">Pause selected</button>
-            <button class="hawk-btn hawk-btn-ghost" type="submit" name="BatchAction" value="resume">Resume selected</button>
-        </div>
     </form>
+}
+
+@section Scripts {
+    <script>
+        (() => {
+            const defaultActions = document.getElementById("monitors-actions-default");
+            const selectedActions = document.getElementById("monitors-actions-selected");
+            const selectedCount = document.getElementById("monitors-selected-count");
+            const uncheckAll = document.getElementById("monitors-uncheck-all");
+
+            const boxes = Array.from(document.querySelectorAll('input[name="SelectedMonitorIds"]'));
+            if (!defaultActions || !selectedActions || boxes.length === 0) return;
+
+            const sync = () => {
+                const checked = boxes.filter(b => b.checked).length;
+                defaultActions.hidden = checked > 0;
+                selectedActions.hidden = checked === 0;
+                if (selectedCount) selectedCount.textContent = String(checked);
+            };
+
+            for (const b of boxes) b.addEventListener("change", sync);
+            if (uncheckAll) {
+                uncheckAll.addEventListener("click", () => {
+                    for (const b of boxes) b.checked = false;
+                    sync();
+                });
+            }
+
+            sync();
+        })();
+    </script>
 }

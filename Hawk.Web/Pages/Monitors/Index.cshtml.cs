@@ -7,7 +7,9 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Hangfire;
 using Hawk.Web.Data;
+using Hawk.Web.Services.Monitoring;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Web.Pages.Monitors;
@@ -15,7 +17,7 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Monitors list page model.
 /// </summary>
-public class IndexModel(ApplicationDbContext db) : PageModel
+public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : PageModel
 {
     /// <summary>
     /// Monitors to display.
@@ -103,13 +105,26 @@ public class IndexModel(ApplicationDbContext db) : PageModel
         }
 
         var action = (BatchAction ?? string.Empty).Trim().ToLowerInvariant();
-        if (action is not ("pause" or "resume"))
+        if (action is not ("pause" or "resume" or "run"))
         {
             TempData["FlashError"] = "Invalid batch action.";
             return RedirectToPage();
         }
 
-        var query = db.Monitors.Where(m => SelectedMonitorIds.Contains(m.Id));
+        var selectedIds = SelectedMonitorIds.Distinct().ToArray();
+        if (action == "run")
+        {
+            foreach (var id in selectedIds)
+            {
+                var monitorId = id;
+                jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(monitorId, "manual", CancellationToken.None));
+            }
+
+            TempData["FlashInfo"] = $"Queued {selectedIds.Length} monitor run(s).";
+            return RedirectToPage();
+        }
+
+        var query = db.Monitors.Where(m => selectedIds.Contains(m.Id));
         var updated = action == "pause"
             ? await query
                 .Where(m => m.Enabled && !m.IsPaused)
