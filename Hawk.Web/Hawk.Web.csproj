@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.9.21</Version>
+    <Version>0.9.22</Version>
     <UserSecretsId>aspnet-Hawk.Web-dc8a8255-56b3-46fa-8168-3c2642e6ef76</UserSecretsId>
   </PropertyGroup>
 
