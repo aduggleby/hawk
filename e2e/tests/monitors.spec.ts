@@ -106,6 +106,13 @@ test('error states: non-2xx and match failure trigger a FAIL result (and alert i
   await expect(page.locator('tbody tr').first()).toContainText('FAIL');
   await snap(page, '30-error-500-fail');
 
+  // Index should group this into "Failing monitors".
+  await gotoMonitors(page);
+  await expect(page.getByRole('heading', { name: /failing monitors/i })).toBeVisible();
+  await expect(
+    page.locator('table').first().getByRole('link', { name: /get error 500/i })
+  ).toBeVisible();
+
   // Email alert should be sent to the Resend-compatible mock endpoint.
   const emailsRes = await request.get(`${MOCK_BASE}/emails`);
   expect(emailsRes.ok()).toBeTruthy();
