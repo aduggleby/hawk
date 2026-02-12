@@ -136,18 +136,71 @@ public sealed class MonitorExecutor(
             })),
         };
 
+        var threshold = Math.Clamp(monitor.AlertAfterConsecutiveFailures, 1, 20);
+        var repeatHours = config.GetValue("Hawk:Alerting:RepeatFailureAlertEveryHours", 24);
+        repeatHours = Math.Clamp(repeatHours, 1, 24 * 30);
+        var repeatEvery = TimeSpan.FromHours(repeatHours);
+
+        var state = await GetOrCreateAlertStateAsync(monitor.Id, cancellationToken);
+
+        // Capture prior state for composing emails (duration, etc.).
+        var incidentOpenedAt = state.FailureIncidentOpenedAt;
+        var lastFailureAlertSentAt = state.LastFailureAlertSentAt;
+
+        MonitorAlertDecision decision;
         if (!run.Success)
         {
-            var priorFailures = await CountPriorConsecutiveFailuresAsync(monitor.Id, cancellationToken);
-            var threshold = Math.Clamp(monitor.AlertAfterConsecutiveFailures, 1, 20);
-            if (AlertPolicy.ShouldAlertOnFailure(threshold, priorFailures))
+            decision = MonitorAlertingDecider.OnFailure(state, threshold, run.StartedAt, repeatEvery);
+
+            if (decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder)
             {
-                await TrySendAlertAsync(monitor, run, cancellationToken);
+                var sent = await TrySendFailureAlertAsync(
+                    monitor,
+                    run,
+                    decision.Kind,
+                    incidentOpenedAt,
+                    lastFailureAlertSentAt,
+                    cancellationToken);
+
+                if (sent)
+                {
+                    state.LastFailureAlertSentAt = run.StartedAt;
+                    state.LastFailureAlertError = null;
+                }
+                else
+                {
+                    state.LastFailureAlertError = run.AlertError;
+                }
             }
             else
             {
                 run.AlertSent = false;
-                run.AlertError = $"Not alerted (needs {threshold} consecutive failures; prior={priorFailures}).";
+                run.AlertError = decision.Reason;
+            }
+        }
+        else
+        {
+            decision = MonitorAlertingDecider.OnSuccess(state, threshold, run.StartedAt);
+
+            if (decision.Kind == MonitorAlertKind.Recovered)
+            {
+                var sent = await TrySendRecoveredAlertAsync(
+                    monitor,
+                    run,
+                    incidentOpenedAt,
+                    lastFailureAlertSentAt,
+                    cancellationToken);
+
+                if (sent)
+                {
+                    state.PendingRecoveryAlert = false;
+                    state.LastRecoveryAlertSentAt = run.StartedAt;
+                    state.LastRecoveryAlertError = null;
+                }
+                else
+                {
+                    state.LastRecoveryAlertError = run.AlertError;
+                }
             }
         }
 
@@ -157,6 +210,53 @@ public sealed class MonitorExecutor(
         await PruneRunHistoryAsync(monitor, cancellationToken);
 
         return new MonitorExecutionResult(monitor, req, res, run);
+    }
+
+    private async Task<MonitorAlertState> GetOrCreateAlertStateAsync(Guid monitorId, CancellationToken cancellationToken)
+    {
+        var state = await db.MonitorAlertStates.FirstOrDefaultAsync(x => x.MonitorId == monitorId, cancellationToken);
+        if (state is not null)
+            return state;
+
+        // Initialize best-effort from recent run history so upgrades don't change alert timing too much.
+        var recent = await db.MonitorRuns
+            .Where(r => r.MonitorId == monitorId)
+            .OrderByDescending(r => r.StartedAt)
+            .Take(50)
+            .Select(r => new { r.StartedAt, r.Success, r.AlertSent })
+            .ToListAsync(cancellationToken);
+
+        var failures = 0;
+        DateTimeOffset? openedAt = null;
+        foreach (var r in recent)
+        {
+            if (r.Success)
+                break;
+            failures++;
+            openedAt = r.StartedAt;
+        }
+
+        // last alert during the current failure streak (if any).
+        DateTimeOffset? lastAlertSentAt = null;
+        if (failures > 0)
+        {
+            lastAlertSentAt = recent
+                .Where(r => !r.Success && r.AlertSent)
+                .Select(r => (DateTimeOffset?)r.StartedAt)
+                .FirstOrDefault();
+        }
+
+        state = new MonitorAlertState
+        {
+            MonitorId = monitorId,
+            ConsecutiveFailures = failures,
+            FailureIncidentOpenedAt = failures > 0 ? openedAt : null,
+            LastFailureAlertSentAt = lastAlertSentAt,
+            PendingRecoveryAlert = false,
+        };
+
+        db.MonitorAlertStates.Add(state);
+        return state;
     }
 
     private async Task<MonitorRun> PersistInvalidConfigAsync(
@@ -195,18 +295,28 @@ public sealed class MonitorExecutor(
         return run;
     }
 
-    private async Task TrySendAlertAsync(MonitorEntity monitor, MonitorRun run, CancellationToken cancellationToken)
+    private async Task<bool> TrySendFailureAlertAsync(
+        MonitorEntity monitor,
+        MonitorRun run,
+        MonitorAlertKind kind,
+        DateTimeOffset? incidentOpenedAt,
+        DateTimeOffset? lastFailureAlertSentAt,
+        CancellationToken cancellationToken)
     {
         var emailEnabled = config.GetValue("Hawk:Email:Enabled", true);
         if (!emailEnabled)
-            return;
+        {
+            run.AlertSent = false;
+            run.AlertError = "Email disabled (Hawk:Email:Enabled=false).";
+            return false;
+        }
 
         var from = config["Hawk:Email:From"] ?? config["Hawk:Resend:From"];
         if (string.IsNullOrWhiteSpace(from))
         {
             run.AlertSent = false;
             run.AlertError = "Email from address is not configured (Hawk:Email:From).";
-            return;
+            return false;
         }
 
         var to = await ResolveRecipientsAsync(monitor, cancellationToken);
@@ -214,11 +324,14 @@ public sealed class MonitorExecutor(
         {
             run.AlertSent = false;
             run.AlertError = "No alert recipients resolved.";
-            return;
+            return false;
         }
 
         var status = run.StatusCode is null ? "NO_RESPONSE" : run.StatusCode.ToString()!;
-        var subject = $"[ALERT FAIL] {monitor.Name} ({status})";
+        var subjectPrefix = kind == MonitorAlertKind.FailureReminder ? "[ALERT FAIL REMINDER]" : "[ALERT FAIL]";
+        var subject = $"{subjectPrefix} {monitor.Name} ({status})";
+        var incidentLine = incidentOpenedAt is null ? "" : $"<p><b>Incident opened:</b> {incidentOpenedAt:O} UTC</p>";
+        var lastAlertLine = lastFailureAlertSentAt is null ? "" : $"<p><b>Last alert sent:</b> {lastFailureAlertSentAt:O} UTC</p>";
         var html = $"""
             <h2>Monitor failed</h2>
             <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
@@ -227,6 +340,8 @@ public sealed class MonitorExecutor(
             <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
             <p><b>Error:</b> {WebUtility.HtmlEncode(run.ErrorMessage ?? "(none)")}</p>
             <p><b>When:</b> {run.StartedAt:O} UTC</p>
+            {incidentLine}
+            {lastAlertLine}
             """;
 
         try
@@ -234,12 +349,80 @@ public sealed class MonitorExecutor(
             await emailSender.SendAsync(from, to, subject, html, cancellationToken);
             run.AlertSent = true;
             run.AlertError = null;
+            return true;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to send alert for monitor {MonitorId}", monitor.Id);
             run.AlertSent = false;
             run.AlertError = ex.Message;
+            return false;
+        }
+    }
+
+    private async Task<bool> TrySendRecoveredAlertAsync(
+        MonitorEntity monitor,
+        MonitorRun run,
+        DateTimeOffset? incidentOpenedAt,
+        DateTimeOffset? lastFailureAlertSentAt,
+        CancellationToken cancellationToken)
+    {
+        var emailEnabled = config.GetValue("Hawk:Email:Enabled", true);
+        if (!emailEnabled)
+        {
+            run.AlertSent = false;
+            run.AlertError = "Email disabled (Hawk:Email:Enabled=false).";
+            return false;
+        }
+
+        var from = config["Hawk:Email:From"] ?? config["Hawk:Resend:From"];
+        if (string.IsNullOrWhiteSpace(from))
+        {
+            run.AlertSent = false;
+            run.AlertError = "Email from address is not configured (Hawk:Email:From).";
+            return false;
+        }
+
+        var to = await ResolveRecipientsAsync(monitor, cancellationToken);
+        if (to.Length == 0)
+        {
+            run.AlertSent = false;
+            run.AlertError = "No alert recipients resolved.";
+            return false;
+        }
+
+        var status = run.StatusCode is null ? "NO_RESPONSE" : run.StatusCode.ToString()!;
+        var subject = $"[ALERT RECOVERED] {monitor.Name} ({status})";
+
+        var incidentOpenedLine = incidentOpenedAt is null ? "" : $"<p><b>Incident opened:</b> {incidentOpenedAt:O} UTC</p>";
+        var incidentDurationLine = incidentOpenedAt is null ? "" : $"<p><b>Incident duration:</b> {(run.StartedAt - incidentOpenedAt.Value).TotalMinutes:F1} minutes</p>";
+        var lastAlertLine = lastFailureAlertSentAt is null ? "" : $"<p><b>Last failure alert sent:</b> {lastFailureAlertSentAt:O} UTC</p>";
+
+        var html = $"""
+            <h2>Monitor recovered</h2>
+            <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
+            <p><b>URL:</b> {WebUtility.HtmlEncode(monitor.Url)}</p>
+            <p><b>Method:</b> {WebUtility.HtmlEncode(monitor.Method)}</p>
+            <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
+            <p><b>When:</b> {run.StartedAt:O} UTC</p>
+            {incidentOpenedLine}
+            {incidentDurationLine}
+            {lastAlertLine}
+            """;
+
+        try
+        {
+            await emailSender.SendAsync(from, to, subject, html, cancellationToken);
+            run.AlertSent = true;
+            run.AlertError = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send recovery alert for monitor {MonitorId}", monitor.Id);
+            run.AlertSent = false;
+            run.AlertError = ex.Message;
+            return false;
         }
     }
 
@@ -274,25 +457,6 @@ public sealed class MonitorExecutor(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(e => e!)
             .ToArray();
-    }
-
-    private async Task<int> CountPriorConsecutiveFailuresAsync(Guid monitorId, CancellationToken cancellationToken)
-    {
-        var recent = await db.MonitorRuns
-            .Where(r => r.MonitorId == monitorId)
-            .OrderByDescending(r => r.StartedAt)
-            .Take(50)
-            .Select(r => new { r.Success })
-            .ToListAsync(cancellationToken);
-
-        var count = 0;
-        foreach (var r in recent)
-        {
-            if (r.Success)
-                break;
-            count++;
-        }
-        return count;
     }
 
     private static string SerializeHeaders(IReadOnlyDictionary<string, string>? headers)

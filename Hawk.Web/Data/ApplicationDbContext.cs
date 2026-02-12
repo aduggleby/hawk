@@ -46,6 +46,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<UserAlertSettings> UserAlertSettings => Set<UserAlertSettings>();
 
     /// <summary>
+    /// Per-monitor alert state (for reminders and recovery emails).
+    /// </summary>
+    public DbSet<MonitorAlertState> MonitorAlertStates => Set<MonitorAlertState>();
+
+    /// <summary>
     /// Per-user HTTP settings for URL checks (e.g., User-Agent override).
     /// </summary>
     public DbSet<UserUrlCheckSettings> UserUrlCheckSettings => Set<UserUrlCheckSettings>();
@@ -78,6 +83,18 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         {
             b.HasKey(x => x.UserId);
             b.HasIndex(x => x.AlertEmail);
+        });
+
+        builder.Entity<MonitorAlertState>(b =>
+        {
+            b.HasKey(x => x.MonitorId);
+            b.Property(x => x.RowVersion).IsRowVersion();
+            b.HasOne(x => x.Monitor)
+                .WithOne()
+                .HasForeignKey<MonitorAlertState>(x => x.MonitorId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(x => x.PendingRecoveryAlert);
         });
 
         builder.Entity<UserUrlCheckSettings>(b =>
