@@ -48,11 +48,84 @@
     </div>
 
     <div class="hawk-card mt-4">
-        <details>
+        <div class="flex items-center justify-between gap-3">
+            <div class="text-sm font-semibold">Technical details</div>
+            <button class="hawk-btn hawk-btn-ghost" type="button" id="copy-tech-details-btn" disabled>Copy technical details</button>
+        </div>
+
+        <details class="mt-3">
             <summary class="cursor-pointer select-none font-semibold">Show technical details (stack trace)</summary>
             <div class="mt-3">
-                <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words text-xs font-mono">@Model.ExceptionDetails</pre>
+                <pre id="tech-details-pre" class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words text-xs font-mono">@Model.ExceptionDetails</pre>
             </div>
         </details>
+
+        <div id="copy-tech-details-status" class="text-xs text-zinc-500 mt-2" role="status" aria-live="polite"></div>
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const btn = document.getElementById("copy-tech-details-btn");
+            const pre = document.getElementById("tech-details-pre");
+            const status = document.getElementById("copy-tech-details-status");
+
+            if (!btn || !pre) return;
+
+            const setStatus = (msg) => {
+                if (!status) return;
+                status.textContent = msg || "";
+            };
+
+            const buildText = () => {
+                // textContent includes content even when <details> is collapsed.
+                const details = (pre.textContent || "").trim();
+
+                const lines = [];
+                lines.push("Hawk error report");
+                lines.push(`Request ID: ${"@Model.RequestId" || ""}`.trim());
+                lines.push(`Path: ${"@Model.Path" || ""}`.trim());
+                lines.push(`Exception type: ${"@Model.ExceptionType" || ""}`.trim());
+                lines.push(`Message: ${"@Model.ErrorMessage" || ""}`.trim());
+                lines.push("");
+                lines.push(details);
+
+                return lines.filter(l => l !== "").join("\n");
+            };
+
+            const legacyCopy = (text) => {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                ta.setAttribute("readonly", "");
+                ta.style.position = "fixed";
+                ta.style.left = "-9999px";
+                ta.style.top = "0";
+                document.body.appendChild(ta);
+                ta.select();
+                const ok = document.execCommand("copy");
+                document.body.removeChild(ta);
+                if (!ok) throw new Error("execCommand(copy) failed");
+            };
+
+            const copy = async () => {
+                setStatus("");
+                const text = buildText();
+
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(text);
+                    } else {
+                        legacyCopy(text);
+                    }
+                    setStatus("Copied.");
+                } catch (e) {
+                    setStatus("Copy failed. Select the text and copy manually.");
+                }
+            };
+
+            btn.disabled = false;
+            btn.addEventListener("click", copy);
+        })();
+    </script>
+}
