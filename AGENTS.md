@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.22`
+- Version: `0.9.23`
 
 ## Ports
 
@@ -246,11 +246,26 @@ Alert recipient resolution (in order):
 - Failing monitors are queried separately using a join on the most recent `MonitorRun` where `Success == false`.
 - Failing monitors appear at the top in a distinct section so operators can immediately see what needs attention.
 
+## Monitors Index — Batch Actions
+
+- The monitors index supports batch actions on selected monitors via checkboxes.
+- When monitors are selected, the default action bar (Import StatusCake, Pause all, Resume all, New monitor) is replaced by a selection action bar with: **Run now**, **Pause**, **Resume**, and **Uncheck all**.
+- **Batch Run now** enqueues a Hangfire `RunAsync` job for each selected monitor and shows a flash message with the count of queued runs.
+
 ## Monitor Detail Page
 
 - `Hawk.Web/Pages/Monitors/Details.cshtml(.cs)` shows monitor configuration, headers, match rules, and the 25 most recent runs.
-- **Run now** button enqueues an immediate Hangfire job for the monitor (reason `"manual"`).
+- **Run now** button enqueues an immediate Hangfire job for the monitor (reason `"manual"`), creates a `MonitorRun` record up front (state `"queued"`), and redirects to the run diagnostics page which auto-refreshes until the run completes.
 - Each run in the history table links to the run diagnostics page.
+- Runs that are not yet completed show `QUEUED` or `RUNNING` badges instead of OK/FAIL.
+
+## MonitorRun State
+
+- `MonitorRun.State` — a `[MaxLength(16)]` string property tracking run lifecycle: `"queued"` → `"running"` → `"completed"`.
+- When a run is triggered via **Run now**, a `MonitorRun` is created with state `"queued"` before the Hangfire job is enqueued. The executor transitions it through `"running"` → `"completed"`.
+- Scheduled runs (no pre-existing `runId`) create a new `MonitorRun` as before and go directly to `"completed"`.
+- The run diagnostics page (`Runs/Details.cshtml`) auto-refreshes (1s for the first 30s, then every 15s) until the run state is `"completed"` or the monitor timeout is exceeded.
+- The monitors index last-run-success query filters to only `State == "completed"` runs.
 
 ## Monitor JSON Export / Import
 

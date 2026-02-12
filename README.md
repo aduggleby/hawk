@@ -260,10 +260,11 @@ Monitors can be temporarily paused without disabling them. A paused monitor:
 - Can still be tested manually via the **Test** button on the details page.
 - Shows a **Paused** badge in the monitors list (vs. **Enabled** or **Disabled**).
 
-Pause and resume from the monitors list:
+Pause, resume, and run from the monitors list:
 
 - **Pause all / Resume all** — applies to all monitors.
 - **Pause selected / Resume selected** — batch action on checked monitors.
+- **Run now (selected)** — enqueue immediate Hangfire jobs for all checked monitors.
 
 ## User Settings
 
@@ -290,7 +291,7 @@ From a monitor's detail page, click **Test** to run it immediately and see full 
 - Match rule results (pass/fail per rule).
 - Response body snippet (up to 256KB).
 
-Alternatively, click **Run now** on the detail page to enqueue an immediate Hangfire job (the result appears in the run history once complete).
+Alternatively, click **Run now** on the detail page to enqueue an immediate Hangfire job. You'll be redirected to the run diagnostics page, which auto-refreshes until the run completes (showing Queued → Running → Completed status).
 
 ## Run Diagnostics
 
@@ -431,6 +432,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.22` in the `.csproj` files.
+- Project version is set to `0.9.23` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.
