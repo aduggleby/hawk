@@ -3,6 +3,10 @@
 @model Hawk.Web.Pages.Monitors.IndexModel
 @{
     ViewData["Title"] = "Monitors";
+    bool IsFailing(Hawk.Web.Data.Monitoring.Monitor m) =>
+        m.LastRunAt is not null &&
+        Model.LastRunSuccessByMonitor.TryGetValue(m.Id, out var lastOk) &&
+        !lastOk;
 }
 
 <div class="flex items-start justify-between gap-4 mb-6">
@@ -34,6 +38,63 @@
 else
 {
     <form method="post" asp-page-handler="Batch">
+        @if (Model.FailingMonitors.Count != 0)
+        {
+            <div class="hawk-card p-0 overflow-hidden mb-4">
+                <div class="px-4 py-3 bg-zinc-50 border-b border-zinc-100">
+                    <h2 class="text-sm font-semibold tracking-tight">Failing monitors</h2>
+                    <div class="text-xs text-zinc-500 mt-1">Monitors whose most recent run failed.</div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-zinc-50 text-zinc-600">
+                        <tr>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Select</th>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Name</th>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Status</th>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Last run</th>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Next run</th>
+                        </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-100">
+                        @foreach (var m in Model.FailingMonitors)
+                        {
+                            <tr class="hover:bg-zinc-50/70">
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" />
+                                </td>
+                                <td class="px-4 py-3 font-medium whitespace-nowrap">
+                                    <a asp-page="/Monitors/Details"
+                                       asp-route-id="@m.Id"
+                                       class="no-underline text-red-700 hover:text-red-800">@m.Name</a>
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    @if (!m.Enabled)
+                                    {
+                                        <span class="hawk-badge hawk-badge-danger">Disabled</span>
+                                    }
+                                    else if (m.IsPaused)
+                                    {
+                                        <span class="hawk-badge hawk-badge-warning">Paused</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="hawk-badge hawk-badge-success">Enabled</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
+                                    @(m.LastRunAt?.ToLocalTime().ToString("g") ?? "-")
+                                    <span class="hawk-badge hawk-badge-danger ml-2">FAIL</span>
+                                </td>
+                                <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">@(m.NextRunAt?.ToLocalTime().ToString("g") ?? "-")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
         <div class="hawk-card p-0 overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
@@ -47,14 +108,17 @@ else
                     </tr>
                     </thead>
                     <tbody class="divide-y divide-zinc-100">
-                    @foreach (var m in Model.Monitors)
+                    @foreach (var m in Model.OtherMonitors)
                     {
+                        var failing = IsFailing(m);
                         <tr class="hover:bg-zinc-50/70">
                             <td class="px-4 py-3 whitespace-nowrap">
                                 <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" />
                             </td>
                             <td class="px-4 py-3 font-medium whitespace-nowrap">
-                                <a asp-page="/Monitors/Details" asp-route-id="@m.Id" class="no-underline">@m.Name</a>
+                                <a asp-page="/Monitors/Details"
+                                   asp-route-id="@m.Id"
+                                   class="no-underline @(failing ? "text-red-700 hover:text-red-800" : "")">@m.Name</a>
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
                                 @if (!m.Enabled)
@@ -72,9 +136,7 @@ else
                             </td>
                             <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
                                 @(m.LastRunAt?.ToLocalTime().ToString("g") ?? "-")
-                                @if (m.LastRunAt is not null &&
-                                     Model.LastRunSuccessByMonitor.TryGetValue(m.Id, out var lastRunSuccess) &&
-                                     !lastRunSuccess)
+                                @if (failing)
                                 {
                                     <span class="hawk-badge hawk-badge-danger ml-2">FAIL</span>
                                 }

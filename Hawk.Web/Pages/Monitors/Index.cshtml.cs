@@ -23,6 +23,16 @@ public class IndexModel(ApplicationDbContext db) : PageModel
     public List<MonitorEntity> Monitors { get; private set; } = [];
 
     /// <summary>
+    /// Monitors whose most recent run failed (shown at top).
+    /// </summary>
+    public List<MonitorEntity> FailingMonitors { get; private set; } = [];
+
+    /// <summary>
+    /// Remaining monitors.
+    /// </summary>
+    public List<MonitorEntity> OtherMonitors { get; private set; } = [];
+
+    /// <summary>
     /// Latest run success state by monitor id.
     /// </summary>
     public Dictionary<Guid, bool> LastRunSuccessByMonitor { get; private set; } = [];
@@ -53,6 +63,15 @@ public class IndexModel(ApplicationDbContext db) : PageModel
                 .Select(r => new { r.MonitorId, r.Success })
                 .First())
             .ToDictionaryAsync(x => x.MonitorId, x => x.Success, cancellationToken);
+
+        FailingMonitors = Monitors
+            .Where(m => m.LastRunAt is not null &&
+                        LastRunSuccessByMonitor.TryGetValue(m.Id, out var lastOk) &&
+                        !lastOk)
+            .ToList();
+
+        var failingIds = FailingMonitors.Select(m => m.Id).ToHashSet();
+        OtherMonitors = Monitors.Where(m => !failingIds.Contains(m.Id)).ToList();
     }
 
     public async Task<IActionResult> OnPostPauseAllAsync(CancellationToken cancellationToken)
