@@ -5,6 +5,8 @@
 // </file>
 
 using Hangfire;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -64,5 +66,28 @@ public class DetailsModel(ApplicationDbContext db, IBackgroundJobClient jobs) : 
 
         jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(id, "manual", CancellationToken.None));
         return RedirectToPage("/Monitors/Details", new { id });
+    }
+
+    /// <summary>
+    /// Exports this monitor configuration as JSON.
+    /// </summary>
+    public async Task<IActionResult> OnGetExportAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var monitor = await db.Monitors
+            .Include(m => m.Headers)
+            .Include(m => m.MatchRules)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+        if (monitor is null)
+            return NotFound();
+
+        var payload = MonitorJsonPort.ToEnvelope(monitor);
+        var json = JsonSerializer.Serialize(payload, MonitorJsonPort.JsonOptions);
+        var bytes = Encoding.UTF8.GetBytes(json);
+        var safeName = string.Concat(monitor.Name.Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')).Trim('-');
+        if (string.IsNullOrWhiteSpace(safeName))
+            safeName = monitor.Id.ToString("N");
+
+        return File(bytes, "application/json", $"{safeName}.monitor.json");
     }
 }

@@ -54,9 +54,17 @@ public class ErrorModel : PageModel
     public bool HasDiagnostics => !string.IsNullOrWhiteSpace(ExceptionDetails);
 
     /// <summary>
-    /// Loads request metadata for rendering.
+    /// Loads request metadata for rendering on GET.
     /// </summary>
-    public void OnGet()
+    public void OnGet() => Load();
+
+    /// <summary>
+    /// Loads request metadata for rendering on POST.
+    /// UseExceptionHandler re-executes the pipeline with the original method.
+    /// </summary>
+    public void OnPost() => Load();
+
+    private void Load()
     {
         RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier ?? "(unknown)";
 

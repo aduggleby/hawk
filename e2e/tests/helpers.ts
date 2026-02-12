@@ -35,13 +35,18 @@ export async function loginAsSeedAdmin(page: Page) {
   await page.goto('/');
   await snap(page, '01-home');
 
-  await page.getByRole('link', { name: /^login$/i }).click();
+  // App may route logged-out users directly to /Identity/Account/Login.
+  const emailField = page.getByLabel(/email/i);
+  if (!(await emailField.isVisible().catch(() => false))) {
+    await page.getByRole('link', { name: /^login/i }).click();
+  }
   await snap(page, '02-login');
 
-  await page.getByLabel(/email/i).fill(email);
+  await emailField.fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /log in/i }).click();
 
-  // Wait until authenticated UI is visible.
-  await page.getByRole('button', { name: /^logout$/i }).waitFor();
+  // Wait until login flow completed; logout is inside Account dropdown.
+  await page.waitForURL(url => !url.pathname.toLowerCase().includes('/identity/account/login'));
+  await page.getByText(/^account$/i).first().waitFor();
 }

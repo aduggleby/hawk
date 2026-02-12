@@ -26,6 +26,7 @@
         <form id="run-now-form" method="post" asp-page-handler="RunNow">
             <button class="hawk-btn hawk-btn-primary" type="submit">Run now</button>
         </form>
+        <a class="hawk-btn hawk-btn-ghost" asp-page-handler="Export" asp-route-id="@Model.Monitor.Id">Export JSON</a>
         <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Edit" asp-route-id="@Model.Monitor.Id">Edit</a>
         <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
     </div>

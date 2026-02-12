@@ -24,6 +24,14 @@ async function gotoMonitors(page) {
   await snap(page, '10-monitors-index');
 }
 
+async function openSection(page, title: string) {
+  const details = page.locator(`details:has(summary:has-text("${title}"))`).first();
+  const isOpen = await details.evaluate(el => el.hasAttribute('open'));
+  if (!isOpen) {
+    await details.locator('summary').click();
+  }
+}
+
 test('create GET monitor (contains) and observe scheduled runs (5s interval in Testing)', async ({ page }) => {
   await loginAsSeedAdmin(page);
   await gotoMonitors(page);
@@ -40,6 +48,7 @@ test('create GET monitor (contains) and observe scheduled runs (5s interval in T
   await page.getByLabel(/^interval$/i).selectOption('5');
 
   // First match rule: contains "Example Domain" (present in /ok).
+  await openSection(page, 'Match rules');
   await page.locator('input[name="Form.MatchPatterns[0]"]').fill('Example Domain');
   await page.locator('select[name="Form.MatchModes[0]"]').selectOption('Contains');
 
@@ -61,11 +70,14 @@ test('create POST monitor with headers/body and run now succeeds', async ({ page
   await page.getByLabel(/^url$/i).fill(`${MOCK_BASE}/echo`);
   await page.getByLabel(/^method$/i).selectOption('POST');
   await page.getByLabel(/^interval$/i).selectOption('60');
+  await openSection(page, 'POST options');
   await page.getByLabel(/content-type/i).fill('application/json');
   await page.getByLabel(/^body$/i).fill('{"hello":"world"}');
+  await openSection(page, 'Headers');
   await page.locator('input[name="Form.HeaderNames[0]"]').fill('X-Test');
   await page.locator('input[name="Form.HeaderValues[0]"]').fill('hawk');
   // /echo returns JSON with the request body as an escaped string; simplest assertion is that "hello" appears somewhere.
+  await openSection(page, 'Match rules');
   await page.locator('select[name="Form.MatchModes[0]"]').selectOption('Contains');
   await page.locator('input[name="Form.MatchPatterns[0]"]').fill('hello');
 
@@ -108,6 +120,7 @@ test('error states: non-2xx and match failure trigger a FAIL result (and alert i
   await page.getByLabel(/^url$/i).fill(`${MOCK_BASE}/nomatch`);
   await page.getByLabel(/^method$/i).selectOption('GET');
   await page.getByLabel(/^interval$/i).selectOption('60');
+  await openSection(page, 'Match rules');
   await page.locator('select[name="Form.MatchModes[0]"]').selectOption('Contains');
   await page.locator('input[name="Form.MatchPatterns[0]"]').fill('Example Domain');
   await page.getByRole('button', { name: /^create$/i }).click();
@@ -147,4 +160,100 @@ test('alert threshold: only alert after N consecutive failures', async ({ page, 
   emailsRes = await request.get(`${MOCK_BASE}/emails`);
   emails = await emailsRes.json();
   expect(emails.length).toBe(1);
+});
+
+test('create monitor with two contains rules and save succeeds', async ({ page }) => {
+  await loginAsSeedAdmin(page);
+  await gotoMonitors(page);
+
+  await page.getByRole('link', { name: /new monitor/i }).click();
+  await expect(page.getByRole('heading', { name: /new monitor/i })).toBeVisible();
+
+  await page.getByLabel(/^name$/i).fill('GET ok two contains');
+  await page.getByLabel(/^url$/i).fill(`${MOCK_BASE}/ok`);
+  await page.getByLabel(/^method$/i).selectOption('GET');
+  await page.getByLabel(/^interval$/i).selectOption('60');
+
+  await openSection(page, 'Match rules');
+  await page.locator('select[name="Form.MatchModes[0]"]').selectOption('Contains');
+  await page.locator('input[name="Form.MatchPatterns[0]"]').fill('Example');
+  await page.locator('select[name="Form.MatchModes[1]"]').selectOption('Contains');
+  await page.locator('input[name="Form.MatchPatterns[1]"]').fill('Domain');
+
+  await page.getByRole('button', { name: /^create$/i }).click();
+  await expect(page.getByRole('heading', { name: /GET ok two contains/i })).toBeVisible();
+  await expect(page.getByText('Contains: Example')).toBeVisible();
+  await expect(page.getByText('Contains: Domain')).toBeVisible();
+});
+
+test('export monitor config as json and re-import with full settings', async ({ page, request }) => {
+  await loginAsSeedAdmin(page);
+  await gotoMonitors(page);
+
+  const monitorName = `Export Roundtrip ${Date.now()}`;
+
+  await page.getByRole('link', { name: /new monitor/i }).click();
+  await expect(page.getByRole('heading', { name: /new monitor/i })).toBeVisible();
+
+  await page.getByLabel(/^name$/i).fill(monitorName);
+  await page.getByLabel(/^url$/i).fill(`${MOCK_BASE}/echo`);
+  await page.getByLabel(/^method$/i).selectOption('POST');
+  await page.getByLabel(/^interval$/i).selectOption('60');
+  await page.getByLabel(/^timeout \(s\)$/i).fill('25');
+  await page.getByLabel(/alert after consecutive failures/i).fill('2');
+  await page.getByLabel(/allowed http status codes/i).fill('404,429');
+  await page.getByLabel(/alert email override/i).fill('alerts+monitor@dualconsult.com');
+  await page.getByLabel(/run retention/i).fill('45');
+
+  await openSection(page, 'POST options');
+  await page.getByLabel(/content-type/i).fill('application/json');
+  await page.getByLabel(/^body$/i).fill('{"hello":"roundtrip","key":"value"}');
+
+  await openSection(page, 'Headers');
+  await page.locator('input[name="Form.HeaderNames[0]"]').fill('X-Test');
+  await page.locator('input[name="Form.HeaderValues[0]"]').fill('hawk');
+  await page.locator('input[name="Form.HeaderNames[1]"]').fill('X-Trace');
+  await page.locator('input[name="Form.HeaderValues[1]"]').fill('roundtrip');
+
+  await openSection(page, 'Match rules');
+  await page.locator('select[name="Form.MatchModes[0]"]').selectOption('Contains');
+  await page.locator('input[name="Form.MatchPatterns[0]"]').fill('hello');
+  await page.locator('select[name="Form.MatchModes[1]"]').selectOption('Contains');
+  await page.locator('input[name="Form.MatchPatterns[1]"]').fill('roundtrip');
+
+  await page.getByRole('button', { name: /^create$/i }).click();
+  await expect(page.getByRole('heading', { name: new RegExp(monitorName, 'i') })).toBeVisible();
+
+  const monitorId = page.url().split('/').filter(Boolean).at(-1);
+  expect(monitorId).toBeTruthy();
+
+  const exportResponse = await request.get(`/Monitors/Details/${monitorId}?handler=Export`);
+  expect(exportResponse.ok()).toBeTruthy();
+  const exportPayload = await exportResponse.body();
+  expect(exportPayload.byteLength).toBeGreaterThan(0);
+
+  await gotoMonitors(page);
+  await page.setInputFiles('input[name="ImportFile"]', {
+    name: `${monitorName}.monitor.json`,
+    mimeType: 'application/json',
+    buffer: exportPayload,
+  });
+  await page.getByRole('button', { name: /import json/i }).click();
+
+  const monitorLinks = page.locator('tbody tr td a.no-underline', { hasText: monitorName });
+  await expect(monitorLinks).toHaveCount(2);
+
+  await monitorLinks.nth(1).click();
+  await expect(page.getByRole('heading', { name: new RegExp(monitorName, 'i') })).toBeVisible();
+  await expect(page.getByText('2xx + 404,429')).toBeVisible();
+  await expect(page.getByText('alerts+monitor@dualconsult.com')).toBeVisible();
+  await expect(page.getByText('Contains: hello')).toBeVisible();
+  await expect(page.getByText('Contains: roundtrip')).toBeVisible();
+  await expect(page.getByText('X-Test: hawk')).toBeVisible();
+  await expect(page.getByText('X-Trace: roundtrip')).toBeVisible();
+
+  await page.getByRole('link', { name: /^edit$/i }).click();
+  await expect(page.getByRole('heading', { name: /edit monitor/i })).toBeVisible();
+  await expect(page.getByLabel(/content-type/i)).toHaveValue('application/json');
+  await expect(page.getByLabel(/^body$/i)).toHaveValue('{"hello":"roundtrip","key":"value"}');
 });
