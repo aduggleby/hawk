@@ -19,8 +19,17 @@
     <div>
         <h1 class="text-2xl font-semibold tracking-tight">New monitor</h1>
         <p class="text-sm text-zinc-600">Create a new uptime or content check.</p>
+        <p class="text-xs text-zinc-500 mt-2">
+            You can import a previously exported monitor JSON to prefill this form. Review it, then click Create.
+        </p>
     </div>
-    <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
+    <div class="flex items-center gap-2">
+        <form method="post" asp-page-handler="Import" enctype="multipart/form-data">
+            <input type="file" id="import-json-file" name="ImportFile" accept=".json,application/json" class="hidden" />
+            <button class="hawk-btn hawk-btn-ghost" type="button" id="import-json-btn">Import JSON</button>
+        </form>
+        <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
+    </div>
 </div>
 
 <form method="post" class="space-y-4">
@@ -181,6 +190,17 @@
     <partial name="_ValidationScriptsPartial" />
     <script>
         (() => {
+            const importBtn = document.getElementById("import-json-btn");
+            const importFile = document.getElementById("import-json-file");
+            if (importBtn && importFile) {
+                importBtn.addEventListener("click", () => importFile.click());
+                importFile.addEventListener("change", () => {
+                    if (importFile.files && importFile.files.length > 0) {
+                        importBtn.closest("form")?.submit();
+                    }
+                });
+            }
+
             const methodSelect = document.getElementById("Form_Method");
             const postOptionsCard = document.getElementById("post-options-card");
             if (!methodSelect || !postOptionsCard) return;

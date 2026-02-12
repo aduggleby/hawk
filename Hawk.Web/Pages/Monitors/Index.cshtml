@@ -15,10 +15,6 @@
         {
             <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
         }
-        <form method="post" asp-page-handler="Import" enctype="multipart/form-data" class="flex items-center gap-2">
-            <input class="hawk-input text-xs h-9 py-1" type="file" name="ImportFile" accept=".json,application/json" required />
-            <button class="hawk-btn hawk-btn-ghost" type="submit">Import JSON</button>
-        </form>
         <form method="post" asp-page-handler="PauseAll">
             <button class="hawk-btn hawk-btn-ghost" type="submit">Pause all</button>
         </form>

@@ -6,7 +6,6 @@
 
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
@@ -16,7 +15,7 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Monitors list page model.
 /// </summary>
-public class IndexModel(ApplicationDbContext db, IHostEnvironment env, UserManager<IdentityUser> userManager) : PageModel
+public class IndexModel(ApplicationDbContext db) : PageModel
 {
     /// <summary>
     /// Monitors to display.
@@ -33,9 +32,6 @@ public class IndexModel(ApplicationDbContext db, IHostEnvironment env, UserManag
 
     [BindProperty]
     public string? BatchAction { get; set; }
-
-    [BindProperty]
-    public IFormFile? ImportFile { get; set; }
 
     /// <summary>
     /// Loads the monitors list.
@@ -104,55 +100,6 @@ public class IndexModel(ApplicationDbContext db, IHostEnvironment env, UserManag
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, false), cancellationToken);
 
         TempData["FlashInfo"] = $"{(action == "pause" ? "Paused" : "Resumed")} {updated} monitor(s).";
-        return RedirectToPage();
-    }
-
-    public async Task<IActionResult> OnPostImportAsync(CancellationToken cancellationToken)
-    {
-        if (ImportFile is null || ImportFile.Length <= 0)
-        {
-            TempData["FlashError"] = "Select a JSON file to import.";
-            return RedirectToPage();
-        }
-
-        string json;
-        await using (var stream = ImportFile.OpenReadStream())
-        using (var reader = new StreamReader(stream))
-        {
-            json = await reader.ReadToEndAsync(cancellationToken);
-        }
-
-        if (!MonitorJsonPort.TryParse(json, out var envelope, out var parseError) || envelope is null)
-        {
-            TempData["FlashError"] = parseError ?? "Invalid monitor JSON.";
-            return RedirectToPage();
-        }
-
-        if (envelope.Monitors.Count == 0)
-        {
-            TempData["FlashError"] = "Import JSON does not contain any monitors.";
-            return RedirectToPage();
-        }
-
-        var imported = new List<MonitorEntity>(envelope.Monitors.Count);
-        var createdByUserId = userManager.GetUserId(User);
-
-        foreach (var model in envelope.Monitors)
-        {
-            if (!MonitorJsonPort.TryCreateMonitor(model, createdByUserId, env, out var monitor, out var error))
-            {
-                var name = string.IsNullOrWhiteSpace(model.Name) ? "(unnamed)" : model.Name;
-                TempData["FlashError"] = $"Import failed for '{name}': {error}";
-                return RedirectToPage();
-            }
-
-            imported.Add(monitor);
-        }
-
-        db.Monitors.AddRange(imported);
-        await db.SaveChangesAsync(cancellationToken);
-
-        TempData["FlashInfo"] = $"Imported {imported.Count} monitor(s).";
         return RedirectToPage();
     }
 }
