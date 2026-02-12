@@ -186,6 +186,51 @@ test('create monitor with two contains rules and save succeeds', async ({ page }
   await expect(page.getByText('Contains: Domain')).toBeVisible();
 });
 
+test('edit monitor after running once: add second contains rule and save succeeds', async ({ page }) => {
+  await loginAsSeedAdmin(page);
+  await gotoMonitors(page);
+
+  const name = `Edit after run ${Date.now()}`;
+
+  await page.getByRole('link', { name: /new monitor/i }).click();
+  await expect(page.getByRole('heading', { name: /new monitor/i })).toBeVisible();
+
+  await page.getByLabel(/^name$/i).fill(name);
+  await page.getByLabel(/^url$/i).fill(`${MOCK_BASE}/ok`);
+  await page.getByLabel(/^method$/i).selectOption('GET');
+  await page.getByLabel(/^interval$/i).selectOption('60');
+
+  await openSection(page, 'Match rules');
+  await page.locator('select[name="Form.MatchModes[0]"]').selectOption('Contains');
+  await page.locator('input[name="Form.MatchPatterns[0]"]').fill('Example');
+
+  await page.getByRole('button', { name: /^create$/i }).click();
+  await expect(page.getByRole('heading', { name: new RegExp(name, 'i') })).toBeVisible();
+  await snap(page, '22-edit-after-run-created');
+
+  // Run once, to reproduce the bug where editing after a run could throw a 500.
+  await page.getByRole('button', { name: /^run now$/i }).click();
+  await pollForAtLeastRuns(page, 1, 30_000);
+  await expect(page.locator('tbody tr').first()).toContainText('OK');
+  await snap(page, '23-edit-after-run-after-run');
+
+  await page.getByRole('link', { name: /^edit$/i }).click();
+  await expect(page.getByRole('heading', { name: /edit monitor/i })).toBeVisible();
+  await snap(page, '24-edit-after-run-edit-form');
+
+  await openSection(page, 'Match rules');
+  await page.locator('select[name="Form.MatchModes[1]"]').selectOption('Contains');
+  await page.locator('input[name="Form.MatchPatterns[1]"]').fill('Domain');
+
+  await page.getByRole('button', { name: /^save$/i }).click();
+
+  await expect(page.getByRole('heading', { name: new RegExp(name, 'i') })).toBeVisible();
+  await expect(page.getByText('Contains: Example')).toBeVisible();
+  await expect(page.getByText('Contains: Domain')).toBeVisible();
+  await expect(page.getByText(/something went wrong/i)).toHaveCount(0);
+  await snap(page, '25-edit-after-run-saved');
+});
+
 test('export monitor config as json and re-import with full settings', async ({ page }) => {
   await loginAsSeedAdmin(page);
   await gotoMonitors(page);
