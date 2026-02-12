@@ -111,6 +111,12 @@ public sealed class Monitor
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>
+    /// Optimistic concurrency token (SQL Server rowversion).
+    /// </summary>
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = [];
+
+    /// <summary>
     /// Foreign key to the Identity user that created the monitor (optional).
     /// </summary>
     [MaxLength(450)]

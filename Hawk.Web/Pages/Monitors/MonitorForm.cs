@@ -17,6 +17,12 @@ namespace Hawk.Web.Pages.Monitors;
 public sealed class MonitorForm
 {
     /// <summary>
+    /// Optimistic concurrency token (base64-encoded SQL rowversion).
+    /// Used by the Edit page to detect conflicting updates.
+    /// </summary>
+    public string? RowVersion { get; set; }
+
+    /// <summary>
     /// Display name.
     /// </summary>
     [Display(Name = "Name")]

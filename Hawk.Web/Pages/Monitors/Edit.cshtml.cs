@@ -52,6 +52,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
 
         Form = new MonitorForm
         {
+            RowVersion = Convert.ToBase64String(m.RowVersion ?? []),
             Name = m.Name,
             Url = m.Url,
             Method = m.Method,
@@ -81,6 +82,23 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         return Page();
     }
 
+    private static bool TryParseRowVersion(string? rowVersionBase64, out byte[] rowVersion)
+    {
+        rowVersion = [];
+        if (string.IsNullOrWhiteSpace(rowVersionBase64))
+            return false;
+
+        try
+        {
+            rowVersion = Convert.FromBase64String(rowVersionBase64);
+            return rowVersion.Length != 0;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>
     /// Applies edits.
     /// </summary>
@@ -93,12 +111,18 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         if (!ModelState.IsValid)
             return Page();
 
-        var m = await db.Monitors
-            .Include(x => x.Headers)
-            .Include(x => x.MatchRules)
-            .FirstOrDefaultAsync(x => x.Id == Id, cancellationToken);
+        if (!TryParseRowVersion(Form.RowVersion, out var originalRowVersion))
+        {
+            TempData["FlashError"] = "This monitor changed while you were editing. Please reload and try again.";
+            return RedirectToPage("/Monitors/Edit", new { id = Id });
+        }
+
+        var m = await db.Monitors.FirstOrDefaultAsync(x => x.Id == Id, cancellationToken);
         if (m is null)
             return NotFound();
+
+        // Ensure EF uses the rowversion from when the user loaded the page, not the one we just fetched.
+        db.Entry(m).Property(x => x.RowVersion).OriginalValue = originalRowVersion;
 
         m.Name = Form.Name.Trim();
         m.Url = Form.Url.Trim();
@@ -113,18 +137,20 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         m.ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim();
         m.Body = Form.Body;
 
-        // Branch: simplest edit behavior is replace child collections.
-        m.Headers.Clear();
+        // Reset scheduling to "run soon" when config changes.
+        m.NextRunAt = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60));
+
+        var newHeaders = new List<MonitorHeader>();
         for (var i = 0; i < Math.Min(Form.HeaderNames.Length, Form.HeaderValues.Length); i++)
         {
             var hn = (Form.HeaderNames[i] ?? string.Empty).Trim();
             var hv = (Form.HeaderValues[i] ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(hn))
                 continue;
-            m.Headers.Add(new MonitorHeader { Name = hn, Value = hv });
+            newHeaders.Add(new MonitorHeader { MonitorId = m.Id, Name = hn, Value = hv });
         }
 
-        m.MatchRules.Clear();
+        var newRules = new List<MonitorMatchRule>();
         for (var i = 0; i < Math.Min(Form.MatchModes.Length, Form.MatchPatterns.Length); i++)
         {
             var pat = (Form.MatchPatterns[i] ?? string.Empty).Trim();
@@ -133,13 +159,31 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
             var mode = Form.MatchModes[i];
             if (mode == ContentMatchMode.None)
                 continue;
-            m.MatchRules.Add(new MonitorMatchRule { Mode = mode, Pattern = pat });
+            newRules.Add(new MonitorMatchRule { MonitorId = m.Id, Mode = mode, Pattern = pat });
         }
 
-        // Reset scheduling to "run soon" when config changes.
-        m.NextRunAt = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60));
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            // Replace children with set-based deletes to avoid per-row optimistic concurrency exceptions.
+            await db.MonitorHeaders.Where(h => h.MonitorId == m.Id).ExecuteDeleteAsync(cancellationToken);
+            await db.MonitorMatchRules.Where(r => r.MonitorId == m.Id).ExecuteDeleteAsync(cancellationToken);
 
-        await db.SaveChangesAsync(cancellationToken);
-        return RedirectToPage("/Monitors/Details", new { id = m.Id });
+            if (newHeaders.Count != 0)
+                db.MonitorHeaders.AddRange(newHeaders);
+            if (newRules.Count != 0)
+                db.MonitorMatchRules.AddRange(newRules);
+
+            await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+
+            return RedirectToPage("/Monitors/Details", new { id = m.Id });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another request updated/deleted this monitor between when the user loaded the page and now.
+            TempData["FlashError"] = "This monitor was changed by someone else while you were editing. Please review the latest values and try again.";
+            return RedirectToPage("/Monitors/Edit", new { id = Id });
+        }
     }
 }

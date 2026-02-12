@@ -64,6 +64,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         {
             b.HasIndex(x => x.Enabled);
             b.HasIndex(x => x.NextRunAt);
+            b.Property(x => x.RowVersion).IsRowVersion();
             b.HasMany(x => x.Headers).WithOne(x => x.Monitor!).HasForeignKey(x => x.MonitorId).OnDelete(DeleteBehavior.Cascade);
             b.HasMany(x => x.MatchRules).WithOne(x => x.Monitor!).HasForeignKey(x => x.MonitorId).OnDelete(DeleteBehavior.Cascade);
         });
