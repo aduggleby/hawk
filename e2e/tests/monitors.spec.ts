@@ -186,7 +186,7 @@ test('create monitor with two contains rules and save succeeds', async ({ page }
   await expect(page.getByText('Contains: Domain')).toBeVisible();
 });
 
-test('export monitor config as json and re-import with full settings', async ({ page, request }) => {
+test('export monitor config as json and re-import with full settings', async ({ page }) => {
   await loginAsSeedAdmin(page);
   await gotoMonitors(page);
 
@@ -227,7 +227,8 @@ test('export monitor config as json and re-import with full settings', async ({ 
   const monitorId = page.url().split('/').filter(Boolean).at(-1);
   expect(monitorId).toBeTruthy();
 
-  const exportResponse = await request.get(`/Monitors/Details/${monitorId}?handler=Export`);
+  // Use the page's request context so auth cookies are included.
+  const exportResponse = await page.request.get(`/Monitors/Details/${monitorId}?handler=Export`);
   expect(exportResponse.ok()).toBeTruthy();
   const exportPayload = await exportResponse.body();
   expect(exportPayload.byteLength).toBeGreaterThan(0);
@@ -240,9 +241,17 @@ test('export monitor config as json and re-import with full settings', async ({ 
   });
   await page.getByRole('button', { name: /import json/i }).click();
 
-  const monitorLinks = page.locator('tbody tr td a.no-underline', { hasText: monitorName });
-  await expect(monitorLinks).toHaveCount(2);
+  await expect
+    .poll(
+      async () => {
+        await page.reload();
+        return await page.locator('tbody tr td a.no-underline', { hasText: monitorName }).count();
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(2);
 
+  const monitorLinks = page.locator('tbody tr td a.no-underline', { hasText: monitorName });
   await monitorLinks.nth(1).click();
   await expect(page.getByRole('heading', { name: new RegExp(monitorName, 'i') })).toBeVisible();
   await expect(page.getByText('2xx + 404,429')).toBeVisible();

@@ -82,7 +82,6 @@ test('import StatusCake tests and alerts', async ({ page }) => {
 
   // Verify imported run appears in monitor details.
   await page.goto('/Monitors');
-  const row = page.locator('tr', { hasText: 'SC OK (sc:2001)' });
-  await row.getByRole('link', { name: 'View' }).click();
+  await page.getByRole('link', { name: 'SC OK (sc:2001)' }).click();
   await expect(page.getByText('Imported StatusCake alert')).toBeVisible();
 });
