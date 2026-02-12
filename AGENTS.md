@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.20`
+- Version: `0.9.21`
 
 ## Ports
 
@@ -228,6 +228,17 @@ Alert recipient resolution (in order):
 - `Hawk.Web/Pages/Monitors/Details.cshtml(.cs)` shows monitor configuration, headers, match rules, and the 25 most recent runs.
 - **Run now** button enqueues an immediate Hangfire job for the monitor (reason `"manual"`).
 - Each run in the history table links to the run diagnostics page.
+
+## Monitor JSON Export / Import
+
+- `Hawk.Web/Pages/Monitors/MonitorJsonPort.cs` contains the JSON model (`MonitorExportEnvelope`, `MonitorExportModel`) and mapping helpers.
+- **Export** — `Details.cshtml.cs` has an `OnGetExport` handler that serializes a single monitor to a JSON file download.
+- **Import** — `Index.cshtml.cs` has an `OnPostImportAsync` handler that accepts a `.json` file upload, parses it via `MonitorJsonPort.TryParse`, validates each monitor via `MonitorJsonPort.TryCreateMonitor`, and persists valid monitors.
+- The parser accepts three JSON shapes: an envelope object with `monitors` array, a bare array of monitor objects, or a single monitor object.
+- Export uses `System.Text.Json` with `JsonStringEnumConverter` (camelCase) and `WriteIndented`.
+- Each imported monitor goes through the same `MonitorForm.Validate()` pipeline as the create form.
+- Invalid monitors are skipped; errors are reported via `TempData` flash messages.
+- E2E tests cover export and re-import in `e2e/tests/monitors.spec.ts`.
 
 ## Run Diagnostics Page
 

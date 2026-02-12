@@ -355,6 +355,51 @@ jq -s '.' alerts-*.wrapped.json > statuscake-alerts.json
 
 Upload `statuscake-alerts.json` with import type `Alerts`.
 
+## JSON Export / Import
+
+Hawk supports exporting and importing monitor configurations as JSON. This is useful for backing up monitors, migrating between instances, or sharing configurations.
+
+### Export
+
+- **Single monitor** — on the monitor detail page, click **Export JSON**. Downloads a `.json` file containing the monitor configuration (name, URL, method, headers, match rules, alert settings, etc.).
+- The export format is a JSON envelope with a `version` field and a `monitors` array.
+
+### Import
+
+- On the monitors index page, use the **Import JSON** file picker and click **Import JSON**.
+- Accepted formats:
+  - An envelope object with a `monitors` array (the export format).
+  - A bare JSON array of monitor objects.
+  - A single monitor object.
+- Each imported monitor is validated using the same rules as the create form. Invalid monitors are skipped and reported via flash messages.
+- Imported monitors are assigned to the current user.
+
+### JSON Schema (per monitor)
+
+```json
+{
+  "name": "My Monitor",
+  "url": "https://example.com",
+  "method": "GET",
+  "enabled": true,
+  "isPaused": false,
+  "timeoutSeconds": 15,
+  "intervalSeconds": 60,
+  "alertAfterConsecutiveFailures": 1,
+  "alertEmailOverride": null,
+  "allowedStatusCodes": "404,429",
+  "runRetentionDays": null,
+  "contentType": null,
+  "body": null,
+  "headers": [
+    { "name": "Authorization", "value": "Bearer token" }
+  ],
+  "matchRules": [
+    { "mode": "contains", "pattern": "OK" }
+  ]
+}
+```
+
 ## Ando Build And Release
 
 This repo includes an Ando build script: `build.csando`.
@@ -379,6 +424,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.20` in the `.csproj` files.
+- Project version is set to `0.9.21` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.
