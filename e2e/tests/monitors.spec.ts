@@ -278,26 +278,41 @@ test('export monitor config as json and re-import with full settings', async ({ 
   const exportPayload = await exportResponse.body();
   expect(exportPayload.byteLength).toBeGreaterThan(0);
 
-  await gotoMonitors(page);
-  await page.setInputFiles('input[name="ImportFile"]', {
+  // Import into the New monitor form (prefill only), then create.
+  await page.goto('/Monitors/Create');
+  await expect(page.getByRole('heading', { name: /new monitor/i })).toBeVisible();
+
+  await page.setInputFiles('#import-json-file', {
     name: `${monitorName}.monitor.json`,
     mimeType: 'application/json',
     buffer: exportPayload,
   });
-  await page.getByRole('button', { name: /import json/i }).click();
 
-  await expect
-    .poll(
-      async () => {
-        await page.reload();
-        return await page.locator('tbody tr td a.no-underline', { hasText: monitorName }).count();
-      },
-      { timeout: 15_000 },
-    )
-    .toBe(2);
+  await expect(page.getByLabel(/^name$/i)).toHaveValue(monitorName);
+  await expect(page.getByLabel(/^method$/i)).toHaveValue('POST');
+  await expect(page.getByLabel(/^timeout \\(s\\)$/i)).toHaveValue('25');
+  await expect(page.getByLabel(/alert after consecutive failures/i)).toHaveValue('2');
+  await expect(page.getByLabel(/allowed http status codes/i)).toHaveValue('404,429');
+  await expect(page.getByLabel(/alert email override/i)).toHaveValue('alerts+monitor@dualconsult.com');
+  await expect(page.getByLabel(/run retention/i)).toHaveValue('45');
 
-  const monitorLinks = page.locator('tbody tr td a.no-underline', { hasText: monitorName });
-  await monitorLinks.nth(1).click();
+  await openSection(page, 'POST options');
+  await expect(page.getByLabel(/content-type/i)).toHaveValue('application/json');
+  await expect(page.getByLabel(/^body$/i)).toHaveValue('{"hello":"roundtrip","key":"value"}');
+
+  await openSection(page, 'Headers');
+  await expect(page.locator('input[name="Form.HeaderNames[0]"]')).toHaveValue('X-Test');
+  await expect(page.locator('input[name="Form.HeaderValues[0]"]')).toHaveValue('hawk');
+  await expect(page.locator('input[name="Form.HeaderNames[1]"]')).toHaveValue('X-Trace');
+  await expect(page.locator('input[name="Form.HeaderValues[1]"]')).toHaveValue('roundtrip');
+
+  await openSection(page, 'Match rules');
+  await expect(page.locator('select[name="Form.MatchModes[0]"]')).toHaveValue('Contains');
+  await expect(page.locator('input[name="Form.MatchPatterns[0]"]')).toHaveValue('hello');
+  await expect(page.locator('select[name="Form.MatchModes[1]"]')).toHaveValue('Contains');
+  await expect(page.locator('input[name="Form.MatchPatterns[1]"]')).toHaveValue('roundtrip');
+
+  await page.getByRole('button', { name: /^create$/i }).click();
   await expect(page.getByRole('heading', { name: new RegExp(monitorName, 'i') })).toBeVisible();
   await expect(page.getByText('2xx + 404,429')).toBeVisible();
   await expect(page.getByText('alerts+monitor@dualconsult.com')).toBeVisible();
@@ -305,9 +320,4 @@ test('export monitor config as json and re-import with full settings', async ({ 
   await expect(page.getByText('Contains: roundtrip')).toBeVisible();
   await expect(page.getByText('X-Test: hawk')).toBeVisible();
   await expect(page.getByText('X-Trace: roundtrip')).toBeVisible();
-
-  await page.getByRole('link', { name: /^edit$/i }).click();
-  await expect(page.getByRole('heading', { name: /edit monitor/i })).toBeVisible();
-  await expect(page.getByLabel(/content-type/i)).toHaveValue('application/json');
-  await expect(page.getByLabel(/^body$/i)).toHaveValue('{"hello":"roundtrip","key":"value"}');
 });
