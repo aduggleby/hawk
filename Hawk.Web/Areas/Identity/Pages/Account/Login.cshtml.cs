@@ -131,20 +131,27 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
                 var result = await _signInManager.PasswordSignInAsync(loginName, Input.Password, Input.RememberMe, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
-                    _logger.LogInformation("User logged in.");
+                    _logger.LogInformation("User logged in for {Email}. Redirecting to {ReturnUrl}.", Input.Email, returnUrl);
                     return LocalRedirect(returnUrl);
                 }
                 if (result.RequiresTwoFactor)
                 {
+                    _logger.LogInformation("Two-factor authentication required for {Email}.", Input.Email);
                     return RedirectToPage("./LoginWith2fa", new { ReturnUrl = returnUrl, RememberMe = Input.RememberMe });
                 }
                 if (result.IsLockedOut)
                 {
-                    _logger.LogWarning("User account locked out.");
+                    _logger.LogWarning("User account locked out for {Email}.", Input.Email);
                     return RedirectToPage("./Lockout");
                 }
                 else
                 {
+                    _logger.LogWarning(
+                        "Invalid login attempt for {Email}. RequiresTwoFactor={RequiresTwoFactor}, IsLockedOut={IsLockedOut}, IsNotAllowed={IsNotAllowed}.",
+                        Input.Email,
+                        result.RequiresTwoFactor,
+                        result.IsLockedOut,
+                        result.IsNotAllowed);
                     ModelState.AddModelError(string.Empty, "Invalid login attempt.");
                     return Page();
                 }

@@ -10,6 +10,8 @@
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Seeding;
@@ -115,6 +117,61 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options =>
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
 
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    var httpsDisabled = builder.Configuration.GetValue("Hawk:DisableHttpsRedirection", false);
+
+    options.Cookie.Name = "Hawk.Auth";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = httpsDisabled
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
+    options.LoginPath = "/Identity/Account/Login";
+    options.AccessDeniedPath = "/Identity/Account/AccessDenied";
+    options.Events = new CookieAuthenticationEvents
+    {
+        OnRedirectToLogin = context =>
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Hawk.Auth");
+            logger.LogWarning(
+                "Auth challenge for {Path}. Cookie header present: {HasCookieHeader}. Auth cookie present: {HasAuthCookie}. User authenticated: {IsAuthenticated}.",
+                context.Request.Path,
+                context.Request.Headers.Cookie.Count > 0,
+                context.Request.Cookies.ContainsKey("Hawk.Auth"),
+                context.HttpContext.User.Identity?.IsAuthenticated == true);
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        },
+        OnValidatePrincipal = context =>
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Hawk.Auth");
+            logger.LogDebug(
+                "Validated Hawk auth cookie for {Name}.",
+                context.Principal?.Identity?.Name ?? "(anonymous)");
+            return Task.CompletedTask;
+        }
+    };
+});
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedHost |
+        ForwardedHeaders.XForwardedProto;
+
+    // Container and appliance deployments often sit behind an internal reverse proxy
+    // whose address is not stable from the app's point of view.
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", p => p.RequireRole("Admin"));
@@ -155,6 +212,8 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseMigrationsEndPoint();

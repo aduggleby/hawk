@@ -29,6 +29,8 @@ public sealed class MonitorScheduler(
 {
     private const string LockKey = "hawk:scheduler:tick";
 
+    private sealed record DueMonitor(Guid Id, int IntervalSeconds);
+
     /// <inheritdoc />
     [AutomaticRetry(Attempts = 0)]
     public async Task TickAsync(CancellationToken cancellationToken)
@@ -56,19 +58,32 @@ public sealed class MonitorScheduler(
                 .Where(m => m.Enabled && !m.IsPaused && (m.NextRunAt == null || m.NextRunAt <= now))
                 .OrderBy(m => m.NextRunAt)
                 .Take(50)
+                .Select(m => new DueMonitor(m.Id, m.IntervalSeconds))
                 .ToListAsync(cancellationToken);
 
             foreach (var monitor in due)
             {
                 // Branch: guard against invalid config (interval <= 0).
                 var interval = Math.Clamp(monitor.IntervalSeconds, 5, 24 * 60 * 60);
-                monitor.NextRunAt = now.AddSeconds(interval);
-
                 jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(monitor.Id, "schedule", CancellationToken.None));
             }
 
             if (due.Count != 0)
-                await db.SaveChangesAsync(cancellationToken);
+            {
+                // Update NextRunAt with direct set-based writes so scheduler ticks do not lose to
+                // concurrent LastRunAt updates performed by the worker on the same rowversioned row.
+                foreach (var batch in due.GroupBy(m => Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60)))
+                {
+                    var ids = batch.Select(m => m.Id).ToArray();
+                    var nextRunAt = now.AddSeconds(batch.Key);
+
+                    await db.Monitors
+                        .Where(m => ids.Contains(m.Id))
+                        .ExecuteUpdateAsync(
+                            setters => setters.SetProperty(m => m.NextRunAt, nextRunAt),
+                            cancellationToken);
+                }
+            }
 
             // Self-schedule the next tick.
             jobs.Schedule<IMonitorScheduler>(s => s.TickAsync(CancellationToken.None), TimeSpan.FromSeconds(tickSeconds));
