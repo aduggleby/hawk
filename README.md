@@ -200,6 +200,8 @@ Values to replace:
 
 For HTTPS, use the built-in TrueNAS ingress features (or Traefik) and proxy to `http://YOUR_TRUENAS_IP:17800`.
 
+Hawk automatically processes `X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto` headers from any upstream proxy. When `Hawk__DisableHttpsRedirection=true`, the auth cookie secure policy is set to `SameAsRequest` so cookies work over plain HTTP inside the container network while HTTPS is terminated by the proxy.
+
 ## Building And Publishing An Image (For TrueNAS)
 
 TrueNAS pulls images from registries; it typically cannot build from your local workstation.
@@ -265,6 +267,15 @@ Pause, resume, and run from the monitors list:
 - **Pause all / Resume all** — applies to all monitors.
 - **Pause selected / Resume selected** — batch action on checked monitors.
 - **Run now (selected)** — enqueue immediate Hangfire jobs for all checked monitors.
+
+## Monitors Index
+
+The monitors index page groups monitors into two sections:
+
+- **Failing** — monitors whose most recent completed run failed. These appear at the top so you can immediately see what needs attention.
+- **All monitors** — the full list below the failing group.
+
+Batch actions apply to checked monitors. When monitors are selected, the action bar switches to: **Run now**, **Pause**, **Resume**, and **Uncheck all**. Without a selection, the bar shows **New monitor**, **Import StatusCake**, **Pause all**, and **Resume all**.
 
 ## User Settings
 
@@ -432,6 +443,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.23` in the `.csproj` files.
+- Project version is set to `0.9.24` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.

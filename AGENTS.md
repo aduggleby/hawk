@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.23`
+- Version: `0.9.24`
 
 ## Ports
 
@@ -103,6 +103,14 @@ Run:
 - `Hawk:DisableHttpsRedirection` (env `Hawk__DisableHttpsRedirection`)
 
 E2E uses HTTP because Playwright `webServer.url` expects a stable plain URL.
+
+## Forwarded Headers / Reverse Proxy
+
+- `app.UseForwardedHeaders()` is called early in the pipeline (before auth) to consume `X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto`.
+- `KnownIPNetworks` and `KnownProxies` are cleared so that any upstream proxy address is trusted — appropriate for container and appliance deployments where the proxy IP is not stable.
+- Auth cookie secure policy (`CookieSecurePolicy`): `Always` by default; set to `SameAsRequest` when `Hawk:DisableHttpsRedirection=true`. This ensures cookies work over plain HTTP inside the container network while TLS is terminated by the proxy.
+- Auth cookie name: `Hawk.Auth`; `HttpOnly=true`, `IsEssential=true`, `SameSite=Lax`.
+- Auth challenges and principal validations are logged at `Warning`/`Debug` level under the `Hawk.Auth` logger to aid login diagnostics.
 
 ## Docker / SQL Server / Hangfire
 
@@ -425,6 +433,8 @@ Service endpoints on the VM:
   - `MonitorRunner` is the only place that updates `LastRunAt` (including invalid config runs).
 - EF include behavior:
   - `MonitorRunner` uses `.AsSplitQuery()` when loading `Monitor.Headers` and `Monitor.MatchRules` to avoid cartesian explosion.
+- Scheduler `NextRunAt` updates:
+  - `MonitorScheduler` uses `ExecuteUpdateAsync` (set-based) to write `NextRunAt` rather than loading full entities. This avoids concurrency conflicts with the rowversion column when the worker (`MonitorRunner`) updates `LastRunAt` on the same row simultaneously.
 
 ## Removed Features
 
