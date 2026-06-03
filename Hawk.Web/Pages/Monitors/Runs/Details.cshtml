@@ -3,6 +3,8 @@
 @{
     ViewData["Title"] = "Run diagnostics";
     var state = string.IsNullOrWhiteSpace(Model.Run?.State) ? "completed" : Model.Run!.State;
+    static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
+    static string UtcDetailedFallback(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
 }
 
 @if (Model.Monitor is null || Model.Run is null)
@@ -21,7 +23,7 @@
                asp-page="/Monitors/Details"
                asp-route-id="@Model.Monitor.Id">@Model.Monitor.Name</a>
             <span class="mx-2 text-[color:var(--text-muted)]">·</span>
-            <span>@Model.Run.StartedAt.ToLocalTime().ToString("g")</span>
+            <time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="short">@UtcFallback(Model.Run.StartedAt)</time>
         </div>
     </div>
     <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@Model.Monitor.Id">Back to monitor</a>
@@ -76,9 +78,13 @@
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Reason</dt>
                 <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.Reason ?? "-")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Started</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">@Model.Run.StartedAt.ToLocalTime().ToString("O")</dd>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">
+                    <time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.StartedAt)</time>
+                </dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Finished</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">@Model.Run.FinishedAt.ToLocalTime().ToString("O")</dd>
+                <dd class="col-span-8 font-mono text-xs break-words py-1">
+                    <time data-utc="@Model.Run.FinishedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.FinishedAt)</time>
+                </dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Duration</dt>
                 <dd class="col-span-8 font-mono text-xs break-words py-1">@Model.Run.DurationMs ms</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">HTTP status</dt>

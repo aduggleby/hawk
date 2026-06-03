@@ -3,6 +3,7 @@
 @model Hawk.Web.Pages.Monitors.DetailsModel
 @{
     ViewData["Title"] = Model.Monitor?.Name ?? "Monitor";
+    static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
 }
 
 @if (Model.Monitor is null)
@@ -81,9 +82,27 @@
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Allowed status</dt>
                 <dd class="col-span-8 font-mono text-xs break-words py-1">@(string.IsNullOrWhiteSpace(Model.Monitor.AllowedStatusCodes) ? "2xx only" : $"2xx + {Model.Monitor.AllowedStatusCodes}")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Last run</dt>
-                <dd class="col-span-8 py-1">@((Model.Monitor.LastRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+                <dd class="col-span-8 py-1">
+                    @if (Model.Monitor.LastRunAt is { } lastRunAt)
+                    {
+                        <time data-utc="@lastRunAt.ToString("O")" data-utc-format="short">@UtcFallback(lastRunAt)</time>
+                    }
+                    else
+                    {
+                        @:-
+                    }
+                </dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Next run</dt>
-                <dd class="col-span-8 py-1">@((Model.Monitor.NextRunAt?.ToLocalTime().ToString("g")) ?? "-")</dd>
+                <dd class="col-span-8 py-1">
+                    @if (Model.Monitor.NextRunAt is { } nextRunAt)
+                    {
+                        <time data-utc="@nextRunAt.ToString("O")" data-utc-format="short">@UtcFallback(nextRunAt)</time>
+                    }
+                    else
+                    {
+                        @:-
+                    }
+                </dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Alert email</dt>
                 <dd class="col-span-8 font-mono text-xs break-words py-1">@(!string.IsNullOrWhiteSpace(Model.Monitor.AlertEmailOverride) ? Model.Monitor.AlertEmailOverride : "-")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Run retention</dt>
@@ -160,7 +179,7 @@
                                        asp-page="/Monitors/Runs/Details"
                                        asp-route-monitorId="@Model.Monitor.Id"
                                        asp-route-runId="@r.Id">
-                                        @r.StartedAt.ToLocalTime().ToString("g")
+                                        <time data-utc="@r.StartedAt.ToString("O")" data-utc-format="short">@UtcFallback(r.StartedAt)</time>
                                     </a>
                                 </td>
                                 <td class="px-4 py-3 text-[color:var(--text-secondary)]">@r.DurationMs ms</td>

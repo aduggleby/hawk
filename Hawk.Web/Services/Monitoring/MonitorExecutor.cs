@@ -6,7 +6,10 @@
 // </file>
 
 using System.Net;
+using System.Text;
 using System.Text.Json;
+using Hangfire;
+using Hangfire.Storage;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Alerting;
 using Hawk.Web.Data.Monitoring;
@@ -35,10 +38,16 @@ public sealed class MonitorExecutor(
     ApplicationDbContext db,
     IUrlChecker urlChecker,
     IEmailSender emailSender,
+    JobStorage jobStorage,
     UserManager<IdentityUser> userManager,
     ILogger<MonitorExecutor> logger,
     IConfiguration config) : IMonitorExecutor
 {
+    private const int AlertLockTimeoutSeconds = 60;
+    private const int FailureLogEntryLimit = 20;
+
+    private sealed record FailureLogEntry(DateTimeOffset StartedAt, int? StatusCode);
+
     public async Task<MonitorExecutionResult?> ExecuteAsync(Guid monitorId, string? reason, CancellationToken cancellationToken, Guid? runId = null)
     {
         // Branch: monitor not found or deleted.
@@ -170,73 +179,108 @@ public sealed class MonitorExecutor(
         repeatHours = Math.Clamp(repeatHours, 1, 24 * 30);
         var repeatEvery = TimeSpan.FromHours(repeatHours);
 
-        var state = await GetOrCreateAlertStateAsync(monitor.Id, cancellationToken);
-
-        // Capture prior state for composing emails (duration, etc.).
-        var incidentOpenedAt = state.FailureIncidentOpenedAt;
-        var lastFailureAlertSentAt = state.LastFailureAlertSentAt;
-
-        MonitorAlertDecision decision;
-        if (!run.Success)
+        var saved = false;
+        try
         {
-            decision = MonitorAlertingDecider.OnFailure(state, threshold, run.StartedAt, repeatEvery);
+            using var lockConnection = jobStorage.GetConnection();
+            using var alertLock = lockConnection.AcquireDistributedLock(
+                $"hawk:monitor-alert:{monitor.Id}",
+                TimeSpan.FromSeconds(AlertLockTimeoutSeconds));
 
-            if (decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder)
+            var state = await GetOrCreateAlertStateAsync(monitor.Id, cancellationToken);
+
+            // Capture prior state for composing emails (duration, etc.).
+            var incidentOpenedAt = state.FailureIncidentOpenedAt;
+            var lastFailureAlertSentAt = state.LastFailureAlertSentAt;
+
+            MonitorAlertDecision decision;
+            if (!run.Success)
             {
-                var sent = await TrySendFailureAlertAsync(
-                    monitor,
-                    run,
-                    decision.Kind,
-                    incidentOpenedAt,
-                    lastFailureAlertSentAt,
-                    cancellationToken);
+                decision = MonitorAlertingDecider.OnFailure(state, threshold, run.StartedAt, repeatEvery);
 
-                if (sent)
+                if (decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder)
                 {
-                    state.LastFailureAlertSentAt = run.StartedAt;
-                    state.LastFailureAlertError = null;
+                    var failureLog = await GetFailureLogEntriesAsync(
+                        monitor.Id,
+                        run,
+                        state.FailureIncidentOpenedAt,
+                        state.ConsecutiveFailures,
+                        cancellationToken);
+
+                    var sent = await TrySendFailureAlertAsync(
+                        monitor,
+                        run,
+                        decision.Kind,
+                        state.ConsecutiveFailures,
+                        threshold,
+                        state.FailureIncidentOpenedAt,
+                        lastFailureAlertSentAt,
+                        failureLog,
+                        cancellationToken);
+
+                    if (sent)
+                    {
+                        state.LastFailureAlertSentAt = run.StartedAt;
+                        state.LastFailureAlertError = null;
+                    }
+                    else
+                    {
+                        state.LastFailureAlertError = run.AlertError;
+                    }
                 }
                 else
                 {
-                    state.LastFailureAlertError = run.AlertError;
+                    run.AlertSent = false;
+                    run.AlertError = decision.Reason;
                 }
             }
             else
             {
-                run.AlertSent = false;
-                run.AlertError = decision.Reason;
+                decision = MonitorAlertingDecider.OnSuccess(state, threshold, run.StartedAt);
+
+                if (decision.Kind == MonitorAlertKind.Recovered)
+                {
+                    var sent = await TrySendRecoveredAlertAsync(
+                        monitor,
+                        run,
+                        incidentOpenedAt,
+                        lastFailureAlertSentAt,
+                        cancellationToken);
+
+                    if (sent)
+                    {
+                        state.PendingRecoveryAlert = false;
+                        state.LastRecoveryAlertSentAt = run.StartedAt;
+                        state.LastRecoveryAlertError = null;
+                    }
+                    else
+                    {
+                        state.LastRecoveryAlertError = run.AlertError;
+                    }
+                }
             }
+
+            monitor.LastRunAt = started;
+            if (existingRun is null)
+                db.MonitorRuns.Add(run);
+            await db.SaveChangesAsync(cancellationToken);
+            saved = true;
         }
-        else
+        catch (DistributedLockTimeoutException ex)
         {
-            decision = MonitorAlertingDecider.OnSuccess(state, threshold, run.StartedAt);
-
-            if (decision.Kind == MonitorAlertKind.Recovered)
-            {
-                var sent = await TrySendRecoveredAlertAsync(
-                    monitor,
-                    run,
-                    incidentOpenedAt,
-                    lastFailureAlertSentAt,
-                    cancellationToken);
-
-                if (sent)
-                {
-                    state.PendingRecoveryAlert = false;
-                    state.LastRecoveryAlertSentAt = run.StartedAt;
-                    state.LastRecoveryAlertError = null;
-                }
-                else
-                {
-                    state.LastRecoveryAlertError = run.AlertError;
-                }
-            }
+            logger.LogWarning(ex, "Skipped alert evaluation for monitor {MonitorId} because alert state lock was busy.", monitor.Id);
+            run.AlertSent = false;
+            run.AlertError = "Alert state lock busy; skipped alert evaluation to avoid duplicate alert.";
         }
 
-        monitor.LastRunAt = started;
-        if (existingRun is null)
-            db.MonitorRuns.Add(run);
-        await db.SaveChangesAsync(cancellationToken);
+        if (!saved)
+        {
+            monitor.LastRunAt = started;
+            if (existingRun is null)
+                db.MonitorRuns.Add(run);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         await PruneRunHistoryAsync(monitor, cancellationToken);
 
         return new MonitorExecutionResult(monitor, req, res, run);
@@ -289,6 +333,43 @@ public sealed class MonitorExecutor(
         return state;
     }
 
+    private async Task<IReadOnlyList<FailureLogEntry>> GetFailureLogEntriesAsync(
+        Guid monitorId,
+        MonitorRun currentRun,
+        DateTimeOffset? incidentOpenedAt,
+        int consecutiveFailures,
+        CancellationToken cancellationToken)
+    {
+        var priorLimit = Math.Max(0, Math.Min(FailureLogEntryLimit - 1, consecutiveFailures - 1));
+        var entries = new List<FailureLogEntry>(priorLimit + 1);
+
+        if (priorLimit > 0)
+        {
+            var query = db.MonitorRuns
+                .AsNoTracking()
+                .Where(r =>
+                    r.MonitorId == monitorId &&
+                    r.Id != currentRun.Id &&
+                    r.State == "completed" &&
+                    !r.Success);
+
+            if (incidentOpenedAt is not null)
+                query = query.Where(r => r.StartedAt >= incidentOpenedAt.Value);
+
+            var prior = await query
+                .OrderByDescending(r => r.StartedAt)
+                .Take(priorLimit)
+                .Select(r => new FailureLogEntry(r.StartedAt, r.StatusCode))
+                .ToListAsync(cancellationToken);
+
+            prior.Reverse();
+            entries.AddRange(prior);
+        }
+
+        entries.Add(new FailureLogEntry(currentRun.StartedAt, currentRun.StatusCode));
+        return entries;
+    }
+
     private async Task<MonitorRun> PersistInvalidConfigAsync(
         MonitorEntity monitor,
         string error,
@@ -336,8 +417,11 @@ public sealed class MonitorExecutor(
         MonitorEntity monitor,
         MonitorRun run,
         MonitorAlertKind kind,
+        int consecutiveFailures,
+        int threshold,
         DateTimeOffset? incidentOpenedAt,
         DateTimeOffset? lastFailureAlertSentAt,
+        IReadOnlyList<FailureLogEntry> failureLog,
         CancellationToken cancellationToken)
     {
         var emailEnabled = config.GetValue("Hawk:Email:Enabled", true);
@@ -367,8 +451,11 @@ public sealed class MonitorExecutor(
         var status = run.StatusCode is null ? "NO_RESPONSE" : run.StatusCode.ToString()!;
         var subjectPrefix = kind == MonitorAlertKind.FailureReminder ? "[ALERT FAIL REMINDER]" : "[ALERT FAIL]";
         var subject = $"{subjectPrefix} {monitor.Name} ({status})";
+        var failureWord = consecutiveFailures == 1 ? "failure" : "failures";
+        var failuresLine = $"<p><b>Failures:</b> {consecutiveFailures} consecutive {failureWord} (alert threshold: {threshold})</p>";
         var incidentLine = incidentOpenedAt is null ? "" : $"<p><b>Incident opened:</b> {incidentOpenedAt:O} UTC</p>";
         var lastAlertLine = lastFailureAlertSentAt is null ? "" : $"<p><b>Last alert sent:</b> {lastFailureAlertSentAt:O} UTC</p>";
+        var failureLogHtml = BuildFailureLogHtml(failureLog, consecutiveFailures);
         var html = $"""
             <h2>Monitor failed</h2>
             <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
@@ -376,9 +463,11 @@ public sealed class MonitorExecutor(
             <p><b>Method:</b> {WebUtility.HtmlEncode(monitor.Method)}</p>
             <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
             <p><b>Error:</b> {WebUtility.HtmlEncode(run.ErrorMessage ?? "(none)")}</p>
+            {failuresLine}
             <p><b>When:</b> {run.StartedAt:O} UTC</p>
             {incidentLine}
             {lastAlertLine}
+            {failureLogHtml}
             """;
 
         try
@@ -395,6 +484,27 @@ public sealed class MonitorExecutor(
             run.AlertError = ex.Message;
             return false;
         }
+    }
+
+    private static string BuildFailureLogHtml(IReadOnlyList<FailureLogEntry> entries, int consecutiveFailures)
+    {
+        if (entries.Count == 0)
+            return "";
+
+        var sb = new StringBuilder();
+        if (consecutiveFailures > entries.Count)
+            sb.AppendLine($"Showing latest {entries.Count} of {consecutiveFailures} consecutive failures.");
+
+        foreach (var entry in entries)
+        {
+            var status = entry.StatusCode is null ? "NO_RESPONSE" : entry.StatusCode.Value.ToString();
+            sb.AppendLine($"{entry.StartedAt:O} UTC status={status}");
+        }
+
+        return $"""
+            <h3>Failure log</h3>
+            <pre style="font-family: monospace; white-space: pre-wrap;">{WebUtility.HtmlEncode(sb.ToString().TrimEnd())}</pre>
+            """;
     }
 
     private async Task<bool> TrySendRecoveredAlertAsync(

@@ -27,6 +27,30 @@ public sealed class MonitorAlertingDeciderTests
     }
 
     [Fact]
+    public void OnFailure_threshold3_alerts_at_boundary_then_waits_for_reminder_window()
+    {
+        var state = new MonitorAlertState { MonitorId = Guid.NewGuid() };
+        var now = new DateTimeOffset(2026, 02, 12, 12, 00, 00, TimeSpan.Zero);
+        var repeatEvery = TimeSpan.FromHours(24);
+
+        var d1 = MonitorAlertingDecider.OnFailure(state, threshold: 3, nowUtc: now, repeatFailureAlertEvery: repeatEvery);
+        var d2 = MonitorAlertingDecider.OnFailure(state, threshold: 3, nowUtc: now.AddMinutes(5), repeatFailureAlertEvery: repeatEvery);
+        var d3 = MonitorAlertingDecider.OnFailure(state, threshold: 3, nowUtc: now.AddMinutes(10), repeatFailureAlertEvery: repeatEvery);
+
+        Assert.Equal(MonitorAlertKind.None, d1.Kind);
+        Assert.Equal(MonitorAlertKind.None, d2.Kind);
+        Assert.Equal(MonitorAlertKind.Failure, d3.Kind);
+        Assert.Equal(3, state.ConsecutiveFailures);
+
+        state.LastFailureAlertSentAt = now.AddMinutes(10);
+
+        var d4 = MonitorAlertingDecider.OnFailure(state, threshold: 3, nowUtc: now.AddHours(23), repeatFailureAlertEvery: repeatEvery);
+
+        Assert.Equal(MonitorAlertKind.None, d4.Kind);
+        Assert.Equal(4, state.ConsecutiveFailures);
+    }
+
+    [Fact]
     public void OnFailure_after_threshold_reminds_only_if_last_alert_is_old_enough()
     {
         var state = new MonitorAlertState
@@ -67,4 +91,3 @@ public sealed class MonitorAlertingDeciderTests
         Assert.Null(state.LastFailureAlertSentAt);
     }
 }
-
