@@ -277,6 +277,8 @@ The monitors index page groups monitors into two sections:
 
 Batch actions apply to checked monitors. When monitors are selected, the action bar switches to: **Run now**, **Pause**, **Resume**, and **Uncheck all**. Without a selection, the bar shows **New monitor**, **Import StatusCake**, **Pause all**, and **Resume all**.
 
+Timestamps (last run, next run, run history) are displayed in the **browser's local time zone**. Hovering over a timestamp shows a tooltip with both the local time and the UTC time.
+
 ## User Settings
 
 Each user can configure account-wide overrides from the **Account** dropdown (Profile, Security, Alerts & Crawler):
@@ -443,6 +445,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.24` in the `.csproj` files.
+- Project version is set to `0.9.25` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.

@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.24`
+- Version: `0.9.25`
 
 ## Ports
 
@@ -152,6 +152,14 @@ Handy commands:
 - `Hawk.Web/Infrastructure/AppVersion.cs` reads the assembly `InformationalVersion` (stripping the `+commit` suffix) and falls back to the assembly version.
 - The footer in `_Layout.cshtml` displays the version (e.g. `v0.9.20`) alongside a link to the GitHub repo and author.
 
+## Timestamp Rendering (Browser Local Time)
+
+- All timestamps shown in the UI (monitors index last-run/next-run columns, monitor detail run history, run diagnostics page) are rendered in the **browser's local time zone** via `data-utc` HTML attributes.
+- Server-side Razor renders a `<time data-utc="ISO8601-UTC" data-utc-format="short|detailed">fallback UTC string</time>` element. The JS in `wwwroot/js/site.js` rewrites the text content using `Intl.DateTimeFormat` on page load.
+- `data-utc-format` accepts `"short"` (date + time, no seconds) or `"detailed"` (date + time + seconds + timezone name). Defaults to `"short"` if omitted.
+- Hovering over any timestamp shows a tooltip with both the local time and UTC time.
+- The server-side fallback text (shown until JS runs) is the UTC value formatted as `"g" UTC`.
+
 ## Error Page
 
 - `Hawk.Web/Pages/Error.cshtml(.cs)` — styled error page with exception diagnostics.
@@ -231,6 +239,8 @@ Alert recipient resolution (in order):
 - Handles: loading the monitor + headers + match rules, resolving User-Agent overrides, running the URL check, persisting the run, evaluating alert policy, and sending alerts.
 - Each run now stores full request/response diagnostics on the `MonitorRun` entity: `Reason`, `RequestUrl`, `RequestMethod`, `RequestContentType`, `RequestTimeoutMs`, `RequestHeadersJson`, `RequestBodySnippet`, `ResponseHeadersJson`, `ResponseContentType`, `ResponseContentLength`.
 - After persisting a run, `MonitorExecutor` calls `PruneRunHistoryAsync` to delete runs older than the resolved retention period.
+- **Distributed alert lock** — before evaluating/updating `MonitorAlertState`, the executor acquires a Hangfire distributed lock keyed `hawk:monitor-alert:{monitorId}` with a 60-second timeout. This prevents duplicate alerts when multiple Hangfire workers check the same monitor simultaneously. If the lock is busy (timeout), alert evaluation is skipped for that run and the run records `AlertError = "Alert state lock busy; skipped alert evaluation to avoid duplicate alert."`.
+- **Failure log in alert emails** — failure and failure-reminder emails include a log of up to 20 recent failure entries (start time + HTTP status code) from the current incident, fetched by `GetFailureLogEntriesAsync`.
 
 ## Run Retention
 
