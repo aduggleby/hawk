@@ -404,7 +404,7 @@ Admins can move every monitor to another Hawk instance under **Account -> Export
 - Monitors whose name and URL match an existing monitor (case-insensitive) are skipped, so re-running an import is safe.
 - Owners are matched by email; unmatched monitors belong to the importing admin.
 - **Create all imported monitors paused** is on by default, recommended for migrations so the new instance does not run checks or send alerts until you resume the monitors.
-- Import is all or nothing: if any non-duplicate monitor is invalid, nothing is imported. Files up to 2 MB are accepted; v1 files are still readable.
+- Import is all or nothing: if any non-duplicate monitor is invalid, nothing is imported. Files up to 2 MB are accepted; v1 files are still readable. Exports from a Testing instance that use the 5-second interval are refused by Production (that interval is not allowed there).
 
 ### JSON Schema (per monitor)
 

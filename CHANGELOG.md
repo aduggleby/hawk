@@ -6,6 +6,14 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+### Fixed
+
+- Alerts: seeding a new alert state no longer counts the in-flight "Run now" run (threshold 1 suppressed the alert, threshold 2 alerted one run early).
+- Create page: the main form posted to the Import handler after an import prefill; it now posts to the create handler.
+- Alerts: `LastRunAt` is updated set-based so a rowversion conflict can no longer fail the save after an alert was sent and cause a duplicate alert on Hangfire retry.
+- Bulk import: field-level validation (required, max length, ranges, header lengths, regex validity) now applies; malformed files (`null` monitors) return a parse error instead of a 500.
+- Bulk import: concurrent or double-submitted confirms no longer insert duplicates; the 2 MB check ignores CRLF expansion; export order is collation independent.
+
 ### Added
 
 - Admin-only bulk export of all monitors and dry-run bulk import (`/Admin/Transfer`): duplicate skipping (name + URL, case-insensitive), owner mapping by email, optional "create paused", all-or-nothing transaction.

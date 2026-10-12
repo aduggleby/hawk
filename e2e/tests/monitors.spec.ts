@@ -100,6 +100,8 @@ test('create POST monitor with headers/body and run now succeeds', async ({ page
 });
 
 test('error states: non-2xx and match failure trigger a FAIL result (and alert is sent)', async ({ page, request }) => {
+  // Independent of test order: clear emails captured by earlier tests.
+  await request.post(`${MOCK_BASE}/emails/reset`);
   await loginAsSeedAdmin(page);
   await gotoMonitors(page);
 
