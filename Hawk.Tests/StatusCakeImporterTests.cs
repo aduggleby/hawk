@@ -95,6 +95,64 @@ public sealed class StatusCakeImporterTests
         Assert.StartsWith("Imported StatusCake alert", run.ErrorMessage);
     }
 
+    /// <summary>
+    /// Alert timestamps with a non-UTC offset are stored as UTC (Npgsql only writes offset 0 to timestamptz),
+    /// and re-importing the same alerts does not create duplicates.
+    /// </summary>
+    [Fact]
+    public async Task ImportAlerts_normalizes_offsets_to_utc_and_dedupes_reimport()
+    {
+        var (db, importer) = Create();
+        await using (var ms = new MemoryStream(Encoding.UTF8.GetBytes("""
+            { "data": [ { "id": "777", "name": "Offset", "website_url": "https://example.com", "check_rate": 60 } ] }
+            """)))
+        {
+            await importer.ImportTestsAsync(ms, "user-1", CancellationToken.None);
+        }
+
+        var alertsJson = """
+            [ { "test_id": "777", "data": [
+                { "status": "down", "status_code": 500, "triggered_at": "2026-02-09T02:00:00+02:00" },
+                { "status": "up", "status_code": 200, "triggered_at": "2026-02-09T01:00:00" }
+            ] } ]
+            """;
+
+        for (var i = 0; i < 2; i++)
+        {
+            await using var ms = new MemoryStream(Encoding.UTF8.GetBytes(alertsJson));
+            var res = await importer.ImportAlertsAsync(ms, CancellationToken.None);
+            Assert.Equal(i == 0 ? 2 : 0, res.RunsCreated);
+        }
+
+        var runs = await db.MonitorRuns.OrderBy(r => r.StartedAt).ToListAsync();
+        Assert.Equal(2, runs.Count);
+        Assert.All(runs, r => Assert.Equal(TimeSpan.Zero, r.StartedAt.Offset));
+        Assert.Equal(new DateTimeOffset(2026, 2, 9, 0, 0, 0, TimeSpan.Zero), runs[0].StartedAt);
+        // No offset in the source: taken as UTC, not server local time.
+        Assert.Equal(new DateTimeOffset(2026, 2, 9, 1, 0, 0, TimeSpan.Zero), runs[1].StartedAt);
+
+        var monitor = await db.Monitors.SingleAsync();
+        Assert.Equal(TimeSpan.Zero, monitor.LastRunAt!.Value.Offset);
+    }
+
+    /// <summary>
+    /// Duplicate detection by name is case-insensitive on every provider (not only on SQL Server's default collation).
+    /// </summary>
+    [Fact]
+    public async Task ImportTests_skips_duplicates_case_insensitively()
+    {
+        var (db, importer) = Create();
+        foreach (var name in new[] { "Example Site", "EXAMPLE SITE" })
+        {
+            await using var ms = new MemoryStream(Encoding.UTF8.GetBytes($$"""
+                { "data": [ { "id": "555", "name": "{{name}}", "website_url": "https://example.com", "check_rate": 60 } ] }
+                """));
+            await importer.ImportTestsAsync(ms, "user-1", CancellationToken.None);
+        }
+
+        Assert.Equal(1, await db.Monitors.CountAsync());
+    }
+
     private static (ApplicationDbContext Db, StatusCakeImporter Importer) Create()
     {
         var opts = new DbContextOptionsBuilder<ApplicationDbContext>()

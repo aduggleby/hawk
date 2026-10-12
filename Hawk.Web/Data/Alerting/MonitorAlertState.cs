@@ -55,10 +55,10 @@ public sealed class MonitorAlertState
     public string? LastRecoveryAlertError { get; set; }
 
     /// <summary>
-    /// Optimistic concurrency token (SQL Server rowversion).
+    /// App-managed optimistic concurrency token (provider-agnostic).
+    /// <see cref="Hawk.Web.Services.Monitoring.MonitorExecutor"/> sets a new value whenever it changes the state.
     /// </summary>
-    [Timestamp]
-    public byte[] RowVersion { get; set; } = [];
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
 
     public MonitorEntity? Monitor { get; set; }
 }

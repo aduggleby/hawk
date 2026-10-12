@@ -50,11 +50,13 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
     /// </summary>
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Monitors = await db.Monitors
-            .OrderBy(m => !m.Enabled ? 2 : m.IsPaused ? 1 : 0)
-            .ThenBy(m => m.Name)
+        // Sort in memory: SQL Server's default collation is case-insensitive, PostgreSQL's is not.
+        Monitors = (await db.Monitors
             .AsNoTracking()
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .OrderBy(m => !m.Enabled ? 2 : m.IsPaused ? 1 : 0)
+            .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         LastRunSuccessByMonitor = await db.MonitorRuns
             .AsNoTracking()
@@ -79,9 +81,12 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
 
     public async Task<IActionResult> OnPostPauseAllAsync(CancellationToken cancellationToken)
     {
+        var stamp = Guid.NewGuid();
         var updated = await db.Monitors
             .Where(m => m.Enabled && !m.IsPaused)
-            .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, true), cancellationToken);
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(m => m.IsPaused, true)
+                .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
 
         TempData["FlashInfo"] = $"Paused {updated} monitor(s).";
         return RedirectToPage();
@@ -89,9 +94,12 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
 
     public async Task<IActionResult> OnPostResumeAllAsync(CancellationToken cancellationToken)
     {
+        var stamp = Guid.NewGuid();
         var updated = await db.Monitors
             .Where(m => m.Enabled && m.IsPaused)
-            .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, false), cancellationToken);
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(m => m.IsPaused, false)
+                .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
 
         TempData["FlashInfo"] = $"Resumed {updated} monitor(s).";
         return RedirectToPage();
@@ -125,14 +133,20 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
             return RedirectToPage();
         }
 
+        // Pause/resume are user changes: renew the concurrency stamp so open Edit forms notice.
+        var stamp = Guid.NewGuid();
         var query = db.Monitors.Where(m => selectedIds.Contains(m.Id));
         var updated = action == "pause"
             ? await query
                 .Where(m => m.Enabled && !m.IsPaused)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, true), cancellationToken)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(m => m.IsPaused, true)
+                    .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken)
             : await query
                 .Where(m => m.Enabled && m.IsPaused)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, false), cancellationToken);
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(m => m.IsPaused, false)
+                    .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
 
         TempData["FlashInfo"] = $"{(action == "pause" ? "Paused" : "Resumed")} {updated} monitor(s).";
         return RedirectToPage();

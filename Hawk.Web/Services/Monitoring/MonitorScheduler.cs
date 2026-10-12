@@ -56,7 +56,10 @@ public sealed class MonitorScheduler(
             // Enqueue due monitors in small batches to avoid long-running ticks.
             var due = await db.Monitors
                 .Where(m => m.Enabled && !m.IsPaused && (m.NextRunAt == null || m.NextRunAt <= now))
-                .OrderBy(m => m.NextRunAt)
+                // NULL ordering differs (SQL Server: first, PostgreSQL: last). Put never-scheduled monitors first
+                // explicitly so they cannot be starved by more than one batch of overdue monitors.
+                .OrderBy(m => m.NextRunAt == null ? 0 : 1)
+                .ThenBy(m => m.NextRunAt)
                 .Take(50)
                 .Select(m => new DueMonitor(m.Id, m.IntervalSeconds))
                 .ToListAsync(cancellationToken);
@@ -70,8 +73,8 @@ public sealed class MonitorScheduler(
 
             if (due.Count != 0)
             {
-                // Update NextRunAt with direct set-based writes so scheduler ticks do not lose to
-                // concurrent LastRunAt updates performed by the worker on the same rowversioned row.
+                // Update NextRunAt with direct set-based writes so scheduler ticks never conflict with concurrent
+                // worker updates. Bookkeeping deliberately leaves Monitor.ConcurrencyStamp unchanged.
                 foreach (var batch in due.GroupBy(m => Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60)))
                 {
                     var ids = batch.Select(m => m.Id).ToArray();

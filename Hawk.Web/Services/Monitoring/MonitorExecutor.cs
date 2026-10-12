@@ -260,6 +260,12 @@ public sealed class MonitorExecutor(
                 }
             }
 
+            // Renew the alert-state concurrency stamp only when this run actually changed the state,
+            // so unchanged states don't cause an extra UPDATE on every run.
+            db.ChangeTracker.DetectChanges();
+            if (db.Entry(state).State == EntityState.Modified)
+                state.ConcurrencyStamp = Guid.NewGuid();
+
             await SetLastRunAtAsync(monitor, started, cancellationToken);
             if (existingRun is null)
                 db.MonitorRuns.Add(run);
@@ -287,8 +293,8 @@ public sealed class MonitorExecutor(
     }
 
     /// <summary>
-    /// Writes <c>LastRunAt</c> set-based so it can never conflict with the monitor's rowversion
-    /// (Edit page or scheduler updates). A conflict here would fail the final save after an alert was sent,
+    /// Writes <c>LastRunAt</c> set-based so it can never conflict with the monitor's concurrency stamp
+    /// (Edit page or other user changes) and never renews it. A conflict here would fail the final save after an alert was sent,
     /// losing the run record and the alert-state update (jobs are not retried: <c>[AutomaticRetry(Attempts = 0)]</c>).
     /// </summary>
     private async Task SetLastRunAtAsync(MonitorEntity monitor, DateTimeOffset at, CancellationToken cancellationToken)

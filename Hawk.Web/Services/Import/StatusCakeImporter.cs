@@ -12,6 +12,7 @@
 // </summary>
 // </file>
 
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
@@ -104,7 +105,9 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
             var finalName = string.IsNullOrWhiteSpace(id) ? name.Trim() : $"{name.Trim()} (sc:{id.Trim()})";
 
             // Branch: avoid creating duplicates if the same export is imported twice.
-            var existing = await db.Monitors.AnyAsync(m => m.Name == finalName, cancellationToken);
+            // Case-insensitive on every provider (SQL Server's default collation is, PostgreSQL's is not).
+            var finalNameLower = finalName.ToLower();
+            var existing = await db.Monitors.AnyAsync(m => m.Name.ToLower() == finalNameLower, cancellationToken);
             if (existing)
             {
                 warnings.Add($"Skipped '{finalName}' (already exists).");
@@ -228,10 +231,10 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
 
     private async Task<int> ImportAlertArrayAsync(string testId, JsonElement alerts, List<string> warnings, CancellationToken cancellationToken)
     {
-        var marker = $"(sc:{testId.Trim()})";
+        var marker = $"(sc:{testId.Trim()})".ToLower();
         var monitor = await db.Monitors
             .OrderByDescending(m => m.CreatedAt)
-            .FirstOrDefaultAsync(m => m.Name.Contains(marker), cancellationToken);
+            .FirstOrDefaultAsync(m => m.Name.ToLower().Contains(marker), cancellationToken);
 
         if (monitor is null)
         {
@@ -411,8 +414,10 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
         var s = TryGetStringCaseInsensitive(obj, propertyName);
         if (string.IsNullOrWhiteSpace(s))
             return null;
-        if (DateTimeOffset.TryParse(s, out var dto))
-            return dto;
+        // Normalise to UTC: Npgsql only writes offset 0 to timestamptz, and the re-import dedupe compares StartedAt.
+        // Timestamps without an offset are taken as UTC (not the server's local time).
+        if (DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var dto))
+            return dto.ToUniversalTime();
         return null;
     }
 }

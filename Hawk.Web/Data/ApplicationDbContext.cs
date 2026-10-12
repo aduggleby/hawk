@@ -1,7 +1,9 @@
 ﻿// <file>
 // <summary>
-// EF Core DbContext for the Hawk web application. Currently hosts ASP.NET Core Identity tables and will also host
-// monitoring configuration and check history once those features are implemented.
+// EF Core DbContext for the Hawk web application (Identity + monitoring configuration and history).
+// This type is also the SQL Server context: its migrations live in Data/Migrations and keep the existing
+// __EFMigrationsHistory. PostgreSQL uses the PostgresApplicationDbContext subclass with its own migration set.
+// The model is provider-agnostic: no column types or provider-specific features are configured here.
 // </summary>
 // </file>
 
@@ -17,9 +19,24 @@ namespace Hawk.Web.Data;
 /// <summary>
 /// Application EF Core DbContext (Identity + app data).
 /// </summary>
-/// <param name="options">DbContext options.</param>
-public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext(options)
+public class ApplicationDbContext : IdentityDbContext
 {
+    /// <summary>
+    /// Creates the SQL Server (default) context.
+    /// </summary>
+    /// <param name="options">DbContext options.</param>
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
+    {
+    }
+
+    /// <summary>
+    /// Used by provider-specific subclasses (see <see cref="PostgresApplicationDbContext"/>).
+    /// </summary>
+    /// <param name="options">DbContext options for the derived context type.</param>
+    protected ApplicationDbContext(DbContextOptions options) : base(options)
+    {
+    }
+
     /// <summary>
     /// Configured monitors.
     /// </summary>
@@ -69,7 +86,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         {
             b.HasIndex(x => x.Enabled);
             b.HasIndex(x => x.NextRunAt);
-            b.Property(x => x.RowVersion).IsRowVersion();
+            b.Property(x => x.ConcurrencyStamp).IsConcurrencyToken();
             b.HasMany(x => x.Headers).WithOne(x => x.Monitor!).HasForeignKey(x => x.MonitorId).OnDelete(DeleteBehavior.Cascade);
             b.HasMany(x => x.MatchRules).WithOne(x => x.Monitor!).HasForeignKey(x => x.MonitorId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -88,7 +105,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         builder.Entity<MonitorAlertState>(b =>
         {
             b.HasKey(x => x.MonitorId);
-            b.Property(x => x.RowVersion).IsRowVersion();
+            b.Property(x => x.ConcurrencyStamp).IsConcurrencyToken();
             b.HasOne(x => x.Monitor)
                 .WithOne()
                 .HasForeignKey<MonitorAlertState>(x => x.MonitorId)

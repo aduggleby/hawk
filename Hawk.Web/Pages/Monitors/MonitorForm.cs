@@ -17,10 +17,10 @@ namespace Hawk.Web.Pages.Monitors;
 public sealed class MonitorForm
 {
     /// <summary>
-    /// Optimistic concurrency token (base64-encoded SQL rowversion).
-    /// Used by the Edit page to detect conflicting updates.
+    /// Optimistic concurrency token (the monitor's <c>ConcurrencyStamp</c> Guid as loaded by the Edit page).
+    /// Used by the Edit page to detect conflicting user edits.
     /// </summary>
-    public string? RowVersion { get; set; }
+    public string? ConcurrencyStamp { get; set; }
 
     /// <summary>
     /// Display name.

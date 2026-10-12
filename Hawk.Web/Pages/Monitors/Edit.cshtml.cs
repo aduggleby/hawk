@@ -1,6 +1,8 @@
 // <file>
 // <summary>
 // Edits an existing monitor.
+// Optimistic concurrency: the monitor's ConcurrencyStamp round-trips through a hidden field. Only intentional
+// user changes renew the stamp, so scheduler/executor bookkeeping (NextRunAt/LastRunAt) never causes a conflict.
 // </summary>
 // </file>
 
@@ -52,7 +54,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
 
         Form = new MonitorForm
         {
-            RowVersion = Convert.ToBase64String(m.RowVersion ?? []),
+            ConcurrencyStamp = m.ConcurrencyStamp.ToString("D"),
             Name = m.Name,
             Url = m.Url,
             Method = m.Method,
@@ -82,22 +84,8 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         return Page();
     }
 
-    private static bool TryParseRowVersion(string? rowVersionBase64, out byte[] rowVersion)
-    {
-        rowVersion = [];
-        if (string.IsNullOrWhiteSpace(rowVersionBase64))
-            return false;
-
-        try
-        {
-            rowVersion = Convert.FromBase64String(rowVersionBase64);
-            return rowVersion.Length != 0;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-    }
+    private static bool TryParseConcurrencyStamp(string? value, out Guid stamp) =>
+        Guid.TryParse(value, out stamp);
 
     /// <summary>
     /// Applies edits.
@@ -111,7 +99,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         if (!ModelState.IsValid)
             return Page();
 
-        if (!TryParseRowVersion(Form.RowVersion, out var originalRowVersion))
+        if (!TryParseConcurrencyStamp(Form.ConcurrencyStamp, out var originalStamp))
         {
             TempData["FlashError"] = "This monitor changed while you were editing. Please reload and try again.";
             return RedirectToPage("/Monitors/Edit", new { id = Id });
@@ -121,8 +109,10 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         if (m is null)
             return NotFound();
 
-        // Ensure EF uses the rowversion from when the user loaded the page, not the one we just fetched.
-        db.Entry(m).Property(x => x.RowVersion).OriginalValue = originalRowVersion;
+        // Ensure EF checks the stamp from when the user loaded the page, not the one we just fetched,
+        // and renew it so other open Edit forms conflict with this change.
+        db.Entry(m).Property(x => x.ConcurrencyStamp).OriginalValue = originalStamp;
+        m.ConcurrencyStamp = Guid.NewGuid();
 
         m.Name = Form.Name.Trim();
         m.Url = Form.Url.Trim();

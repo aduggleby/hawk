@@ -17,7 +17,7 @@ namespace Hawk.Web.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "10.0.4")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -25,6 +25,10 @@ namespace Hawk.Web.Data.Migrations
             modelBuilder.Entity("Hawk.Web.Data.Alerting.MonitorAlertState", b =>
                 {
                     b.Property<Guid>("MonitorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("ConsecutiveFailures")
@@ -49,12 +53,6 @@ namespace Hawk.Web.Data.Migrations
 
                     b.Property<bool>("PendingRecoveryAlert")
                         .HasColumnType("bit");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
 
                     b.HasKey("MonitorId");
 
@@ -104,6 +102,10 @@ namespace Hawk.Web.Data.Migrations
                     b.Property<string>("Body")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("ContentType")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -139,12 +141,6 @@ namespace Hawk.Web.Data.Migrations
 
                     b.Property<DateTimeOffset?>("NextRunAt")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
 
                     b.Property<int?>("RunRetentionDays")
                         .HasColumnType("int");

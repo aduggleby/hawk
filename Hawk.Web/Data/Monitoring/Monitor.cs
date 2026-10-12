@@ -1,7 +1,7 @@
 // <file>
 // <summary>
 // Monitoring configuration entities (what to check and how often).
-// Stored in SQL Server via EF Core and executed by Hangfire jobs.
+// Stored via EF Core (SQL Server or PostgreSQL) and executed by Hangfire jobs.
 // </summary>
 // </file>
 
@@ -111,10 +111,12 @@ public sealed class Monitor
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>
-    /// Optimistic concurrency token (SQL Server rowversion).
+    /// App-managed optimistic concurrency token (provider-agnostic).
+    /// Set to a new value only on intentional user changes (create, edit, import, pause/resume).
+    /// Scheduler/executor bookkeeping (<see cref="NextRunAt"/>, <see cref="LastRunAt"/>) must not change it,
+    /// so the Edit page only conflicts with real concurrent edits.
     /// </summary>
-    [Timestamp]
-    public byte[] RowVersion { get; set; } = [];
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
 
     /// <summary>
     /// Foreign key to the Identity user that created the monitor (optional).

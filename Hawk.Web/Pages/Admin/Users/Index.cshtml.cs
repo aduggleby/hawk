@@ -25,9 +25,10 @@ public class IndexModel(UserManager<IdentityUser> userManager) : PageModel
     /// </summary>
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        var users = await userManager.Users
-            .OrderBy(u => u.Email)
-            .ToListAsync(cancellationToken);
+        // Sort in memory: SQL Server's default collation is case-insensitive, PostgreSQL's is not.
+        var users = (await userManager.Users.ToListAsync(cancellationToken))
+            .OrderBy(u => u.Email, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         var rows = new List<UserRow>(users.Count);
         foreach (var u in users)

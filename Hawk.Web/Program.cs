@@ -5,6 +5,9 @@
 // - Identity is configured for username/password logins.
 // - Startup seeding applies EF migrations and ensures a seed admin user exists.
 // - HTTPS redirection can be disabled (for E2E) via Hawk__DisableHttpsRedirection=true.
+// - Database provider (EF Core, Identity, Hangfire) is selected by Hawk:Database:Provider (SqlServer default, or Postgres).
+// - GET /live (process up) and GET /ready (database reachable) are anonymous health endpoints.
+// - The Serilog file sink can be disabled with Hawk:Logging:File:Enabled=false (console only, read-only root FS).
 // </summary>
 // </file>
 
@@ -15,9 +18,10 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Seeding;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Hangfire;
-using Hangfire.SqlServer;
 using Serilog;
+using Serilog.Events;
 using Hawk.Web.Services.Email;
 using Hawk.Web.Services.Monitoring;
 using Hawk.Web.Services;
@@ -29,26 +33,34 @@ StartupBanner.Write();
 
 var builder = WebApplication.CreateBuilder(args);
 
+var fileLoggingEnabled = builder.Configuration.GetValue("Hawk:Logging:File:Enabled", true);
 builder.Host.UseSerilog((ctx, services, cfg) =>
 {
-    // Rolling file logs for container-friendly diagnostics.
-    // retainedFileCountLimit=30 approximates "delete logs older than 30 days" when rolling daily.
     cfg.ReadFrom.Configuration(ctx.Configuration)
         .Enrich.FromLogContext()
-        .WriteTo.Console()
-        .WriteTo.File(
+        .WriteTo.Console();
+
+    // Branch: rolling file logs (default). Disabled on read-only root filesystems where only stdout is collected.
+    // retainedFileCountLimit=30 approximates "delete logs older than 30 days" when rolling daily.
+    if (fileLoggingEnabled)
+    {
+        cfg.WriteTo.File(
             path: Path.Combine("logs", "hawk-.log"),
             rollingInterval: RollingInterval.Day,
             retainedFileCountLimit: 30,
             shared: true,
             flushToDiskInterval: TimeSpan.FromSeconds(2));
+    }
 });
 
 // Add services to the container.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+// Throws for unsupported values so a typo can never silently fall back to the wrong database.
+var databaseProvider = DatabaseSetup.GetProvider(builder.Configuration);
+builder.Services.AddHawkDbContext(databaseProvider, connectionString);
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: [DatabaseHealthCheck.ReadyTag], timeout: TimeSpan.FromSeconds(5));
 
 builder.Services.AddHttpClient("urlchecks", c =>
 {
@@ -75,14 +87,7 @@ builder.Services.AddHangfire(cfg =>
     cfg.SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
-        .UseSqlServerStorage(connectionString, new SqlServerStorageOptions
-        {
-            CommandBatchMaxTimeout = TimeSpan.FromMinutes(5),
-            SlidingInvisibilityTimeout = TimeSpan.FromMinutes(5),
-            QueuePollInterval = TimeSpan.FromSeconds(5),
-            UseRecommendedIsolationLevel = true,
-            DisableGlobalLocks = true
-        });
+        .UseHawkStorage(databaseProvider, connectionString);
 });
 builder.Services.AddHangfireServer();
 
@@ -93,9 +98,11 @@ var runningInContainer = string.Equals(
     Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"),
     "true",
     StringComparison.OrdinalIgnoreCase);
+string? persistedKeysPath = null;
 if (!string.IsNullOrWhiteSpace(dpKeysPath) || runningInContainer)
 {
     dpKeysPath = string.IsNullOrWhiteSpace(dpKeysPath) ? "/var/lib/hawk/dpkeys" : dpKeysPath;
+    persistedKeysPath = dpKeysPath;
     Directory.CreateDirectory(dpKeysPath);
     builder.Services
         .AddDataProtection()
@@ -103,19 +110,7 @@ if (!string.IsNullOrWhiteSpace(dpKeysPath) || runningInContainer)
         .SetApplicationName("Hawk");
 }
 
-builder.Services.AddDefaultIdentity<IdentityUser>(options =>
-    {
-        // For an internal uptime tool, email confirmation is usually friction with no upside.
-        options.SignIn.RequireConfirmedAccount = false;
-        options.Password.RequiredLength = 8;
-        options.Password.RequireDigit = false;
-        options.Password.RequireLowercase = false;
-        options.Password.RequireUppercase = false;
-        options.Password.RequireNonAlphanumeric = false;
-        options.Password.RequiredUniqueChars = 0;
-    })
-    .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<ApplicationDbContext>();
+builder.Services.AddHawkIdentity();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
@@ -200,6 +195,27 @@ builder.Services.AddScoped<MonitorTransferService>();
 
 var app = builder.Build();
 
+app.Logger.LogInformation("Database provider: {DatabaseProvider}. File logging: {FileLogging}.", databaseProvider, fileLoggingEnabled);
+if (persistedKeysPath is not null)
+{
+    // Typical after upgrading to the non-root image with a volume/host path created by an older (root) image.
+    var uid = Environment.GetEnvironmentVariable("APP_UID") ?? "current user";
+    if (!AreKeyFilesReadable(persistedKeysPath))
+    {
+        app.Logger.LogError(
+            "DataProtection keys in {KeysPath} are not readable by this process ({Uid}). Logins and forms will fail. Fix ownership (chown -R 1654:1654 on the volume/host path) or run the container as root.",
+            persistedKeysPath,
+            uid);
+    }
+    else if (!IsDirectoryWritable(persistedKeysPath))
+    {
+        app.Logger.LogWarning(
+            "DataProtection keys path {KeysPath} is not writable by this process ({Uid}). Existing keys still work, but logins break when keys rotate. Fix ownership (chown -R 1654:1654 on the volume/host path).",
+            persistedKeysPath,
+            uid);
+    }
+}
+
 // Important branch: boot-time seeding.
 // - Applies EF migrations (required for container deployments).
 // - Ensures an Admin role exists.
@@ -233,7 +249,16 @@ if (!app.Configuration.GetValue("Hawk:DisableHttpsRedirection", false))
 }
 // Else branch: E2E/Testing can force plain HTTP to keep Playwright stable.
 
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+{
+    // Health probes run every few seconds; keep them out of the default log output.
+    options.GetLevel = (httpContext, _, ex) =>
+        ex is null && httpContext.Response.StatusCode < 500 && IsHealthPath(httpContext.Request.Path)
+            ? LogEventLevel.Verbose
+            : ex is not null || httpContext.Response.StatusCode >= 500
+                ? LogEventLevel.Error
+                : LogEventLevel.Information;
+});
 
 // Preserve exception details in HttpContext.Items so /Error can render diagnostics
 // even if the exception feature is not populated by upstream middleware.
@@ -261,8 +286,46 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
     Authorization = [new HangfireDashboardAuthFilter()]
 });
 
+// Health endpoints (anonymous, lightweight). /ready returns 503 when the database is unreachable.
+app.MapHealthChecks("/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+app.MapHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains(DatabaseHealthCheck.ReadyTag) }).AllowAnonymous();
+
 app.MapStaticAssets();
 app.MapRazorPages()
    .WithStaticAssets();
 
 app.Run();
+
+static bool IsHealthPath(PathString path) =>
+    path.Equals("/live", StringComparison.OrdinalIgnoreCase) || path.Equals("/ready", StringComparison.OrdinalIgnoreCase);
+
+static bool AreKeyFilesReadable(string path)
+{
+    try
+    {
+        foreach (var file in Directory.EnumerateFiles(path, "*.xml"))
+        {
+            using var _ = File.OpenRead(file);
+        }
+        return true;
+    }
+    catch (Exception)
+    {
+        return false;
+    }
+}
+
+static bool IsDirectoryWritable(string path)
+{
+    try
+    {
+        var probe = Path.Combine(path, $".write-probe-{Guid.NewGuid():N}");
+        File.WriteAllText(probe, string.Empty);
+        File.Delete(probe);
+        return true;
+    }
+    catch (Exception)
+    {
+        return false;
+    }
+}
