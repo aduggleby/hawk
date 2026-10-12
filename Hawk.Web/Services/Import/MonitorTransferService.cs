@@ -102,6 +102,8 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
     /// <summary>Maximum accepted import size in bytes.</summary>
     public const int MaxImportBytes = 2 * 1024 * 1024;
 
+    private static readonly SemaphoreSlim ImportLock = new(1, 1);
+
     /// <summary>
     /// Serializes every monitor of every user (ordered by name) as a v2 export document.
     /// </summary>
@@ -112,9 +114,13 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
             .Include(m => m.Headers)
             .Include(m => m.MatchRules)
             .AsSplitQuery()
-            .OrderBy(m => m.Name)
-            .ThenBy(m => m.Url)
             .ToListAsync(cancellationToken);
+
+        // Sort in memory (ordinal) so the file is identical regardless of database collation.
+        monitors = monitors
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
+            .ThenBy(m => m.Url, StringComparer.Ordinal)
+            .ToList();
 
         var ownerIds = monitors.Select(m => m.CreatedByUserId).OfType<string>().Distinct().ToList();
         var emails = await db.Users
@@ -145,7 +151,8 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
         bool createPaused,
         CancellationToken cancellationToken)
     {
-        if (Encoding.UTF8.GetByteCount(json) > MaxImportBytes)
+        // Browsers turn LF into CRLF in hidden fields; measure the normalized text so confirm matches the preview.
+        if (Encoding.UTF8.GetByteCount(json.Replace("\r\n", "\n")) > MaxImportBytes)
             return new MonitorImportPlan { ParseError = "Import file is larger than 2 MB." };
 
         var existing = await db.Monitors
@@ -178,22 +185,31 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
         bool createPaused,
         CancellationToken cancellationToken)
     {
-        var plan = await PlanAsync(json, adminUserId, createPaused, cancellationToken);
-        if (!plan.CanImport)
-            return new MonitorImportResult(0, plan.DuplicateCount, plan);
+        // Serialize plan + save so a double submit or concurrent confirm cannot insert the same monitors twice
+        // (there is no unique index on name + URL). Single-instance lock; the plan is re-computed inside it.
+        await ImportLock.WaitAsync(cancellationToken);
+        try
+        {
+            var plan = await PlanAsync(json, adminUserId, createPaused, cancellationToken);
+            if (!plan.CanImport)
+                return new MonitorImportResult(0, plan.DuplicateCount, plan);
 
-        var toInsert = plan.Items
-            .Where(i => i.Status == MonitorImportStatus.Valid && i.Monitor is not null)
-            .Select(i => i.Monitor!)
-            .ToList();
+            var toInsert = plan.Items
+                .Where(i => i.Status == MonitorImportStatus.Valid && i.Monitor is not null)
+                .Select(i => i.Monitor!)
+                .ToList();
 
-        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
-        db.Monitors.AddRange(toInsert);
-        await db.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+            db.Monitors.AddRange(toInsert);
+            await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
 
-        return new MonitorImportResult(toInsert.Count, plan.DuplicateCount, plan);
-    }
+            return new MonitorImportResult(toInsert.Count, plan.DuplicateCount, plan);
+        }
+        finally
+        {
+            ImportLock.Release();
+        }    }
 
     /// <summary>
     /// Pure planning step: parses, de-duplicates (case-insensitively on name + URL), validates and maps owners.

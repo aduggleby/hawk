@@ -250,6 +250,118 @@ public sealed class MonitorTransferTests
         Assert.Equal("bob@example.com", env.Monitors[1].OwnerEmail);
     }
 
+    /// <summary>
+    /// Field-level problems are reported as invalid in the preview and the confirm refuses (nothing written).
+    /// </summary>
+    [Theory]
+    [InlineData("""{ "name": "", "url": "https://example.com/a" }""")]
+    [InlineData("""{ "name": "T", "url": "https://example.com/a", "timeoutSeconds": 100000 }""")]
+    [InlineData("""{ "name": "T", "url": "https://example.com/a", "headers": [{ "name": "X", "value": "__LONG__" }] }""")]
+    [InlineData("""{ "name": "T", "url": "https://example.com/a", "matchRules": [{ "mode": "regex", "pattern": "(unclosed" }] }""")]
+    public async Task Field_level_problems_are_invalid_and_confirm_refuses(string monitorJson)
+    {
+        var (db, svc) = Create();
+        var json = "[" + monitorJson.Replace("__LONG__", new string('v', 2001)) + "]";
+
+        var plan = await svc.PlanAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+        Assert.Equal(1, plan.InvalidCount);
+        Assert.NotNull(plan.Items[0].Error);
+
+        var result = await svc.ImportAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+        Assert.Equal(0, result.Imported);
+        Assert.Equal(0, await db.Monitors.CountAsync());
+    }
+
+    /// <summary>
+    /// Null monitor lists or entries yield a parse error rather than an exception.
+    /// </summary>
+    [Theory]
+    [InlineData("""{ "monitors": null }""")]
+    [InlineData("""{ "monitors": [null] }""")]
+    [InlineData("""[null]""")]
+    public async Task Null_monitors_give_parse_error(string json)
+    {
+        var (_, svc) = Create();
+        var plan = await svc.PlanAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+        Assert.NotNull(plan.ParseError);
+        Assert.False(plan.CanImport);
+    }
+
+    /// <summary>
+    /// Null header/match-rule lists are treated as empty.
+    /// </summary>
+    [Fact]
+    public void Null_child_lists_are_normalized()
+    {
+        Assert.True(MonitorJsonPort.TryParse("""[{ "name": "N", "url": "https://example.com", "headers": null, "matchRules": null }]""", out var env, out _));
+        Assert.Empty(env!.Monitors[0].Headers);
+        Assert.Empty(env.Monitors[0].MatchRules);
+    }
+
+    /// <summary>
+    /// CRLF added by browsers in the hidden field does not push an accepted file over the size limit.
+    /// </summary>
+    [Fact]
+    public async Task Size_check_ignores_crlf_expansion()
+    {
+        var (_, svc) = Create();
+        var body = "[{\"name\":\"A\",\"url\":\"https://example.com/a\"}]";
+        var padding = new string(' ', MonitorTransferService.MaxImportBytes - body.Length - 10);
+        var lf = padding + "\n" + body;
+        var crlf = lf.Replace("\n", "\r\n");
+
+        var plan = await svc.PlanAsync(crlf, "admin-1", createPaused: true, CancellationToken.None);
+        Assert.Null(plan.ParseError);
+    }
+
+    /// <summary>
+    /// Concurrent confirms insert each monitor once.
+    /// </summary>
+    [Fact]
+    public async Task Concurrent_imports_do_not_double_insert()
+    {
+        var opts = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("n"))
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        var json = """[{ "name": "Once", "url": "https://example.com/once" }]""";
+
+        var tasks = Enumerable.Range(0, 4).Select(_ =>
+        {
+            var db = new ApplicationDbContext(opts);
+            return new MonitorTransferService(db, new FakeEnv("Production")).ImportAsync(json, "a", true, CancellationToken.None);
+        });
+        var results = await Task.WhenAll(tasks);
+
+        Assert.Equal(1, results.Sum(r => r.Imported));
+        await using var check = new ApplicationDbContext(opts);
+        Assert.Equal(1, await check.Monitors.CountAsync());
+    }
+
+    /// <summary>
+    /// Alert-state seeding counts only the supplied completed history (caller excludes the in-flight run).
+    /// </summary>
+    [Fact]
+    public void Alert_seed_counts_only_given_history()
+    {
+        var t = DateTimeOffset.UtcNow;
+        var empty = Hawk.Web.Services.Monitoring.MonitorAlertingDecider.SeedFromHistory(Guid.NewGuid(), []);
+        Assert.Equal(0, empty.ConsecutiveFailures);
+        Assert.Null(empty.FailureIncidentOpenedAt);
+
+        var history = new List<Hawk.Web.Services.Monitoring.MonitorAlertingDecider.HistoricRun>
+        {
+            new(t.AddMinutes(-1), false, true),
+            new(t.AddMinutes(-2), false, false),
+            new(t.AddMinutes(-3), true, false),
+            new(t.AddMinutes(-4), false, true),
+        };
+        var seeded = Hawk.Web.Services.Monitoring.MonitorAlertingDecider.SeedFromHistory(Guid.NewGuid(), history);
+        Assert.Equal(2, seeded.ConsecutiveFailures);
+        Assert.Equal(t.AddMinutes(-2), seeded.FailureIncidentOpenedAt);
+        Assert.Equal(t.AddMinutes(-1), seeded.LastFailureAlertSentAt);
+    }
+
     private static MonitorEntity SampleMonitor(string name, string url)
     {
         var m = new MonitorEntity { Name = name, Url = url, Method = "GET" };

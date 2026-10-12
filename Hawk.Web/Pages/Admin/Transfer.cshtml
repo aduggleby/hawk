@@ -96,7 +96,7 @@
 
             @if (plan.CanImport)
             {
-                <form method="post" asp-page-handler="Confirm" class="border-t border-zinc-100 pt-4 space-y-3">
+                <form method="post" asp-page-handler="Confirm" id="confirm-import-form" class="border-t border-zinc-100 pt-4 space-y-3">
                     <input type="hidden" asp-for="Json" />
                     <label class="flex items-start gap-2 text-sm">
                         <input type="checkbox" asp-for="CreatePaused" class="mt-1" />
@@ -110,4 +110,17 @@
             }
         }
     </div>
+}
+
+@section Scripts {
+    <script>
+        // Prevent double-submitting the confirm form (the server also serializes imports).
+        document.getElementById("confirm-import-form")?.addEventListener("submit", e => {
+            const btn = e.target.querySelector("button[type=submit]");
+            if (btn) {
+                if (btn.disabled) { e.preventDefault(); return; }
+                setTimeout(() => { btn.disabled = true; }, 0);
+            }
+        });
+    </script>
 }

@@ -4,6 +4,8 @@
 // </summary>
 // </file>
 
+using System.ComponentModel.DataAnnotations;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Hawk.Web.Data.Monitoring;
@@ -111,6 +113,28 @@ public static class MonitorJsonPort
 
     public static bool TryParse(string json, out MonitorExportEnvelope? envelope, out string? error)
     {
+        if (!TryParseCore(json, out envelope, out error))
+            return false;
+
+        // Reject malformed content (null monitor list or entries) with a parse error instead of crashing later.
+        if (envelope is null || envelope.Monitors is null || envelope.Monitors.Any(m => m is null))
+        {
+            envelope = null;
+            error = "Import file contains a null monitor list or null monitor entries.";
+            return false;
+        }
+
+        envelope = envelope with
+        {
+            Monitors = envelope.Monitors
+                .Select(m => m with { Headers = m.Headers ?? [], MatchRules = m.MatchRules ?? [] })
+                .ToList(),
+        };
+        return true;
+    }
+
+    private static bool TryParseCore(string json, out MonitorExportEnvelope? envelope, out string? error)
+    {
         envelope = null;
         error = null;
 
@@ -200,7 +224,14 @@ public static class MonitorJsonPort
             Body = model.Body,
         };
 
-        var validationError = form.Validate(env).Select(v => v.ErrorMessage).FirstOrDefault(m => !string.IsNullOrWhiteSpace(m));
+        // Field-level attributes ([Required]/[MaxLength]/[Range]) first, then the form's cross-field rules.
+        var attributeResults = new List<ValidationResult>();
+        Validator.TryValidateObject(form, new ValidationContext(form), attributeResults, validateAllProperties: true);
+        var validationError = attributeResults
+            .Concat(form.Validate(env))
+            .Select(v => v.ErrorMessage)
+            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m))
+            ?? ValidateChildren(model);
         if (!string.IsNullOrWhiteSpace(validationError))
         {
             error = validationError;
@@ -225,7 +256,7 @@ public static class MonitorJsonPort
             CreatedByUserId = createdByUserId,
         };
 
-        foreach (var header in model.Headers)
+        foreach (var header in model.Headers.Where(h => h is not null))
         {
             var name = (header.Name ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(name))
@@ -238,7 +269,7 @@ public static class MonitorJsonPort
             });
         }
 
-        foreach (var rule in model.MatchRules)
+        foreach (var rule in model.MatchRules.Where(r => r is not null))
         {
             var pattern = (rule.Pattern ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(pattern))
@@ -254,5 +285,44 @@ public static class MonitorJsonPort
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Validates header and match-rule lengths and regex syntax, mirroring the entity column limits.
+    /// </summary>
+    private static string? ValidateChildren(MonitorExportModel model)
+    {
+        foreach (var header in model.Headers)
+        {
+            var name = (header?.Name ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+            if (name.Length > 200)
+                return $"Header name '{name[..20]}...' is longer than 200 characters.";
+            if ((header!.Value ?? string.Empty).Trim().Length > 2000)
+                return $"Header '{name}' value is longer than 2000 characters.";
+        }
+
+        foreach (var rule in model.MatchRules)
+        {
+            var pattern = (rule?.Pattern ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(pattern) || rule!.Mode == ContentMatchMode.None)
+                continue;
+            if (pattern.Length > 2000)
+                return "Match rule pattern is longer than 2000 characters.";
+            if (rule.Mode == ContentMatchMode.Regex)
+            {
+                try
+                {
+                    _ = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(2));
+                }
+                catch (ArgumentException ex)
+                {
+                    return $"Match rule regex '{pattern}' is invalid: {ex.Message}";
+                }
+            }
+        }
+
+        return null;
     }
 }
