@@ -1,0 +1,62 @@
+## <file>
+## <summary>
+## Local development stack on PostgreSQL 17 (instead of SQL Server).
+## Usage: docker compose -f docker-compose.postgres.yml up -d --build
+## Uses the same web/mock ports as docker-compose.yml, so run only one of the two stacks at a time.
+## PostgreSQL is published on localhost:17834 (used by ./run-dev.sh --postgres).
+## </summary>
+## </file>
+
+name: hawk-postgres
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: "hawk"
+      POSTGRES_USER: "hawk"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-hawk-dev-password}"
+    ports:
+      - "${PG_PORT:-17834}:5432"
+    volumes:
+      - hawk_pg_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hawk -d hawk"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: Hawk.Web/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      Hawk__Database__Provider: "Postgres"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=hawk;Username=hawk;Password=${POSTGRES_PASSWORD:-hawk-dev-password}"
+      Hawk__DisableHttpsRedirection: "true"
+      Hawk__SeedAdmin__Email: "ad@dualconsult.com"
+      Hawk__SeedAdmin__Password: "Hawk!2026-Admin#1"
+      Hawk__Resend__BaseUrl: "${RESEND_BASEURL:-http://mock:8081}"
+      Hawk__Resend__ApiKey: "${RESEND_APIKEY:-dev}"
+      Hawk__Email__From: "${EMAIL_FROM:-Hawk <hawk@localhost>}"
+    ports:
+      - "17800:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - hawk_pg_logs:/app/logs
+      - hawk_pg_dpkeys:/var/lib/hawk/dpkeys
+
+  mock:
+    build:
+      context: .
+      dockerfile: Hawk.MockServer/Dockerfile
+    ports:
+      - "17801:8081"
+
+volumes:
+  hawk_pg_db:
+  hawk_pg_logs:
+  hawk_pg_dpkeys:

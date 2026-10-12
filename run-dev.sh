@@ -11,10 +11,13 @@ TMUX_SESSION="hawk-dev"
 
 SA_PASSWORD="${SA_PASSWORD:-YourStrong!Passw0rd}"
 SQL_PORT="${SQL_PORT:-17833}"
+PG_PORT="${PG_PORT:-17834}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-hawk-dev-password}"
 WEB_PORT="${WEB_PORT:-17800}"
 MOCK_PORT="${MOCK_PORT:-17801}"
 START_DEPS=1
 USE_TMUX=1
+USE_POSTGRES=0
 
 usage() {
   cat <<USAGE
@@ -25,6 +28,7 @@ Uses dotnet watch for automatic reload on file changes.
 
 Options:
   --no-deps        Do not start Docker dependencies (db + mock).
+  --postgres       Use PostgreSQL 17 (docker-compose.postgres.yml) instead of SQL Server.
   --tmux           Start Hawk.Web in tmux session named '${TMUX_SESSION}' and attach (default).
   --no-tmux        Run Hawk.Web in the current shell.
   -h, --help       Show this help.
@@ -32,6 +36,8 @@ Options:
 Environment overrides:
   SA_PASSWORD      SQL sa password (default: YourStrong!Passw0rd)
   SQL_PORT         Local SQL port mapping (default: 17833)
+  PG_PORT          Local PostgreSQL port mapping with --postgres (default: 17834)
+  POSTGRES_PASSWORD  PostgreSQL password with --postgres (default: hawk-dev-password)
   WEB_PORT         Local Hawk web port (default: 17800)
   MOCK_PORT        Local mock server port (default: 17801)
 USAGE
@@ -45,6 +51,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tmux)
       USE_TMUX=1
+      shift
+      ;;
+    --postgres)
+      USE_POSTGRES=1
       shift
       ;;
     --no-tmux)
@@ -62,6 +72,16 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$USE_POSTGRES" -eq 1 ]]; then
+  COMPOSE_ARGS=(-f docker-compose.postgres.yml)
+  DB_PROVIDER="Postgres"
+  DB_CONNECTION="Host=localhost;Port=${PG_PORT};Database=hawk;Username=hawk;Password=${POSTGRES_PASSWORD}"
+else
+  COMPOSE_ARGS=(-f docker-compose.yml)
+  DB_PROVIDER="SqlServer"
+  DB_CONNECTION="Server=localhost,${SQL_PORT};Database=Hawk;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true;Encrypt=false"
+fi
 
 require_cmd() {
   local cmd="$1"
@@ -106,11 +126,11 @@ echo "[run-dev] Building Tailwind CSS..."
 npm --prefix Hawk.Web run build:css >/dev/null
 
 if [[ "$START_DEPS" -eq 1 ]]; then
-  echo "[run-dev] Starting local dependencies (db + mock) with docker compose..."
-  SA_PASSWORD="$SA_PASSWORD" docker compose up -d db mock >/dev/null
+  echo "[run-dev] Starting local dependencies (db + mock, provider=$DB_PROVIDER) with docker compose..."
+  SA_PASSWORD="$SA_PASSWORD" POSTGRES_PASSWORD="$POSTGRES_PASSWORD" PG_PORT="$PG_PORT" docker compose "${COMPOSE_ARGS[@]}" up -d db mock >/dev/null
 
-  echo "[run-dev] Waiting for SQL Server to be healthy..."
-  db_container_id="$(docker compose ps -q db)"
+  echo "[run-dev] Waiting for the database ($DB_PROVIDER) to be healthy..."
+  db_container_id="$(docker compose "${COMPOSE_ARGS[@]}" ps -q db)"
   if [[ -z "$db_container_id" ]]; then
     echo "[run-dev] Could not find db container id after startup." >&2
     exit 1
@@ -126,7 +146,7 @@ if [[ "$START_DEPS" -eq 1 ]]; then
   done
 
   if [[ "$final_status" != "healthy" ]]; then
-    echo "[run-dev] SQL Server did not become healthy in time. Check: docker compose logs db" >&2
+    echo "[run-dev] Database did not become healthy in time. Check: docker compose ${COMPOSE_ARGS[*]} logs db" >&2
     exit 1
   fi
 fi
@@ -135,6 +155,7 @@ cat > "$STATE_FILE" <<STATE
 START_DEPS=$START_DEPS
 USE_TMUX=$USE_TMUX
 SQL_PORT=$SQL_PORT
+USE_POSTGRES=$USE_POSTGRES
 WEB_PORT=$WEB_PORT
 MOCK_PORT=$MOCK_PORT
 STATE
@@ -149,7 +170,8 @@ export ASPNETCORE_ENVIRONMENT=Development
 export ASPNETCORE_URLS="http://localhost:${WEB_PORT}"
 export Hawk__DisableHttpsRedirection=true
 export DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH=1
-export ConnectionStrings__DefaultConnection="Server=localhost,${SQL_PORT};Database=Hawk;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true;Encrypt=false"
+export Hawk__Database__Provider="${DB_PROVIDER}"
+export ConnectionStrings__DefaultConnection="${DB_CONNECTION}"
 export Hawk__Resend__BaseUrl="http://localhost:${MOCK_PORT}"
 export Hawk__Resend__ApiKey=dev
 export Hawk__Email__From="Hawk <hawk@localhost>"
@@ -179,7 +201,7 @@ fi
 echo "[run-dev] Environment configured:"
 echo "  ASPNETCORE_ENVIRONMENT=Development"
 echo "  ASPNETCORE_URLS=http://localhost:${WEB_PORT}"
-echo "  SQL=localhost:$SQL_PORT"
+echo "  Database=$DB_PROVIDER ($([[ "$USE_POSTGRES" -eq 1 ]] && echo "localhost:$PG_PORT" || echo "localhost:$SQL_PORT"))"
 echo "  Mock=http://localhost:$MOCK_PORT"
 echo
 
@@ -195,7 +217,8 @@ echo "[run-dev] Starting Hawk.Web (dotnet watch)..."
   export ASPNETCORE_URLS="http://localhost:${WEB_PORT}"
   export Hawk__DisableHttpsRedirection=true
   export DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH=1
-  export ConnectionStrings__DefaultConnection="Server=localhost,${SQL_PORT};Database=Hawk;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true;Encrypt=false"
+  export Hawk__Database__Provider="${DB_PROVIDER}"
+  export ConnectionStrings__DefaultConnection="${DB_CONNECTION}"
   export Hawk__Resend__BaseUrl="http://localhost:${MOCK_PORT}"
   export Hawk__Resend__ApiKey=dev
   export Hawk__Email__From="Hawk <hawk@localhost>"

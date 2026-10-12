@@ -1,0 +1,78 @@
+## <file>
+## <summary>
+## E2E stack on PostgreSQL 17: same topology as docker-compose.e2e.yml (web + db + mock + e2e), but the web app
+## runs with Hawk__Database__Provider=Postgres against an ephemeral (tmpfs) PostgreSQL database.
+## Usage:
+##   docker compose -f docker-compose.e2e.postgres.yml down --remove-orphans
+##   docker compose -f docker-compose.e2e.postgres.yml up --build --force-recreate --renew-anon-volumes --exit-code-from e2e e2e
+##   docker compose -f docker-compose.e2e.postgres.yml down --remove-orphans
+## </summary>
+## </file>
+
+name: hawk-e2e-postgres
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: "hawk_e2e"
+      POSTGRES_USER: "hawk"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-hawk-e2e-password}"
+    # E2E should be hermetic: use an ephemeral database per run.
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  mock:
+    build:
+      context: .
+      dockerfile: Hawk.MockServer/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8081"
+    expose:
+      - "8081"
+
+  web:
+    build:
+      context: .
+      dockerfile: Hawk.Web/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Testing"
+      ASPNETCORE_URLS: "http://0.0.0.0:8080"
+      Hawk__Database__Provider: "Postgres"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=hawk_e2e;Username=hawk;Password=${POSTGRES_PASSWORD:-hawk-e2e-password}"
+      Hawk__DisableHttpsRedirection: "true"
+      Hawk__SeedAdmin__Email: "ad@dualconsult.com"
+      Hawk__SeedAdmin__Password: "Hawk!2026-Admin#1"
+      Hawk__Scheduler__Enabled: "true"
+      Hawk__Scheduler__TickSeconds: "1"
+      Hawk__Email__Enabled: "true"
+      Hawk__Email__From: "Hawk <hawk@localhost>"
+      Hawk__Resend__BaseUrl: "http://mock:8081"
+      Hawk__Resend__ApiKey: "dev"
+    depends_on:
+      - db
+      - mock
+    expose:
+      - "8080"
+    volumes:
+      - hawk_e2e_pg_dpkeys:/var/lib/hawk/dpkeys
+
+  e2e:
+    build:
+      context: .
+      dockerfile: e2e/Dockerfile
+    environment:
+      HAWK_BASE_URL: "http://web:8080"
+      HAWK_SEED_EMAIL: "ad@dualconsult.com"
+      HAWK_SEED_PASSWORD: "Hawk!2026-Admin#1"
+      MOCK_BASE_URL: "http://mock:8081"
+      SCREENSHOTS_DIR: "/work/screenshots"
+      E2E_DOCKER: "1"
+    depends_on:
+      - web
+    volumes:
+      - ./screenshots:/work/screenshots
+
+volumes:
+  hawk_e2e_pg_dpkeys:

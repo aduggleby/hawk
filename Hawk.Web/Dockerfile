@@ -2,6 +2,9 @@
 ## <summary>
 ## Dockerfile for Hawk.Web (Razor Pages app).
 ## Builds and publishes the app; database migrations are applied on startup by IdentitySeeder.
+## Runs as the non-root .NET user ($APP_UID, 1654). Writable paths: /tmp, /app/logs (file logging),
+## and /var/lib/hawk (DataProtection keys). Works with a read-only root filesystem when
+## Hawk__Logging__File__Enabled=false and the keys path is a mounted volume.
 ## </summary>
 ## </file>
 
@@ -38,7 +41,13 @@ EXPOSE 8080
 
 COPY --from=build /app/publish .
 
-# Write logs to /app/logs by default (volume mounted in docker-compose).
-RUN mkdir -p /app/logs
+# Writable directories for the non-root user:
+# - /app/logs: Serilog file sink (volume mounted in docker-compose).
+# - /var/lib/hawk/dpkeys: default DataProtection keys path in containers; /var/lib/hawk/keys: app-server template path.
+# Fresh named volumes inherit this ownership. Volumes/host paths created by older (root) images must be chowned to 1654.
+RUN mkdir -p /app/logs /var/lib/hawk/dpkeys /var/lib/hawk/keys \
+    && chown -R $APP_UID:$APP_UID /app/logs /var/lib/hawk
+
+USER $APP_UID
 
 ENTRYPOINT ["dotnet", "Hawk.Web.dll"]

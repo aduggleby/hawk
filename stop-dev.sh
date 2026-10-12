@@ -32,11 +32,14 @@ if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$TMUX_SESSION" 2>/dev
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  if docker compose ps db mock >/dev/null 2>&1; then
-    echo "[stop-dev] Stopping docker services (db + mock)..."
-    docker compose stop db mock >/dev/null || true
-    stopped_any=1
-  fi
+  # Stop whichever stack run-dev.sh used (SQL Server by default, PostgreSQL with --postgres).
+  for compose_file in docker-compose.yml docker-compose.postgres.yml; do
+    if [[ -n "$(docker compose -f "$compose_file" ps -q db mock 2>/dev/null)" ]]; then
+      echo "[stop-dev] Stopping docker services (db + mock) from $compose_file..."
+      docker compose -f "$compose_file" stop db mock >/dev/null || true
+      stopped_any=1
+    fi
+  done
 fi
 
 rm -f "$STATE_FILE"
