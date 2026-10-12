@@ -151,6 +151,13 @@ public sealed class MonitorForm
         if (RunRetentionDays is < 1 or > 3650)
             yield return new ValidationResult("Run retention override must be between 1 and 3650 days.", [nameof(RunRetentionDays)]);
 
+        for (var i = 0; i < Math.Min(MatchModes.Length, MatchPatterns.Length); i++)
+        {
+            var pattern = (MatchPatterns[i] ?? string.Empty).Trim();
+            if (MatchModes[i] == ContentMatchMode.Regex && pattern.Length > 0 && !IsValidRegex(pattern, out var regexError))
+                yield return new ValidationResult($"Match rule {i + 1}: invalid regular expression ({regexError}).", [$"{nameof(MatchPatterns)}[{i}]"]);
+        }
+
         var method = (Method ?? string.Empty).Trim().ToUpperInvariant();
         if (method is not ("GET" or "POST"))
             yield return new ValidationResult("Method must be GET or POST.", [nameof(Method)]);
@@ -162,6 +169,27 @@ public sealed class MonitorForm
                 yield return new ValidationResult("Content-Type is required for POST.", [nameof(ContentType)]);
             if (Body is null)
                 yield return new ValidationResult("Body is required for POST (can be empty string).", [nameof(Body)]);
+        }
+    }
+
+    /// <summary>
+    /// Checks that a pattern compiles with the options the URL checker uses.
+    /// </summary>
+    public static bool IsValidRegex(string pattern, out string? error)
+    {
+        try
+        {
+            _ = new System.Text.RegularExpressions.Regex(
+                pattern,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline,
+                TimeSpan.FromSeconds(2));
+            error = null;
+            return true;
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+            return false;
         }
     }
 }

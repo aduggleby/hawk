@@ -257,7 +257,6 @@ public sealed class MonitorTransferTests
     [InlineData("""{ "name": "", "url": "https://example.com/a" }""")]
     [InlineData("""{ "name": "T", "url": "https://example.com/a", "timeoutSeconds": 100000 }""")]
     [InlineData("""{ "name": "T", "url": "https://example.com/a", "headers": [{ "name": "X", "value": "__LONG__" }] }""")]
-    [InlineData("""{ "name": "T", "url": "https://example.com/a", "matchRules": [{ "mode": "regex", "pattern": "(unclosed" }] }""")]
     public async Task Field_level_problems_are_invalid_and_confirm_refuses(string monitorJson)
     {
         var (db, svc) = Create();
@@ -360,6 +359,49 @@ public sealed class MonitorTransferTests
         Assert.Equal(2, seeded.ConsecutiveFailures);
         Assert.Equal(t.AddMinutes(-2), seeded.FailureIncidentOpenedAt);
         Assert.Equal(t.AddMinutes(-1), seeded.LastFailureAlertSentAt);
+    }
+
+    /// <summary>
+    /// An unparsable regex is a per-item warning, not a refusal: the monitor is still imported.
+    /// </summary>
+    [Fact]
+    public async Task Invalid_regex_is_warning_and_still_imports()
+    {
+        var (db, svc) = Create();
+        var json = """[{ "name": "BadRe", "url": "https://example.com/a", "matchRules": [{ "mode": "regex", "pattern": "(unclosed" }] }]""";
+
+        var plan = await svc.PlanAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+        Assert.Equal(0, plan.InvalidCount);
+        Assert.Equal(1, plan.WarningCount);
+        Assert.Contains("fail every run", plan.Items[0].Warnings![0]);
+
+        var result = await svc.ImportAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+        Assert.Equal(1, result.Imported);
+        Assert.Equal(1, await db.Monitors.CountAsync());
+    }
+
+    /// <summary>
+    /// Create/Edit validation reports an invalid regex on the matching pattern field.
+    /// </summary>
+    [Fact]
+    public void Form_validation_rejects_invalid_regex()
+    {
+        var form = new MonitorForm { Name = "N", Url = "https://example.com", Method = "GET", IntervalSeconds = 60 };
+        form.MatchModes[1] = ContentMatchMode.Regex;
+        form.MatchPatterns[1] = "(unclosed";
+        form.MatchModes[2] = ContentMatchMode.Contains;
+        form.MatchPatterns[2] = "(fine";
+
+        var errors = form.Validate(new FakeEnv("Production")).ToList();
+        var e = Assert.Single(errors);
+        Assert.Contains("MatchPatterns[1]", e.MemberNames);
+
+        var ms = new Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary();
+        MonitorFormValidation.AddResults(ms, errors);
+        Assert.True(ms.ContainsKey("Form.MatchPatterns[1]"));
+
+        form.MatchPatterns[1] = "ok+";
+        Assert.Empty(form.Validate(new FakeEnv("Production")));
     }
 
     private static MonitorEntity SampleMonitor(string name, string url)

@@ -43,6 +43,7 @@ public enum MonitorImportStatus
 /// <param name="OwnerMatched">True when <paramref name="OwnerEmail"/> matched an existing user.</param>
 /// <param name="PausedOrDisabledAtSource">True when the source monitor was paused or disabled.</param>
 /// <param name="Monitor">Entity to insert (only for valid monitors).</param>
+/// <param name="Warnings">Non-blocking problems (for example an unparsable regex).</param>
 public sealed record PlannedMonitor(
     string Name,
     string Url,
@@ -51,7 +52,8 @@ public sealed record PlannedMonitor(
     string? OwnerEmail,
     bool OwnerMatched,
     bool PausedOrDisabledAtSource,
-    MonitorEntity? Monitor);
+    MonitorEntity? Monitor,
+    IReadOnlyList<string>? Warnings = null);
 
 /// <summary>
 /// Result of planning an import file. Contains no database side effects.
@@ -75,6 +77,9 @@ public sealed class MonitorImportPlan
 
     /// <summary>Monitors that will be skipped as duplicates.</summary>
     public int DuplicateCount => Items.Count(i => i.Status == MonitorImportStatus.Duplicate);
+
+    /// <summary>Valid monitors that carry at least one warning.</summary>
+    public int WarningCount => Items.Count(i => i.Warnings is { Count: > 0 });
 
     /// <summary>Valid monitors whose owner email matched an existing user.</summary>
     public int OwnersMatched => Items.Count(i => i.Status == MonitorImportStatus.Valid && i.OwnerMatched);
@@ -209,7 +214,8 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
         finally
         {
             ImportLock.Release();
-        }    }
+        }
+    }
 
     /// <summary>
     /// Pure planning step: parses, de-duplicates (case-insensitively on name + URL), validates and maps owners.
@@ -257,7 +263,7 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
                 continue;
             }
 
-            items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Valid, null, ownerEmail, ownerId is not null, pausedOrDisabled, monitor));
+            items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Valid, null, ownerEmail, ownerId is not null, pausedOrDisabled, monitor, MonitorJsonPort.GetWarnings(model)));
         }
 
         return new MonitorImportPlan { Items = items };

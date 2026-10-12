@@ -310,19 +310,24 @@ public static class MonitorJsonPort
                 continue;
             if (pattern.Length > 2000)
                 return "Match rule pattern is longer than 2000 characters.";
-            if (rule.Mode == ContentMatchMode.Regex)
-            {
-                try
-                {
-                    _ = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(2));
-                }
-                catch (ArgumentException ex)
-                {
-                    return $"Match rule regex '{pattern}' is invalid: {ex.Message}";
-                }
-            }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Non-blocking import warnings: an unparsable regex makes the monitor fail every run, but is still importable.
+    /// </summary>
+    public static IReadOnlyList<string> GetWarnings(MonitorExportModel model)
+    {
+        var warnings = new List<string>();
+        foreach (var rule in model.MatchRules.Where(r => r is not null))
+        {
+            var pattern = (rule.Pattern ?? string.Empty).Trim();
+            if (rule.Mode == ContentMatchMode.Regex && pattern.Length > 0 && !MonitorForm.IsValidRegex(pattern, out _))
+                warnings.Add($"Invalid regex '{pattern}': the monitor will fail every run until fixed.");
+        }
+
+        return warnings;
     }
 }

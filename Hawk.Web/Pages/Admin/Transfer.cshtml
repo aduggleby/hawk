@@ -68,6 +68,22 @@
             var pausedAtSource = plan.Items.Where(i => i.Status == MonitorImportStatus.Valid && i.PausedOrDisabledAtSource).ToList();
             var duplicates = plan.Items.Where(i => i.Status == MonitorImportStatus.Duplicate).ToList();
 
+            @if (plan.WarningCount > 0)
+            {
+                <div>
+                    <div class="text-xs font-semibold text-zinc-600 mb-1">Warnings (these monitors are still imported)</div>
+                    <ul class="text-xs list-disc pl-5 space-y-1" data-testid="preview-warning-list">
+                        @foreach (var item in plan.Items.Where(i => i.Warnings is { Count: > 0 }))
+                        {
+                            foreach (var warning in item.Warnings!)
+                            {
+                                <li><span class="font-mono">@item.Name</span> - @warning</li>
+                            }
+                        }
+                    </ul>
+                </div>
+            }
+
             @if (pausedAtSource.Count > 0)
             {
                 <details>

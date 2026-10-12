@@ -257,6 +257,10 @@ Alert recipient resolution (in order):
 - `MonitorExecutor.GetOrCreateAlertStateAsync` seeds a missing `MonitorAlertState` from history via `MonitorAlertingDecider.SeedFromHistory`, using only `State == "completed"` runs and excluding the run being evaluated (the pre-created "Run now" run is saved as `running` before alert evaluation and must not be counted).
 - `Monitor.LastRunAt` is written set-based (`ExecuteUpdateAsync`, `SetLastRunAtAsync`) so it can never conflict with the rowversion. A conflict after the alert email was sent would fail the save and make Hangfire retry (re-sending the alert).
 
+## Failure Alert Retry Rule
+
+- `MonitorAlertingDecider.OnFailure` returns `Failure` when the consecutive-failure count equals the threshold, and also whenever the count is above the threshold while `LastFailureAlertSentAt` is null (first send failed, or the threshold was lowered in Edit while failing). The alert therefore retries on every failing run until a send succeeds; after that it is sent once, reminders keep their N-hour cadence and recovery works as normal.
+
 ## Monitor Edit Concurrency
 
 - `Monitor.RowVersion` — a SQL Server `rowversion` column used for optimistic concurrency control on the Edit page.
@@ -308,7 +312,7 @@ Alert recipient resolution (in order):
 - **All or nothing:** if any non-duplicate monitor is invalid, the confirm step refuses and imports nothing. Inserts run in one `BeginTransactionAsync` transaction.
 - Option **Create all imported monitors paused** (default on): forces `IsPaused = true`; when off, source `IsPaused` is kept. Source `Enabled` is always kept. `NextRunAt` is left null (due immediately once unpaused).
 - Re-running the same import is safe: everything is skipped as a duplicate. After import a flash reports imported / skipped / paused.
-- **Validation:** imported monitors pass `Validator.TryValidateObject` on `MonitorForm` (`[Required]/[MaxLength]/[Range]`) plus `MonitorForm.Validate`, header name/value length (200/2000), match pattern length (2000) and regex validity. Errors are listed per monitor in the preview and the confirm refuses.
+- **Validation:** imported monitors pass `Validator.TryValidateObject` on `MonitorForm` (`[Required]/[MaxLength]/[Range]`) plus `MonitorForm.Validate`, header name/value length (200/2000) and match pattern length (2000). These are hard errors listed per monitor in the preview, and the confirm refuses. An unparsable regex is only a per-item preview **warning** (the monitor imports and fails every run until fixed). Create/Edit reject invalid regex patterns via `MonitorForm.Validate` (key `Form.MatchPatterns[i]`).
 - **Serialisation:** `ImportAsync` takes an app-wide (single-instance) `SemaphoreSlim`, re-plans inside it, then inserts in a transaction, so double submits cannot insert twice (there is no unique index). The confirm button is also disabled on submit. Export is sorted in memory with ordinal comparison (collation independent). Size limit (2 MB) is measured after normalising CRLF to LF. `null` monitor lists/entries are parse errors.
 - Exports from a `Testing` instance that use the 5-second interval are refused by Production (the interval is not allowed there); change those intervals before importing.
 - Tests: `Hawk.Tests/MonitorTransferTests.cs`, `e2e/tests/monitor-transfer.spec.ts`.
