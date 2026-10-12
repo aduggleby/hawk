@@ -175,7 +175,9 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddRouting(options =>
 {
     options.LowercaseUrls = true;
-    options.LowercaseQueryStrings = true;
+    // Query strings keep their case: Identity tokens (email confirmation, password
+    // reset) are case-sensitive Base64Url and break when lowercased.
+    options.LowercaseQueryStrings = false;
 });
 
 builder.Services.AddRazorPages(options =>

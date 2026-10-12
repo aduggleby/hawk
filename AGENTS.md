@@ -147,7 +147,7 @@ Run:
 
 ## URL Routing
 
-- Lowercase URLs and lowercase query strings are enforced via `AddRouting` options in `Program.cs`.
+- Lowercase URLs are enforced via `AddRouting` options in `Program.cs`. Query strings are **not** lowercased (`LowercaseQueryStrings = false`): Identity confirmation/reset tokens are case-sensitive and lowercasing them made every emailed link invalid.
 
 ## HTTPS Redirection Toggle (For E2E)
 
