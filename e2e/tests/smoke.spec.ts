@@ -20,6 +20,6 @@ test('seed admin can log in', async ({ page }) => {
   await loginAsSeedAdmin(page);
 
   await expect(page.getByText(/^account$/i).first()).toBeVisible();
-  await expect(page.getByRole('heading', { name: /monitors/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^monitors$/i })).toBeVisible();
   await snap(page, '03-after-login');
 });

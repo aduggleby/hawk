@@ -20,7 +20,7 @@ async function pollForAtLeastRuns(page, minRuns: number, timeoutMs: number) {
 async function gotoMonitors(page) {
   // Navigate directly to avoid relying on responsive nav rendering.
   await page.goto('/Monitors');
-  await expect(page.getByRole('heading', { name: /monitors/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^monitors$/i })).toBeVisible();
   await snap(page, '10-monitors-index');
 }
 
@@ -309,7 +309,7 @@ test('export monitor config as json and re-import with full settings', async ({ 
 
   await expect(page.getByLabel(/^name$/i)).toHaveValue(monitorName);
   await expect(page.getByLabel(/^method$/i)).toHaveValue('POST');
-  await expect(page.getByLabel(/^timeout \\(s\\)$/i)).toHaveValue('25');
+  await expect(page.getByLabel(/^timeout \(s\)$/i)).toHaveValue('25');
   await expect(page.getByLabel(/alert after consecutive failures/i)).toHaveValue('2');
   await expect(page.getByLabel(/allowed http status codes/i)).toHaveValue('404,429');
   await expect(page.getByLabel(/alert email override/i)).toHaveValue('alerts+monitor@dualconsult.com');

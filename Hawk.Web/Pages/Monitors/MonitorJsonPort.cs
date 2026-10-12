@@ -15,7 +15,7 @@ namespace Hawk.Web.Pages.Monitors;
 
 public sealed record MonitorExportEnvelope
 {
-    public int Version { get; init; } = 1;
+    public int Version { get; init; } = MonitorJsonPort.CurrentVersion;
     public DateTimeOffset ExportedAtUtc { get; init; } = DateTimeOffset.UtcNow;
     public List<MonitorExportModel> Monitors { get; init; } = [];
 }
@@ -27,6 +27,7 @@ public sealed record MonitorExportModel
     public string Method { get; init; } = "GET";
     public bool Enabled { get; init; } = true;
     public bool IsPaused { get; init; }
+    public string? OwnerEmail { get; init; }
     public int TimeoutSeconds { get; init; } = 15;
     public int IntervalSeconds { get; init; } = 60;
     public int AlertAfterConsecutiveFailures { get; init; } = 1;
@@ -53,6 +54,11 @@ public sealed record MonitorMatchRuleExportModel
 
 public static class MonitorJsonPort
 {
+    /// <summary>
+    /// Current export format version. Version 2 adds <c>exportedAtUtc</c> and per-monitor <c>ownerEmail</c>; version 1 files are still accepted.
+    /// </summary>
+    public const int CurrentVersion = 2;
+
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -72,7 +78,7 @@ public static class MonitorJsonPort
         };
     }
 
-    public static MonitorExportModel ToModel(MonitorEntity monitor)
+    public static MonitorExportModel ToModel(MonitorEntity monitor, string? ownerEmail = null)
     {
         return new MonitorExportModel
         {
@@ -81,6 +87,7 @@ public static class MonitorJsonPort
             Method = monitor.Method,
             Enabled = monitor.Enabled,
             IsPaused = monitor.IsPaused,
+            OwnerEmail = string.IsNullOrWhiteSpace(ownerEmail) ? null : ownerEmail,
             TimeoutSeconds = monitor.TimeoutSeconds,
             IntervalSeconds = monitor.IntervalSeconds,
             AlertAfterConsecutiveFailures = monitor.AlertAfterConsecutiveFailures,
@@ -90,9 +97,13 @@ public static class MonitorJsonPort
             ContentType = monitor.ContentType,
             Body = monitor.Body,
             Headers = monitor.Headers
+                .OrderBy(h => h.Name, StringComparer.Ordinal)
+                .ThenBy(h => h.Value, StringComparer.Ordinal)
                 .Select(h => new MonitorHeaderExportModel { Name = h.Name, Value = h.Value })
                 .ToList(),
             MatchRules = monitor.MatchRules
+                .OrderBy(r => r.Mode)
+                .ThenBy(r => r.Pattern, StringComparer.Ordinal)
                 .Select(r => new MonitorMatchRuleExportModel { Mode = r.Mode, Pattern = r.Pattern })
                 .ToList(),
         };
@@ -116,7 +127,7 @@ public static class MonitorJsonPort
             if (doc.RootElement.ValueKind == JsonValueKind.Array)
             {
                 var monitors = JsonSerializer.Deserialize<List<MonitorExportModel>>(json, JsonOptions) ?? [];
-                envelope = new MonitorExportEnvelope { Monitors = monitors };
+                envelope = new MonitorExportEnvelope { Version = 1, Monitors = monitors };
                 return true;
             }
 
@@ -135,6 +146,13 @@ public static class MonitorJsonPort
                     return false;
                 }
 
+                if (envelope.Version > CurrentVersion)
+                {
+                    error = $"Unsupported export version {envelope.Version}. This Hawk version supports up to {CurrentVersion}.";
+                    envelope = null;
+                    return false;
+                }
+
                 return true;
             }
 
@@ -145,7 +163,7 @@ public static class MonitorJsonPort
                 return false;
             }
 
-            envelope = new MonitorExportEnvelope { Monitors = [one] };
+            envelope = new MonitorExportEnvelope { Version = 1, Monitors = [one] };
             return true;
         }
         catch (JsonException ex)
@@ -160,7 +178,8 @@ public static class MonitorJsonPort
         string? createdByUserId,
         IHostEnvironment env,
         out MonitorEntity monitor,
-        out string? error)
+        out string? error,
+        bool forcePaused = false)
     {
         monitor = default!;
         error = null;
@@ -194,7 +213,7 @@ public static class MonitorJsonPort
             Url = (model.Url ?? string.Empty).Trim(),
             Method = (model.Method ?? "GET").Trim().ToUpperInvariant(),
             Enabled = model.Enabled,
-            IsPaused = model.Enabled && model.IsPaused,
+            IsPaused = forcePaused || (model.Enabled && model.IsPaused),
             TimeoutSeconds = model.TimeoutSeconds,
             IntervalSeconds = model.IntervalSeconds,
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,

@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Primary database: SQL Server (EF Core SQL Server provider)
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.25`
+- Version: `0.9.26`
 
 ## Ports
 
@@ -288,13 +288,22 @@ Alert recipient resolution (in order):
 ## Monitor JSON Export / Import
 
 - `Hawk.Web/Pages/Monitors/MonitorJsonPort.cs` contains the JSON model (`MonitorExportEnvelope`, `MonitorExportModel`) and mapping helpers.
-- **Export** — `Details.cshtml.cs` has an `OnGetExport` handler that serializes a single monitor to a JSON file download.
-- **Import** — `Create.cshtml.cs` has an `OnPostImport` handler that accepts a `.json` file upload, parses it via `MonitorJsonPort.TryParse`, and prefills the create form with the first monitor's values. The user reviews/edits the prefilled form and then clicks Create. For multi-monitor files, only the first monitor is loaded (the rest are noted via flash message).
-- The parser accepts three JSON shapes: an envelope object with `monitors` array, a bare array of monitor objects, or a single monitor object.
+- **Format v2** (`MonitorJsonPort.CurrentVersion = 2`): envelope `{ version, exportedAtUtc, monitors[] }`; each monitor has the config fields, `headers`, `matchRules` and an optional `ownerEmail`. Excluded: ids, run history, alert state, `LastRunAt`/`NextRunAt`/`CreatedAt`, `RowVersion`, per-user settings. Headers/match rules are written in a deterministic order.
+- The parser (`TryParse`) accepts v1 files (no `ownerEmail`) and three shapes: an envelope with a `monitors` array, a bare array, or a single object. Versions above 2 are rejected.
+- **Single monitor export** — `Details.cshtml.cs` `OnGetExport` (emits v2 without `ownerEmail`). **Single import** — `Create.cshtml.cs` `OnPostImport` prefills the create form with the first monitor (unchanged).
 - Export uses `System.Text.Json` with `JsonStringEnumConverter` (camelCase) and `WriteIndented`.
-- Each imported monitor goes through the same `MonitorForm.Validate()` pipeline as the create form.
-- Invalid monitors are reported via `TempData` flash messages.
-- E2E tests cover export and re-import in `e2e/tests/monitors.spec.ts`.
+
+## Bulk Transfer (Admin: Export / Import all monitors)
+
+- Page: `Hawk.Web/Pages/Admin/Transfer.cshtml(.cs)` (`/Admin/Transfer`, covered by the `/Admin` folder `AdminOnly` policy, linked in the Account menu as **Export / Import**).
+- Logic lives in `Hawk.Web/Services/Import/MonitorTransferService.cs` (scoped). It uses plain EF Core LINQ only (no raw SQL) and compares strings in C#, so it is database-provider-agnostic.
+- **Export all** (`?handler=Export`) downloads `hawk-monitors-<yyyyMMdd-HHmmss>.json`: every monitor of every user ordered by name, with `ownerEmail` resolved from `CreatedByUserId`.
+- **Import** is two steps: upload -> dry-run preview (`PlanAsync`, writes nothing), then **Confirm import**. The JSON is carried in a hidden field (max 2 MB) and is re-parsed and re-validated on confirm (`ImportAsync`); preview state is never trusted.
+- Planning (`MonitorTransferService.Plan`, pure and unit tested): duplicates = same trimmed Name + Url, case-insensitive, against existing monitors and earlier entries in the file (duplicates are skipped before validation); other monitors go through `MonitorJsonPort.TryCreateMonitor` (which runs `MonitorForm.Validate`). Owner = user whose email matches `ownerEmail` (case-insensitive), else the importing admin.
+- **All or nothing:** if any non-duplicate monitor is invalid, the confirm step refuses and imports nothing. Inserts run in one `BeginTransactionAsync` transaction.
+- Option **Create all imported monitors paused** (default on): forces `IsPaused = true`; when off, source `IsPaused` is kept. Source `Enabled` is always kept. `NextRunAt` is left null (due immediately once unpaused).
+- Re-running the same import is safe: everything is skipped as a duplicate. After import a flash reports imported / skipped / paused.
+- Tests: `Hawk.Tests/MonitorTransferTests.cs`, `e2e/tests/monitor-transfer.spec.ts`.
 
 ## Run Diagnostics Page
 

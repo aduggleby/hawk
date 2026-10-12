@@ -1,0 +1,113 @@
+@page
+@* <summary>Admin-only bulk export and import of all monitors.</summary> *@
+@model Hawk.Web.Pages.Admin.TransferModel
+@using Hawk.Web.Services.Import
+@{
+    ViewData["Title"] = "Export / Import monitors";
+}
+
+<div class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">Export / Import monitors</h1>
+    <p class="text-sm text-zinc-600">Move every monitor to another Hawk instance. Run history, alert state and user settings are not included.</p>
+</div>
+
+<div class="hawk-card p-4 mb-6">
+    <h2 class="font-semibold mb-2">Export</h2>
+    <p class="text-sm text-zinc-600 mb-3">Downloads all monitors of all users, with headers and match rules. The file may contain secrets (for example auth headers); store it safely.</p>
+    <a class="hawk-btn hawk-btn-primary" id="export-all" asp-page="/Admin/Transfer" asp-page-handler="Export">Export all monitors</a>
+</div>
+
+<form method="post" enctype="multipart/form-data" asp-page-handler="Preview" class="hawk-card p-4 mb-6 space-y-4">
+    <h2 class="font-semibold">Import</h2>
+    <div>
+        <label class="hawk-label" for="Upload">JSON file</label>
+        <input class="hawk-input" id="Upload" type="file" asp-for="Upload" accept=".json,application/json" />
+        <span asp-validation-for="Upload" class="text-xs text-red-600"></span>
+        <span class="text-xs text-zinc-500">Max 2 MB. Choosing a file shows a preview first; nothing is written until you confirm.</span>
+    </div>
+    <div>
+        <button class="hawk-btn hawk-btn-primary" type="submit">Preview import</button>
+    </div>
+</form>
+
+@if (Model.Plan is { } plan)
+{
+    <div class="hawk-card p-4 space-y-4" data-testid="import-preview">
+        <h2 class="font-semibold">Preview</h2>
+
+        @if (plan.ParseError is not null)
+        {
+            <div class="hawk-alert hawk-alert-error" role="alert"><div class="text-sm">@plan.ParseError</div></div>
+        }
+        else
+        {
+            <dl class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div><dt class="text-xs text-zinc-500">Monitors in file</dt><dd class="font-mono" data-testid="preview-total">@plan.Total</dd></div>
+                <div><dt class="text-xs text-zinc-500">Will be created</dt><dd class="font-mono" data-testid="preview-new">@plan.ValidCount</dd></div>
+                <div><dt class="text-xs text-zinc-500">Duplicates (skipped)</dt><dd class="font-mono" data-testid="preview-duplicates">@plan.DuplicateCount</dd></div>
+                <div><dt class="text-xs text-zinc-500">Invalid</dt><dd class="font-mono" data-testid="preview-invalid">@plan.InvalidCount</dd></div>
+            </dl>
+
+            <p class="text-sm" data-testid="preview-owners">
+                Owners: <b>@plan.OwnersMatched</b> matched an existing user by email, <b>@plan.OwnersAssignedToAdmin</b> will be assigned to you.
+            </p>
+
+            @if (plan.InvalidCount > 0)
+            {
+                <div>
+                    <div class="text-xs font-semibold text-zinc-600 mb-1">Invalid monitors (import is refused until fixed)</div>
+                    <ul class="text-xs list-disc pl-5 space-y-1" data-testid="preview-invalid-list">
+                        @foreach (var item in plan.Items.Where(i => i.Status == MonitorImportStatus.Invalid))
+                        {
+                            <li><span class="font-mono">@item.Name</span> - @item.Error</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            var pausedAtSource = plan.Items.Where(i => i.Status == MonitorImportStatus.Valid && i.PausedOrDisabledAtSource).ToList();
+            var duplicates = plan.Items.Where(i => i.Status == MonitorImportStatus.Duplicate).ToList();
+
+            @if (pausedAtSource.Count > 0)
+            {
+                <details>
+                    <summary class="text-xs font-semibold text-zinc-600 cursor-pointer">Paused or disabled at source (@pausedAtSource.Count)</summary>
+                    <ul class="text-xs list-disc pl-5 mt-1 space-y-1" data-testid="preview-paused-list">
+                        @foreach (var item in pausedAtSource)
+                        {
+                            <li><span class="font-mono">@item.Name</span></li>
+                        }
+                    </ul>
+                </details>
+            }
+
+            @if (duplicates.Count > 0)
+            {
+                <details>
+                    <summary class="text-xs font-semibold text-zinc-600 cursor-pointer">Duplicates that will be skipped (@duplicates.Count)</summary>
+                    <ul class="text-xs list-disc pl-5 mt-1 space-y-1" data-testid="preview-duplicate-list">
+                        @foreach (var item in duplicates)
+                        {
+                            <li><span class="font-mono">@item.Name</span> - @item.Url</li>
+                        }
+                    </ul>
+                </details>
+            }
+
+            @if (plan.CanImport)
+            {
+                <form method="post" asp-page-handler="Confirm" class="border-t border-zinc-100 pt-4 space-y-3">
+                    <input type="hidden" asp-for="Json" />
+                    <label class="flex items-start gap-2 text-sm">
+                        <input type="checkbox" asp-for="CreatePaused" class="mt-1" />
+                        <span>
+                            <b>Create all imported monitors paused</b>
+                            <span class="block text-xs text-zinc-500">Recommended for migrations so the new instance does not run checks or send alerts until you resume. When unchecked, the pause state from the source is kept.</span>
+                        </span>
+                    </label>
+                    <button class="hawk-btn hawk-btn-primary" type="submit">Confirm import</button>
+                </form>
+            }
+        }
+    </div>
+}

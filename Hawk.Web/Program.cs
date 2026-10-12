@@ -196,6 +196,7 @@ builder.Services.AddScoped<IMonitorRunner, MonitorRunner>();
 builder.Services.AddScoped<IMonitorExecutor, MonitorExecutor>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
 builder.Services.AddScoped<StatusCakeImporter>();
+builder.Services.AddScoped<MonitorTransferService>();
 
 var app = builder.Build();
 

@@ -8,6 +8,8 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ### Added
 
+- Admin-only bulk export of all monitors and dry-run bulk import (`/Admin/Transfer`): duplicate skipping (name + URL, case-insensitive), owner mapping by email, optional "create paused", all-or-nothing transaction.
+- Monitor JSON export format v2 (`exportedAtUtc`, optional per-monitor `ownerEmail`); v1 files remain importable (version 0.9.26).
 - Admin-only StatusCake JSON import for uptime tests and alert history.
 - Alerting policy setting: send email only after `N` consecutive failures (default: `1`).
 - E2E stability improvements:

@@ -395,6 +395,17 @@ Hawk supports exporting and importing monitor configurations as JSON. This is us
 - The imported monitor is validated using the same rules as the create form. Invalid fields are reported via flash messages.
 - The created monitor is assigned to the current user.
 
+### Export / Import All Monitors (Admin)
+
+Admins can move every monitor to another Hawk instance under **Account -> Export / Import** (`/Admin/Transfer`).
+
+- **Export all monitors** downloads `hawk-monitors-<timestamp>.json` with every monitor of every user (headers, match rules, alert settings and the owner's email). Run history, alert state and user settings are not included. The file can contain secrets such as auth headers, so store it safely.
+- **Import**: upload the file to see a dry-run preview (monitors in file, valid, invalid with errors, duplicates, owner mapping, paused/disabled at source). Nothing is written until you click **Confirm import**.
+- Monitors whose name and URL match an existing monitor (case-insensitive) are skipped, so re-running an import is safe.
+- Owners are matched by email; unmatched monitors belong to the importing admin.
+- **Create all imported monitors paused** is on by default, recommended for migrations so the new instance does not run checks or send alerts until you resume the monitors.
+- Import is all or nothing: if any non-duplicate monitor is invalid, nothing is imported. Files up to 2 MB are accepted; v1 files are still readable.
+
 ### JSON Schema (per monitor)
 
 ```json
@@ -445,6 +456,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.25` in the `.csproj` files.
+- Project version is set to `0.9.26` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.
