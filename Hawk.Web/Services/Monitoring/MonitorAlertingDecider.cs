@@ -20,6 +20,47 @@ public sealed record MonitorAlertDecision(
 /// </summary>
 public static class MonitorAlertingDecider
 {
+    /// <summary>
+    /// A previously completed run, used to seed alert state.
+    /// </summary>
+    public sealed record HistoricRun(DateTimeOffset StartedAt, bool Success, bool AlertSent);
+
+    /// <summary>
+    /// Seeds a new alert state from completed history (newest first). Callers must exclude the run being
+    /// evaluated and any non-completed (queued/running) runs, otherwise the in-flight run is double counted.
+    /// </summary>
+    public static MonitorAlertState SeedFromHistory(Guid monitorId, IReadOnlyList<HistoricRun> recentNewestFirst)
+    {
+        var failures = 0;
+        DateTimeOffset? openedAt = null;
+        foreach (var r in recentNewestFirst)
+        {
+            if (r.Success)
+                break;
+            failures++;
+            openedAt = r.StartedAt;
+        }
+
+        DateTimeOffset? lastAlertSentAt = null;
+        if (failures > 0)
+        {
+            lastAlertSentAt = recentNewestFirst
+                .Take(failures)
+                .Where(r => r.AlertSent)
+                .Select(r => (DateTimeOffset?)r.StartedAt)
+                .FirstOrDefault();
+        }
+
+        return new MonitorAlertState
+        {
+            MonitorId = monitorId,
+            ConsecutiveFailures = failures,
+            FailureIncidentOpenedAt = failures > 0 ? openedAt : null,
+            LastFailureAlertSentAt = lastAlertSentAt,
+            PendingRecoveryAlert = false,
+        };
+    }
+
     public static MonitorAlertDecision OnFailure(
         MonitorAlertState state,
         int threshold,

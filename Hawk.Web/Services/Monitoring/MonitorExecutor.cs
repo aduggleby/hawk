@@ -187,7 +187,7 @@ public sealed class MonitorExecutor(
                 $"hawk:monitor-alert:{monitor.Id}",
                 TimeSpan.FromSeconds(AlertLockTimeoutSeconds));
 
-            var state = await GetOrCreateAlertStateAsync(monitor.Id, cancellationToken);
+            var state = await GetOrCreateAlertStateAsync(monitor.Id, run.Id, cancellationToken);
 
             // Capture prior state for composing emails (duration, etc.).
             var incidentOpenedAt = state.FailureIncidentOpenedAt;
@@ -260,7 +260,7 @@ public sealed class MonitorExecutor(
                 }
             }
 
-            monitor.LastRunAt = started;
+            await SetLastRunAtAsync(monitor, started, cancellationToken);
             if (existingRun is null)
                 db.MonitorRuns.Add(run);
             await db.SaveChangesAsync(cancellationToken);
@@ -275,7 +275,7 @@ public sealed class MonitorExecutor(
 
         if (!saved)
         {
-            monitor.LastRunAt = started;
+            await SetLastRunAtAsync(monitor, started, cancellationToken);
             if (existingRun is null)
                 db.MonitorRuns.Add(run);
             await db.SaveChangesAsync(cancellationToken);
@@ -286,49 +286,38 @@ public sealed class MonitorExecutor(
         return new MonitorExecutionResult(monitor, req, res, run);
     }
 
-    private async Task<MonitorAlertState> GetOrCreateAlertStateAsync(Guid monitorId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Writes <c>LastRunAt</c> set-based so it can never conflict with the monitor's rowversion
+    /// (Edit page or scheduler updates). A conflict here would fail the save after an alert was sent and
+    /// make Hangfire retry (and re-send) the alert.
+    /// </summary>
+    private async Task SetLastRunAtAsync(MonitorEntity monitor, DateTimeOffset at, CancellationToken cancellationToken)
+    {
+        await db.Monitors
+            .Where(m => m.Id == monitor.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.LastRunAt, at), cancellationToken);
+
+        // Keep the in-memory entity in sync without marking it modified.
+        var entry = db.Entry(monitor);
+        entry.Property(m => m.LastRunAt).CurrentValue = at;
+        entry.Property(m => m.LastRunAt).IsModified = false;
+    }
+
+    private async Task<MonitorAlertState> GetOrCreateAlertStateAsync(Guid monitorId, Guid currentRunId, CancellationToken cancellationToken)
     {
         var state = await db.MonitorAlertStates.FirstOrDefaultAsync(x => x.MonitorId == monitorId, cancellationToken);
         if (state is not null)
             return state;
 
-        // Initialize best-effort from recent run history so upgrades don't change alert timing too much.
+        // Initialize best-effort from recent completed runs (excluding the run being evaluated).
         var recent = await db.MonitorRuns
-            .Where(r => r.MonitorId == monitorId)
+            .Where(r => r.MonitorId == monitorId && r.Id != currentRunId && r.State == "completed")
             .OrderByDescending(r => r.StartedAt)
             .Take(50)
-            .Select(r => new { r.StartedAt, r.Success, r.AlertSent })
+            .Select(r => new MonitorAlertingDecider.HistoricRun(r.StartedAt, r.Success, r.AlertSent))
             .ToListAsync(cancellationToken);
 
-        var failures = 0;
-        DateTimeOffset? openedAt = null;
-        foreach (var r in recent)
-        {
-            if (r.Success)
-                break;
-            failures++;
-            openedAt = r.StartedAt;
-        }
-
-        // last alert during the current failure streak (if any).
-        DateTimeOffset? lastAlertSentAt = null;
-        if (failures > 0)
-        {
-            lastAlertSentAt = recent
-                .Where(r => !r.Success && r.AlertSent)
-                .Select(r => (DateTimeOffset?)r.StartedAt)
-                .FirstOrDefault();
-        }
-
-        state = new MonitorAlertState
-        {
-            MonitorId = monitorId,
-            ConsecutiveFailures = failures,
-            FailureIncidentOpenedAt = failures > 0 ? openedAt : null,
-            LastFailureAlertSentAt = lastAlertSentAt,
-            PendingRecoveryAlert = false,
-        };
-
+        state = MonitorAlertingDecider.SeedFromHistory(monitorId, recent);
         db.MonitorAlertStates.Add(state);
         return state;
     }
@@ -379,7 +368,7 @@ public sealed class MonitorExecutor(
         Guid? runId)
     {
         var now = DateTimeOffset.UtcNow;
-        monitor.LastRunAt = now;
+        await SetLastRunAtAsync(monitor, now, cancellationToken);
 
         var existingRun = runId is null
             ? null
