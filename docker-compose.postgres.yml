@@ -33,7 +33,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "Production"
       Hawk__Database__Provider: "Postgres"
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=hawk;Username=hawk;Password=${POSTGRES_PASSWORD:-hawk-dev-password}"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=hawk;Username=hawk;Password=${POSTGRES_PASSWORD:-hawk-dev-password};GSS Encryption Mode=Disable"
       Hawk__DisableHttpsRedirection: "true"
       Hawk__SeedAdmin__Email: "ad@dualconsult.com"
       Hawk__SeedAdmin__Password: "Hawk!2026-Admin#1"

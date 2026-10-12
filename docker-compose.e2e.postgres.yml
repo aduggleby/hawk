@@ -40,7 +40,7 @@ services:
       ASPNETCORE_ENVIRONMENT: "Testing"
       ASPNETCORE_URLS: "http://0.0.0.0:8080"
       Hawk__Database__Provider: "Postgres"
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=hawk_e2e;Username=hawk;Password=${POSTGRES_PASSWORD:-hawk-e2e-password}"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=hawk_e2e;Username=hawk;Password=${POSTGRES_PASSWORD:-hawk-e2e-password};GSS Encryption Mode=Disable"
       Hawk__DisableHttpsRedirection: "true"
       Hawk__SeedAdmin__Email: "ad@dualconsult.com"
       Hawk__SeedAdmin__Password: "Hawk!2026-Admin#1"

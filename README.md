@@ -141,7 +141,7 @@ SQL Server is the default provider, so existing installs are unchanged. To use P
 | Setting | Value |
 | --- | --- |
 | `Hawk__Database__Provider` | `Postgres` (default: `SqlServer`; any other value stops startup with an error) |
-| `ConnectionStrings__DefaultConnection` | `Host=YOUR_PG_HOST;Port=5432;Database=hawk;Username=hawk;Password=...` |
+| `ConnectionStrings__DefaultConnection` | `Host=YOUR_PG_HOST;Port=5432;Database=hawk;Username=hawk;Password=...;GSS Encryption Mode=Disable` |
 
 The same connection string is used for EF Core (Identity + app data) and Hangfire. On startup Hawk applies its EF migrations (PostgreSQL has its own migration set) and Hangfire creates/upgrades its tables in the schema `hangfire`. The database user therefore needs permission to create tables (for example, own the database):
 
@@ -155,10 +155,12 @@ Docker:
 ```bash
 docker run --rm -p 17800:8080 \
   -e Hawk__Database__Provider=Postgres \
-  -e ConnectionStrings__DefaultConnection="Host=192.168.1.50;Port=5432;Database=hawk;Username=hawk;Password=CHANGE_ME" \
+  -e ConnectionStrings__DefaultConnection="Host=192.168.1.50;Port=5432;Database=hawk;Username=hawk;Password=CHANGE_ME;GSS Encryption Mode=Disable" \
   -e Hawk__DisableHttpsRedirection=true \
   ghcr.io/aduggleby/hawk:latest
 ```
+
+`GSS Encryption Mode=Disable` stops Npgsql from probing for Kerberos/GSSAPI on every connection; without it the container prints `Cannot load library libgssapi_krb5.so.2` to stderr at startup (harmless, but noisy). Leave it out only if you use Kerberos.
 
 Local stack on PostgreSQL: `docker compose -f docker-compose.postgres.yml up -d --build` (same ports as `docker-compose.yml`; run one stack at a time).
 
@@ -245,7 +247,9 @@ services:
       # URL check defaults (optional)
       - Hawk__UrlChecks__UserAgent=firefox
 
-    image: ghcr.io/aduggleby/hawk:latest
+    # Pin a version tag: with `:latest` and `pull_policy: always`, every app restart
+    # silently upgrades Hawk (including one-way database migrations).
+    image: ghcr.io/aduggleby/hawk:0.9.27
     ports:
       - '17800:8080'
     pull_policy: always
@@ -262,7 +266,14 @@ Values to replace:
 | `YOUR_RESEND_APIKEY` | Resend (or compatible gateway) API key |
 | `Hawk <hawk@yourdomain>` | Your verified sender address |
 
-Upgrading to `0.9.27` or later: the image now runs as a non-root user. The YAML above has no volumes and needs no change. If you added volumes or host paths, see [Container Image: Non-Root User](#container-image-non-root-user-and-read-only-root-filesystem).
+Pin the image to a version tag (as above) and change the tag deliberately to upgrade. With `:latest` and `pull_policy: always`, TrueNAS pulls and runs a new version on every app restart.
+
+Upgrading from `0.9.26` (or earlier) to `0.9.27`:
+
+- **The database migration is one-way.** `0.9.27` replaces the `RowVersion` columns with `ConcurrencyStamp` (`ReplaceRowVersionWithConcurrencyStamp`); `0.9.26` returns HTTP 500 against a migrated database. **Take a native SQL Server backup first**, for example `BACKUP DATABASE [Hawk] TO DISK = N'/var/opt/mssql/backup/Hawk-pre-0.9.27.bak' WITH COPY_ONLY, INIT;`.
+- **Rollback means restoring that backup** (`RESTORE DATABASE ... WITH REPLACE`) and pinning the image back to `:0.9.26`.
+- If you run `:latest` with `pull_policy: always`, pin `:0.9.26` until you have taken the backup and are ready to upgrade.
+- The image now runs as a non-root user. The YAML above has no volumes and needs no change. If you added volumes or host paths, see [Container Image: Non-Root User](#container-image-non-root-user-and-read-only-root-filesystem).
 
 ### 4) Expose The App (Reverse Proxy)
 
@@ -281,7 +292,7 @@ docker build -t ghcr.io/aduggleby/hawk:latest -f Hawk.Web/Dockerfile .
 docker push ghcr.io/aduggleby/hawk:latest
 ```
 
-Then set `image: ghcr.io/aduggleby/hawk:latest` in the YAML (or your own org if you publish a fork).
+Then set `image: ghcr.io/aduggleby/hawk:<version>` (a pinned tag such as `0.9.27`) in the YAML (or your own org if you publish a fork). Tag each pushed image with its version as well as `latest`.
 
 ## Admin User Management
 

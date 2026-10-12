@@ -76,7 +76,7 @@ done
 if [[ "$USE_POSTGRES" -eq 1 ]]; then
   COMPOSE_ARGS=(-f docker-compose.postgres.yml)
   DB_PROVIDER="Postgres"
-  DB_CONNECTION="Host=localhost;Port=${PG_PORT};Database=hawk;Username=hawk;Password=${POSTGRES_PASSWORD}"
+  DB_CONNECTION="Host=localhost;Port=${PG_PORT};Database=hawk;Username=hawk;Password=${POSTGRES_PASSWORD};GSS Encryption Mode=Disable"
 else
   COMPOSE_ARGS=(-f docker-compose.yml)
   DB_PROVIDER="SqlServer"

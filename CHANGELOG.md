@@ -14,6 +14,10 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ### Changed
 
+- **Upgrade note (0.9.27): the SQL Server migration `ReplaceRowVersionWithConcurrencyStamp` is one-way.** `0.9.26` returns HTTP 500 against a migrated database. Take a native `BACKUP DATABASE` before upgrading; rollback means restoring that backup. TrueNAS installs on `:latest` with `pull_policy: always` upgrade automatically on restart, so pin a version tag (e.g. `:0.9.26`) until ready. The README TrueNAS example now pins a version tag.
+- EF Core command logging (`Microsoft.EntityFrameworkCore.Database.Command`) is lowered to `Warning`, so scheduler tick queries no longer flood stdout; failed commands are still logged.
+- PostgreSQL connection string examples include `GSS Encryption Mode=Disable` (avoids the `libgssapi_krb5.so.2` stderr message at startup).
+- EF Core packages aligned on 10.0.4 (`Microsoft.VisualStudio.Web.CodeGeneration.Design` 10.0.2).
 - The container image runs as the non-root .NET user (UID `1654`). Installs without volumes are unaffected; volumes or host paths created by older images must be chowned to `1654:1654` (or run the container as root). Startup logs an error/warning when the DataProtection keys path is unreadable/unwritable.
 - Monitor and alert-state optimistic concurrency uses an app-managed `ConcurrencyStamp` instead of SQL Server `rowversion` (migration `ReplaceRowVersionWithConcurrencyStamp`).
 
@@ -25,6 +29,7 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 - Monitors and Admin users lists sort case-insensitively on every provider.
 - PostgreSQL: response bodies with NUL characters (binary content) no longer fail saving the run; NUL characters in monitor fields are rejected.
 - Delete page: deleting a monitor that was edited or paused concurrently no longer returns an error.
+- StatusCake alert import: runs and `LastRunAt` are saved in one transaction and `LastRunAt` is written set-based, so a concurrent edit or pause can no longer fail the import.
 - Alerts: a failed first failure-alert email (or a threshold lowered while failing) no longer drops the incident; the alert retries on each failing run until a send succeeds.
 - Bulk import: an unparsable regex is now a preview warning instead of refusing the import.
 - Alerts: seeding a new alert state no longer counts the in-flight "Run now" run (threshold 1 suppressed the alert, threshold 2 alerted one run early).

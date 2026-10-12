@@ -64,6 +64,8 @@ Admin users can manage other users via Admin -> Users (edit name/email/roles, re
   - PostgreSQL `text` rejects NUL (`\0`) characters (error 22021; SQL Server accepts them). Response snippets and request body snippets replace `\0` with U+FFFD (`UrlChecker.MakeSnippet`, `MonitorExecutor`); `MonitorForm.Validate` and bulk import reject `\0` in user input.
   - NULL ordering differs (SQL Server: first in ASC, PostgreSQL: last). Order nullable columns explicitly (see `MonitorScheduler`: `OrderBy(m => m.NextRunAt == null ? 0 : 1).ThenBy(m => m.NextRunAt)`).
 
+- Upgrades are one-way: `ReplaceRowVersionWithConcurrencyStamp` (0.9.27) drops `RowVersion`, and 0.9.26 fails against the migrated schema. Back up the SQL Server database (native `BACKUP DATABASE`) before upgrading; rollback = restore + older image tag.
+
 ### Migrations (two sets)
 
 Microsoft's "one context type per provider" approach (single assembly, separate folders):
@@ -71,6 +73,7 @@ Microsoft's "one context type per provider" approach (single assembly, separate 
 - SQL Server: `Hawk.Web/Data/Migrations/` bound to `ApplicationDbContext` (the existing history; never regenerate or rename these).
 - PostgreSQL: `Hawk.Web/Data/Migrations/Postgres/` bound to `PostgresApplicationDbContext` (starts with `InitialPostgres`).
 - EF matches migrations to the exact context type, so the sets never mix.
+- EF Core packages (`SqlServer`, `Design`, `Tools`, `InMemory`) and the `dotnet-ef` tool manifest are all 10.0.4 (Npgsql EF 10.0.3 requires EF Core 10.0.4). `Design` 10.0.4 needs `Microsoft.VisualStudio.Web.CodeGeneration.Design` 10.0.2+ (10.0.0 causes NU1608 Roslyn conflicts). Keep them on one patch level.
 - Design-time factories (`Hawk.Web/Data/DesignTimeDbContextFactories.cs`) create each context without starting the app or a database, independent of `Hawk:Database:Provider`.
 
 After every model change, add a migration for **both** providers (from the repo root, with `dotnet tool restore` done once):
@@ -117,7 +120,7 @@ Implemented v1 URL checker service in `Hawk.Web/Services/UrlCheckModels.cs`:
 Database-related tests:
 - `DatabaseSetupTests` — provider parsing/validation, per-provider context registration, disjoint migration sets, no pending model changes for either provider (no DB needed).
 - `ConcurrencyStampTests` — concurrency token configuration and semantics (EF InMemory).
-- `PostgresIntegrationTests` — real PostgreSQL 17 via Testcontainers (`postgres:17-alpine`, needs Docker; skipped via `SkippableFact` when Docker is unavailable): migrations, Edit page concurrency (no conflict after a scheduler tick + executor run, conflict after a concurrent edit or pause), scheduler NULL ordering, Hangfire.PostgreSql alert lock timeout, StatusCake case-insensitive dedupe + UTC timestamps, `/ready` check.
+- `PostgresIntegrationTests` — real PostgreSQL 17 via Testcontainers (`postgres:17-alpine`, needs Docker; skipped via `SkippableFact` when Docker is unavailable, **failed** instead when `HAWK_REQUIRE_POSTGRES_TESTS=1` is set — use that in CI/release checks: `HAWK_REQUIRE_POSTGRES_TESTS=1 dotnet test Hawk.sln -v:m`): migrations, Edit page concurrency (no conflict after a scheduler tick + executor run, conflict after a concurrent edit or pause), scheduler NULL ordering, Hangfire.PostgreSql alert lock timeout, StatusCake case-insensitive dedupe + UTC timestamps, `/ready` check.
 
 ## E2E (Playwright)
 
@@ -321,7 +324,8 @@ Alert recipient resolution (in order):
   - Monitor: create/import/StatusCake import (entity default), Edit save, pause/resume (index "Pause all"/"Resume all"/batch, set in the same `ExecuteUpdateAsync`).
   - MonitorAlertState: `MonitorExecutor` renews it when a run actually changed the state (checked via the change tracker).
   - Never on `NextRunAt`/`LastRunAt` bookkeeping (scheduler and executor write those set-based).
-  - The Delete page deletes set-based (`ExecuteDeleteAsync`; children cascade in the database), so it never fails on a stamp change. The StatusCake alert import still updates `LastRunAt` through the tracked entity (it must work with InMemory tests), so an edit during an import makes that import fail with a concurrency error; re-run it (runs are deduped).
+  - The Delete page deletes set-based (`ExecuteDeleteAsync`; children cascade in the database), so it never fails on a stamp change.
+  - The StatusCake alert import saves runs and then advances `LastRunAt` set-based in one transaction (`StatusCakeImporter.SaveAlertImportAsync`); the InMemory provider (unit tests) falls back to a tracked update.
 - `MonitorForm.ConcurrencyStamp` carries the token through the Edit form as a hidden field; `Edit.cshtml.cs` sets it as the original value, renews it, and catches `DbUpdateConcurrencyException` with a "changed by someone else" flash message.
 
 ## Monitors Index — Failing Group
@@ -426,6 +430,7 @@ Implementation:
 - Serilog file sink rolls daily to `logs/hawk-.log` with `retainedFileCountLimit: 30`.
 - `Hawk:Logging:File:Enabled` (env `Hawk__Logging__File__Enabled`, default `true`): when `false`, no file sink is added (console only). Used for read-only root filesystems (app server).
 - Startup logs `Database provider: ... File logging: ...`.
+- `Microsoft.EntityFrameworkCore.Database.Command` is at `Warning` in `appsettings.json` (Serilog `MinimumLevel.Override`), so per-tick scheduler queries are not logged; failed commands still log at `Error`.
 
 ## DataProtection Keys (Docker)
 
@@ -492,7 +497,7 @@ Service endpoints on the VM:
 
 - Database:
   - `Hawk__Database__Provider` (`SqlServer` default, or `Postgres`; anything else fails startup)
-  - `ConnectionStrings__DefaultConnection` (used by EF Core + Identity + Hangfire; SQL Server or Npgsql syntax to match the provider)
+  - `ConnectionStrings__DefaultConnection` (used by EF Core + Identity + Hangfire; SQL Server or Npgsql syntax to match the provider). For PostgreSQL append `GSS Encryption Mode=Disable` (otherwise Npgsql prints `Cannot load library libgssapi_krb5.so.2` at startup; the image has no Kerberos libs).
   - `SA_PASSWORD` (SQL Server compose), `POSTGRES_PASSWORD` (PostgreSQL compose)
 - Logging / container:
   - `Hawk__Logging__File__Enabled` (default true; false = console only, for read-only root filesystems)
