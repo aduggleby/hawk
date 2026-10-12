@@ -63,6 +63,23 @@ public class MonitorFormTests
     }
 
     [Fact]
+    public void Validate_Rejects_NulCharacters()
+    {
+        var env = new FakeEnv("Production");
+        var form = new MonitorForm
+        {
+            Name = "x",
+            Url = "https://example.com",
+            Method = "POST",
+            ContentType = "text/plain",
+            Body = "a\0b",
+            IntervalSeconds = 60
+        };
+        var errors = form.Validate(env).ToArray();
+        Assert.Contains(errors, e => e.ErrorMessage?.Contains("NUL", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public void Validate_Rejects_InvalidAlertThreshold()
     {
         var env = new FakeEnv("Production");

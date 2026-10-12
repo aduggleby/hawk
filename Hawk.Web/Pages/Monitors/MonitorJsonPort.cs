@@ -301,6 +301,8 @@ public static class MonitorJsonPort
                 return $"Header name '{name[..20]}...' is longer than 200 characters.";
             if ((header!.Value ?? string.Empty).Trim().Length > 2000)
                 return $"Header '{name}' value is longer than 2000 characters.";
+            if (name.Contains('\0') || (header.Value ?? string.Empty).Contains('\0'))
+                return $"Header '{name.Replace('\0', ' ')}' contains NUL characters.";
         }
 
         foreach (var rule in model.MatchRules)
@@ -310,6 +312,8 @@ public static class MonitorJsonPort
                 continue;
             if (pattern.Length > 2000)
                 return "Match rule pattern is longer than 2000 characters.";
+            if (pattern.Contains('\0'))
+                return "Match rule pattern contains NUL characters.";
         }
 
         return null;

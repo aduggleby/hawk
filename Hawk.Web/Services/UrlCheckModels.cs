@@ -242,7 +242,8 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
     {
         if (string.IsNullOrWhiteSpace(bodyText))
             return null;
-        var trimmed = bodyText.Trim();
+        // Binary bodies decode with NUL characters, which PostgreSQL text columns reject.
+        var trimmed = bodyText.Trim().Replace('\0', '\uFFFD');
         return trimmed.Length <= 500 ? trimmed : trimmed[..500];
     }
 

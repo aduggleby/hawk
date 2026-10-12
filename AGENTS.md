@@ -61,6 +61,7 @@ Admin users can manage other users via Admin -> Users (edit name/email/roles, re
   - No column types or provider-specific SQL in `OnModelCreating`; no raw SQL anywhere (`scripts/` diagnostics are SQL Server only and not used by the app).
   - String comparisons in LINQ: SQL Server's default collation is case-insensitive, PostgreSQL's is case-sensitive. For user-facing sorting/dedupe either sort/compare in memory with `StringComparer.OrdinalIgnoreCase` or use `.ToLower()` on both sides. Identity lookups use the normalized columns and are fine.
   - `DateTimeOffset` values must be UTC (offset 0); Npgsql rejects other offsets for `timestamptz`. Use `DateTimeOffset.UtcNow`; normalise parsed input with `ToUniversalTime()` (see `StatusCakeImporter`).
+  - PostgreSQL `text` rejects NUL (`\0`) characters (error 22021; SQL Server accepts them). Response snippets and request body snippets replace `\0` with U+FFFD (`UrlChecker.MakeSnippet`, `MonitorExecutor`); `MonitorForm.Validate` and bulk import reject `\0` in user input.
   - NULL ordering differs (SQL Server: first in ASC, PostgreSQL: last). Order nullable columns explicitly (see `MonitorScheduler`: `OrderBy(m => m.NextRunAt == null ? 0 : 1).ThenBy(m => m.NextRunAt)`).
 
 ### Migrations (two sets)
@@ -320,6 +321,7 @@ Alert recipient resolution (in order):
   - Monitor: create/import/StatusCake import (entity default), Edit save, pause/resume (index "Pause all"/"Resume all"/batch, set in the same `ExecuteUpdateAsync`).
   - MonitorAlertState: `MonitorExecutor` renews it when a run actually changed the state (checked via the change tracker).
   - Never on `NextRunAt`/`LastRunAt` bookkeeping (scheduler and executor write those set-based).
+  - The Delete page deletes set-based (`ExecuteDeleteAsync`; children cascade in the database), so it never fails on a stamp change. The StatusCake alert import still updates `LastRunAt` through the tracked entity (it must work with InMemory tests), so an edit during an import makes that import fail with a concurrency error; re-run it (runs are deduped).
 - `MonitorForm.ConcurrencyStamp` carries the token through the Edit form as a hidden field; `Edit.cshtml.cs` sets it as the original value, renews it, and catches `DbUpdateConcurrencyException` with a "changed by someone else" flash message.
 
 ## Monitors Index — Failing Group
@@ -477,6 +479,10 @@ Commands (high level):
 - Copy repo to `/opt/hawk`.
 - Create `/opt/hawk/.env` with `SA_PASSWORD` and email env vars.
 - Start services: `sudo docker compose up -d --build`.
+
+Upgrading the VM to `0.9.27`+ (non-root image): the `hawk_dpkeys` volume and `./logs` bind mount were written by root. Before (or right after) `docker compose up -d --build`, run:
+`sudo docker run --rm -v hawk_hawk_dpkeys:/v alpine chown -R 1654:1654 /v && sudo chown -R 1654:1654 /opt/hawk/logs`
+(otherwise logins fail and file logging silently stops). The same applies to the local `docker-compose.yml` stack (`./logs` is owned by your user).
 
 Service endpoints on the VM:
 - Hawk web: `http://192.168.1.127:17800`

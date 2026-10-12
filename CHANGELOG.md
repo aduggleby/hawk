@@ -23,7 +23,8 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 - StatusCake import: alert timestamps with a non-UTC offset are stored as UTC (timestamps without offset are read as UTC); duplicate detection by name is case-insensitive on every provider.
 - Scheduler: monitors that were never scheduled are picked first on every provider (PostgreSQL sorts NULL last).
 - Monitors and Admin users lists sort case-insensitively on every provider.
-
+- PostgreSQL: response bodies with NUL characters (binary content) no longer fail saving the run; NUL characters in monitor fields are rejected.
+- Delete page: deleting a monitor that was edited or paused concurrently no longer returns an error.
 - Alerts: a failed first failure-alert email (or a threshold lowered while failing) no longer drops the incident; the alert retries on each failing run until a send succeeds.
 - Bulk import: an unparsable regex is now a preview warning instead of refusing the import.
 - Alerts: seeding a new alert state no longer counts the in-flight "Run now" run (threshold 1 suppressed the alert, threshold 2 alerted one run early).

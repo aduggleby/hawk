@@ -269,6 +269,59 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
     }
 
     [SkippableFact]
+    public async Task Run_with_binary_response_body_is_saved()
+    {
+        await using var app = await CreateAppAsync();
+        var id = await AddMonitorAsync(app);
+
+        // PostgreSQL rejects NUL in text; the executor must sanitise the snippet or the run (and alert state) is lost.
+        var result = await ExecuteAsync(app, id, HttpStatusCode.InternalServerError, "PNG\0\0binary");
+        Assert.NotNull(result);
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var run = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorRuns.AsNoTracking().SingleAsync(r => r.MonitorId == id);
+        Assert.Equal("completed", run.State);
+        Assert.DoesNotContain('\0', run.ResponseSnippet!);
+    }
+
+    [SkippableFact]
+    public async Task Monitors_index_loads_sorted_with_failing_group_and_delete_works()
+    {
+        await using var app = await CreateAppAsync();
+        Guid failingId;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Monitors.AddRange(NewMonitor("beta", null), NewMonitor("Alpha", null), NewMonitor("charlie", null));
+            await db.SaveChangesAsync();
+            failingId = await db.Monitors.Where(m => m.Name == "beta").Select(m => m.Id).SingleAsync();
+        }
+        await ExecuteAsync(app, failingId, HttpStatusCode.OK);
+        await ExecuteAsync(app, failingId, HttpStatusCode.InternalServerError);
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var index = new IndexModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), new RecordingJobClient());
+            InitPage(index);
+            await index.OnGetAsync(CancellationToken.None);
+
+            Assert.Equal(["Alpha", "beta", "charlie"], index.Monitors.Select(m => m.Name));
+            Assert.Equal(failingId, Assert.Single(index.FailingMonitors).Id);
+        }
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var delete = new DeleteModel(db);
+            InitPage(delete);
+            Assert.IsType<RedirectToPageResult>(await delete.OnPostAsync(failingId, CancellationToken.None));
+            Assert.False(await db.Monitors.AnyAsync(m => m.Id == failingId));
+            Assert.False(await db.MonitorRuns.AnyAsync(r => r.MonitorId == failingId));
+            Assert.False(await db.MonitorAlertStates.AnyAsync(s => s.MonitorId == failingId));
+        }
+    }
+
+    [SkippableFact]
     public async Task Ready_check_reports_database_reachability()
     {
         await using var app = await CreateAppAsync();
@@ -376,12 +429,12 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         return jobs;
     }
 
-    private static async Task<MonitorExecutionResult?> ExecuteAsync(TestApp app, Guid id, HttpStatusCode status)
+    private static async Task<MonitorExecutionResult?> ExecuteAsync(TestApp app, Guid id, HttpStatusCode status, string snippet = "ok")
     {
         await using var scope = app.Services.CreateAsyncScope();
         var executor = new MonitorExecutor(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new FixedUrlChecker(status),
+            new FixedUrlChecker(status, snippet),
             new NoopEmailSender(),
             app.Services.GetRequiredService<JobStorage>(),
             scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>(),
@@ -433,11 +486,11 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
             .ToList();
     }
 
-    private sealed class FixedUrlChecker(HttpStatusCode status) : IUrlChecker
+    private sealed class FixedUrlChecker(HttpStatusCode status, string snippet) : IUrlChecker
     {
         public Task<UrlCheckResult> CheckAsync(UrlCheckRequest request, CancellationToken cancellationToken) =>
             Task.FromResult(new UrlCheckResult(
-                (int)status < 400, status, TimeSpan.FromMilliseconds(5), null, [], "ok",
+                (int)status < 400, status, TimeSpan.FromMilliseconds(5), null, [], snippet,
                 new Dictionary<string, string>(), "text/plain", 2));
     }
 

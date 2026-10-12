@@ -43,7 +43,8 @@ COPY --from=build /app/publish .
 
 # Writable directories for the non-root user:
 # - /app/logs: Serilog file sink (volume mounted in docker-compose).
-# - /var/lib/hawk/dpkeys: default DataProtection keys path in containers; /var/lib/hawk/keys: app-server template path.
+# - /var/lib/hawk/dpkeys: default DataProtection keys path in containers.
+# - /var/lib/hawk/keys: keys path used by the DualConsult app-server template (Hawk__DataProtection__KeysPath).
 # Fresh named volumes inherit this ownership. Volumes/host paths created by older (root) images must be chowned to 1654.
 RUN mkdir -p /app/logs /var/lib/hawk/dpkeys /var/lib/hawk/keys \
     && chown -R $APP_UID:$APP_UID /app/logs /var/lib/hawk

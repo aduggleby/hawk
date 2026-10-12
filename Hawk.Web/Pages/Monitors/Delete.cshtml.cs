@@ -38,12 +38,11 @@ public class DeleteModel(ApplicationDbContext db) : PageModel
     /// </summary>
     public async Task<IActionResult> OnPostAsync(Guid id, CancellationToken cancellationToken)
     {
-        var m = await db.Monitors.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (m is null)
+        // Set-based delete (children cascade in the database): no concurrency-stamp check, so a concurrent
+        // edit or pause cannot turn a confirmed delete into an error.
+        var deleted = await db.Monitors.Where(x => x.Id == id).ExecuteDeleteAsync(cancellationToken);
+        if (deleted == 0)
             return NotFound();
-
-        db.Monitors.Remove(m);
-        await db.SaveChangesAsync(cancellationToken);
 
         return RedirectToPage("/Monitors/Index");
     }

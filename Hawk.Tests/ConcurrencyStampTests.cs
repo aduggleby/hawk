@@ -48,13 +48,14 @@ public sealed class ConcurrencyStampTests
     }
 
     [Fact]
-    public async Task Edit_succeeds_after_scheduler_and_executor_bookkeeping()
+    public async Task Edit_succeeds_after_a_bookkeeping_update_that_keeps_the_stamp()
     {
         var dbName = Guid.NewGuid().ToString("n");
         var id = await SeedMonitorAsync(dbName);
         var formStamp = await ReadStampAsync(dbName, id);
 
-        // A run finishes while the Edit form is open: NextRunAt/LastRunAt change, the stamp does not.
+        // Simulates bookkeeping (NextRunAt/LastRunAt) that leaves the stamp alone. The real scheduler/executor path
+        // (set-based writes) is covered by PostgresIntegrationTests.Edit_does_not_conflict_with_a_run_that_finished_while_the_form_was_open.
         await using (var worker = CreateDb(dbName))
         {
             var m = await worker.Monitors.SingleAsync(x => x.Id == id);

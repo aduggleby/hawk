@@ -162,7 +162,8 @@ public sealed class MonitorExecutor(
         run.StatusCode = res.StatusCode is null ? null : (int)res.StatusCode.Value;
         run.Success = success;
         run.ErrorMessage = success ? null : BuildFailureMessage(res.StatusCode, statusIsSuccess, res.MatchResults);
-        run.ResponseSnippet = res.ResponseBodySnippet;
+        // PostgreSQL text columns reject NUL characters (binary bodies); SQL Server accepts them.
+        run.ResponseSnippet = res.ResponseBodySnippet?.Replace('\0', '\uFFFD');
         run.ResponseHeadersJson = SerializeHeaders(res.ResponseHeaders);
         run.ResponseContentType = res.ResponseContentType;
         run.ResponseContentLength = res.ResponseContentLength;
@@ -614,6 +615,8 @@ public sealed class MonitorExecutor(
     {
         if (string.IsNullOrWhiteSpace(value))
             return null;
+        // PostgreSQL text columns reject NUL characters.
+        value = value.Replace('\0', '\uFFFD');
         return value.Length <= maxLength ? value : value[..maxLength];
     }
 

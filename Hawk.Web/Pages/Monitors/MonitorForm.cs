@@ -158,6 +158,11 @@ public sealed class MonitorForm
                 yield return new ValidationResult($"Match rule {i + 1}: invalid regular expression ({regexError}).", [$"{nameof(MatchPatterns)}[{i}]"]);
         }
 
+        // PostgreSQL text columns reject NUL characters (SQL Server accepts them); refuse them on every provider.
+        string?[] texts = [Name, Url, Method, ContentType, Body, AlertEmailOverride, AllowedStatusCodes, .. HeaderNames, .. HeaderValues, .. MatchPatterns];
+        if (texts.Any(t => t is not null && t.Contains('\0')))
+            yield return new ValidationResult("Fields must not contain NUL characters.", [string.Empty]);
+
         var method = (Method ?? string.Empty).Trim().ToUpperInvariant();
         if (method is not ("GET" or "POST"))
             yield return new ValidationResult("Method must be GET or POST.", [nameof(Method)]);
