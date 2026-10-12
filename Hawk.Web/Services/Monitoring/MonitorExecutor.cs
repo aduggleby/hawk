@@ -288,8 +288,8 @@ public sealed class MonitorExecutor(
 
     /// <summary>
     /// Writes <c>LastRunAt</c> set-based so it can never conflict with the monitor's rowversion
-    /// (Edit page or scheduler updates). A conflict here would fail the save after an alert was sent and
-    /// make Hangfire retry (and re-send) the alert.
+    /// (Edit page or scheduler updates). A conflict here would fail the final save after an alert was sent,
+    /// losing the run record and the alert-state update (jobs are not retried: <c>[AutomaticRetry(Attempts = 0)]</c>).
     /// </summary>
     private async Task SetLastRunAtAsync(MonitorEntity monitor, DateTimeOffset at, CancellationToken cancellationToken)
     {
@@ -299,8 +299,10 @@ public sealed class MonitorExecutor(
 
         // Keep the in-memory entity in sync without marking it modified.
         var entry = db.Entry(monitor);
-        entry.Property(m => m.LastRunAt).CurrentValue = at;
-        entry.Property(m => m.LastRunAt).IsModified = false;
+        var property = entry.Property(m => m.LastRunAt);
+        property.CurrentValue = at;
+        property.OriginalValue = at;
+        property.IsModified = false;
     }
 
     private async Task<MonitorAlertState> GetOrCreateAlertStateAsync(Guid monitorId, Guid currentRunId, CancellationToken cancellationToken)

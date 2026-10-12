@@ -90,4 +90,37 @@ public sealed class MonitorAlertingDeciderTests
         Assert.Null(state.FailureIncidentOpenedAt);
         Assert.Null(state.LastFailureAlertSentAt);
     }
+
+    [Fact]
+    public void OnFailure_retries_failure_alert_until_first_send_succeeds_then_only_reminders()
+    {
+        var state = new MonitorAlertState { MonitorId = Guid.NewGuid() };
+        var now = new DateTimeOffset(2026, 02, 12, 12, 00, 00, TimeSpan.Zero);
+        var repeatEvery = TimeSpan.FromHours(24);
+
+        // Threshold reached; the executor's send fails, so LastFailureAlertSentAt stays null.
+        Assert.Equal(MonitorAlertKind.Failure, MonitorAlertingDecider.OnFailure(state, 1, now, repeatEvery).Kind);
+
+        // Next run retries, and this time the send succeeds.
+        var retry = MonitorAlertingDecider.OnFailure(state, 1, now.AddMinutes(1), repeatEvery);
+        Assert.Equal(MonitorAlertKind.Failure, retry.Kind);
+        state.LastFailureAlertSentAt = now.AddMinutes(1);
+
+        // No further failure alerts; reminder keeps its cadence.
+        Assert.Equal(MonitorAlertKind.None, MonitorAlertingDecider.OnFailure(state, 1, now.AddMinutes(2), repeatEvery).Kind);
+        Assert.Equal(MonitorAlertKind.FailureReminder, MonitorAlertingDecider.OnFailure(state, 1, now.AddHours(25), repeatEvery).Kind);
+
+        // Recovery still works after the delayed first alert.
+        Assert.Equal(MonitorAlertKind.Recovered, MonitorAlertingDecider.OnSuccess(state, 1, now.AddHours(26)).Kind);
+    }
+
+    [Fact]
+    public void OnFailure_threshold_lowered_below_current_count_alerts_on_next_failure()
+    {
+        var state = new MonitorAlertState { MonitorId = Guid.NewGuid(), ConsecutiveFailures = 5, FailureIncidentOpenedAt = DateTimeOffset.UtcNow };
+        var now = new DateTimeOffset(2026, 02, 12, 12, 00, 00, TimeSpan.Zero);
+
+        var d = MonitorAlertingDecider.OnFailure(state, threshold: 2, nowUtc: now, repeatFailureAlertEvery: TimeSpan.FromHours(24));
+        Assert.Equal(MonitorAlertKind.Failure, d.Kind);
+    }
 }

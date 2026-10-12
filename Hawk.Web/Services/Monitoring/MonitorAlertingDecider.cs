@@ -89,6 +89,12 @@ public static class MonitorAlertingDecider
         if (state.ConsecutiveFailures == threshold)
             return new MonitorAlertDecision(MonitorAlertKind.Failure, $"Reached threshold {threshold}.");
 
+        // At/over threshold with no failure alert delivered for this incident (first send failed, or the
+        // threshold was lowered while failing): keep retrying the failure alert until a send succeeds.
+        // After a successful send LastFailureAlertSentAt is set, so this never repeats; reminders take over.
+        if (state.ConsecutiveFailures > threshold && state.LastFailureAlertSentAt is null)
+            return new MonitorAlertDecision(MonitorAlertKind.Failure, $"No failure alert delivered yet (failures={state.ConsecutiveFailures}, threshold={threshold}).");
+
         if (state.ConsecutiveFailures > threshold &&
             state.LastFailureAlertSentAt is not null &&
             nowUtc - state.LastFailureAlertSentAt.Value >= repeatFailureAlertEvery)
