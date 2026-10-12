@@ -8,6 +8,7 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ### Added
 
+- File logging location and retention are configurable (version 0.9.28): `Hawk__Logging__File__Path` (default `logs`) and `Hawk__Logging__File__RetainedDays` (default 30).
 - PostgreSQL support (version 0.9.27): `Hawk__Database__Provider=Postgres` (SQL Server stays the default; unknown values fail startup). Separate PostgreSQL migration set, Hangfire.PostgreSql storage, `docker-compose.postgres.yml` and `docker-compose.e2e.postgres.yml`, `./run-dev.sh --postgres`.
 - Health endpoints: `GET /live` (process up) and `GET /ready` (database reachable, `503` otherwise).
 - `Hawk__Logging__File__Enabled` (default `true`): set to `false` for console-only logging, e.g. with a read-only root filesystem.
@@ -23,6 +24,7 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ### Fixed
 
+- Email confirmation and password reset links no longer fail with "Error confirming your email" (version 0.9.28): generated query strings were lowercased, corrupting the case-sensitive token.
 - Edit page: no more spurious "changed by someone else" error when a scheduled run finished while the form was open; only real concurrent edits (or pause/resume) conflict.
 - StatusCake import: alert timestamps with a non-UTC offset are stored as UTC (timestamps without offset are read as UTC); duplicate detection by name is case-insensitive on every provider.
 - Scheduler: monitors that were never scheduled are picked first on every provider (PostgreSQL sorts NULL last).

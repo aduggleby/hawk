@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.27`
+- Version: `0.9.28`
 
 ## Ports
 
@@ -179,7 +179,7 @@ Implemented architecture:
 - The web container:
   - Multi-stage Docker build: `node:20-alpine` stage compiles Tailwind CSS, then .NET SDK stage builds the app
   - Runs as the non-root .NET user (`USER $APP_UID`, UID 1654). The image creates and chowns `/app/logs`, `/var/lib/hawk/dpkeys` and `/var/lib/hawk/keys`, so installs without volumes and fresh named volumes work. Volumes/host paths created by older (root) images must be `chown -R 1654:1654` (startup logs an error if key files are unreadable, a warning if the keys directory is not writable).
-  - Read-only root filesystem: supported with `--read-only --tmpfs /tmp`, `Hawk__Logging__File__Enabled=false` and a writable DataProtection keys volume. Nothing else is written at runtime (Tailwind is built into the image; large form uploads buffer to `/tmp`).
+  - Read-only root filesystem: supported with `--read-only --tmpfs /tmp`, a writable DataProtection keys volume, and either `Hawk__Logging__File__Enabled=false` or `Hawk__Logging__File__Path` on a writable volume (the app server uses `/var/log/hawk`). Nothing else is written at runtime (Tailwind is built into the image; large form uploads buffer to `/tmp`).
   - Applies EF migrations on startup
   - Runs Hangfire server and dashboard (dashboard is Admin-only)
 
@@ -427,8 +427,10 @@ Implementation notes:
 - Ensure logs write to a mounted folder in Docker.
 
 Implementation:
-- Serilog file sink rolls daily to `logs/hawk-.log` with `retainedFileCountLimit: 30`.
-- `Hawk:Logging:File:Enabled` (env `Hawk__Logging__File__Enabled`, default `true`): when `false`, no file sink is added (console only). Used for read-only root filesystems (app server).
+- Serilog file sink rolls daily to `<Path>/hawk-YYYYMMDD.log`; one file per day, so `retainedFileCountLimit` = retention in days.
+- `Hawk:Logging:File:Enabled` (env `Hawk__Logging__File__Enabled`, default `true`): when `false`, no file sink is added (console only).
+- `Hawk:Logging:File:Path` (default `logs`, i.e. `/app/logs` in the image) and `Hawk:Logging:File:RetainedDays` (default 30, clamped 1–3650).
+- App server (prod1): per-app log directory convention, `Path=/var/log/hawk`, `RetainedDays=90`, bind-mounted from `/srv/dualconsult/data/hawk/logs` (see the infra repo's `templates/app/README.md`).
 - Startup logs `Database provider: ... File logging: ...`.
 - `Microsoft.EntityFrameworkCore.Database.Command` is at `Warning` in `appsettings.json` (Serilog `MinimumLevel.Override`), so per-tick scheduler queries are not logged; failed commands still log at `Error`.
 
@@ -500,7 +502,8 @@ Service endpoints on the VM:
   - `ConnectionStrings__DefaultConnection` (used by EF Core + Identity + Hangfire; SQL Server or Npgsql syntax to match the provider). For PostgreSQL append `GSS Encryption Mode=Disable` (otherwise Npgsql prints `Cannot load library libgssapi_krb5.so.2` at startup; the image has no Kerberos libs).
   - `SA_PASSWORD` (SQL Server compose), `POSTGRES_PASSWORD` (PostgreSQL compose)
 - Logging / container:
-  - `Hawk__Logging__File__Enabled` (default true; false = console only, for read-only root filesystems)
+  - `Hawk__Logging__File__Enabled` (default true; false = console only)
+  - `Hawk__Logging__File__Path` (default `logs`), `Hawk__Logging__File__RetainedDays` (default 30)
   - `Hawk__DataProtection__KeysPath` (default `/var/lib/hawk/dpkeys` in containers)
 - Health: `GET /live` (no DB), `GET /ready` (DB reachable, else 503)
 - Scheduler:

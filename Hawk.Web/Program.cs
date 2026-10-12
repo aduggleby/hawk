@@ -34,6 +34,8 @@ StartupBanner.Write();
 var builder = WebApplication.CreateBuilder(args);
 
 var fileLoggingEnabled = builder.Configuration.GetValue("Hawk:Logging:File:Enabled", true);
+var fileLoggingPath = builder.Configuration.GetValue("Hawk:Logging:File:Path", "logs")!;
+var fileLoggingRetainedDays = Math.Clamp(builder.Configuration.GetValue("Hawk:Logging:File:RetainedDays", 30), 1, 3650);
 builder.Host.UseSerilog((ctx, services, cfg) =>
 {
     cfg.ReadFrom.Configuration(ctx.Configuration)
@@ -41,13 +43,13 @@ builder.Host.UseSerilog((ctx, services, cfg) =>
         .WriteTo.Console();
 
     // Branch: rolling file logs (default). Disabled on read-only root filesystems where only stdout is collected.
-    // retainedFileCountLimit=30 approximates "delete logs older than 30 days" when rolling daily.
+    // One file per day, so retainedFileCountLimit approximates "delete logs older than N days".
     if (fileLoggingEnabled)
     {
         cfg.WriteTo.File(
-            path: Path.Combine("logs", "hawk-.log"),
+            path: Path.Combine(fileLoggingPath, "hawk-.log"),
             rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: 30,
+            retainedFileCountLimit: fileLoggingRetainedDays,
             shared: true,
             flushToDiskInterval: TimeSpan.FromSeconds(2));
     }
@@ -197,7 +199,7 @@ builder.Services.AddScoped<MonitorTransferService>();
 
 var app = builder.Build();
 
-app.Logger.LogInformation("Database provider: {DatabaseProvider}. File logging: {FileLogging}.", databaseProvider, fileLoggingEnabled);
+app.Logger.LogInformation("Database provider: {DatabaseProvider}. File logging: {FileLogging} ({FileLoggingPath}, {FileLoggingRetainedDays} days).", databaseProvider, fileLoggingEnabled, Path.GetFullPath(fileLoggingPath), fileLoggingRetainedDays);
 if (persistedKeysPath is not null)
 {
     // Typical after upgrading to the non-root image with a volume/host path created by an older (root) image.

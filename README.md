@@ -194,7 +194,7 @@ Since `0.9.27` the image runs as the non-root .NET user (`app`, UID/GID `1654`) 
   ```
 
   Alternatively keep the old behaviour by running the container as root (`user: "0:0"` in compose).
-- File logging: `Hawk__Logging__File__Enabled` (default `true`) writes rolling logs to `/app/logs`. Set it to `false` for console-only logging, for example with a read-only root filesystem (`--read-only --tmpfs /tmp`). The only other write location is the DataProtection keys path (`Hawk__DataProtection__KeysPath`, default `/var/lib/hawk/dpkeys`), which must be a writable volume.
+- File logging: `Hawk__Logging__File__Enabled` (default `true`) writes daily rolling logs (`hawk-YYYYMMDD.log`) to `Hawk__Logging__File__Path` (default `/app/logs`) and keeps `Hawk__Logging__File__RetainedDays` files (default `30`). Set it to `false` for console-only logging, or point the path at a writable volume when using a read-only root filesystem (`--read-only --tmpfs /tmp`). The only other write location is the DataProtection keys path (`Hawk__DataProtection__KeysPath`, default `/var/lib/hawk/dpkeys`), which must be a writable volume.
 
 ## Install On TrueNAS SCALE (Install via YAML)
 
