@@ -1,6 +1,7 @@
 // <file>
 // <summary>
-// Integration tests against a real PostgreSQL 17 (Testcontainers, needs Docker; skipped when Docker is unavailable).
+// Integration tests against a real PostgreSQL 17 (Testcontainers, needs Docker; skipped when Docker is unavailable,
+// failed instead when HAWK_REQUIRE_POSTGRES_TESTS=1).
 // Each test gets its own database, migrated with the PostgreSQL migration set exactly as at startup.
 // Covers behaviour that the InMemory provider cannot: ExecuteUpdate/ExecuteDelete, transactions, the Edit page
 // concurrency flow, NULL ordering in the scheduler, Hangfire.PostgreSql distributed locks, case-insensitive
@@ -255,6 +256,8 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         }
         Assert.Equal(1, await db.Monitors.CountAsync());
 
+        var stampBefore = await db.Monitors.Select(m => m.ConcurrencyStamp).SingleAsync();
+
         // Non-UTC offset in the source: Npgsql would reject it for timestamptz without normalisation.
         await using (var ms = new MemoryStream(Encoding.UTF8.GetBytes("""
             { "test_id": "abc1", "data": [ { "status": "down", "status_code": 503, "triggered_at": "2026-02-09T02:00:00+02:00" } ] }
@@ -266,6 +269,11 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
 
         var run = await db.MonitorRuns.AsNoTracking().SingleAsync();
         Assert.Equal(new DateTimeOffset(2026, 2, 9, 0, 0, 0, TimeSpan.Zero), run.StartedAt);
+
+        // LastRunAt is advanced set-based (bookkeeping): the concurrency stamp stays untouched.
+        var monitor = await db.Monitors.AsNoTracking().SingleAsync();
+        Assert.Equal(run.StartedAt, monitor.LastRunAt);
+        Assert.Equal(stampBefore, monitor.ConcurrencyStamp);
     }
 
     [SkippableFact]
@@ -349,6 +357,9 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
 
     private async Task<TestApp> CreateAppAsync()
     {
+        // HAWK_REQUIRE_POSTGRES_TESTS=1 (CI/release checks): a missing Docker is a failure, not a skip.
+        if (fixture.UnavailableReason is not null && Environment.GetEnvironmentVariable("HAWK_REQUIRE_POSTGRES_TESTS") == "1")
+            throw new InvalidOperationException($"HAWK_REQUIRE_POSTGRES_TESTS=1 but {fixture.UnavailableReason}");
         Skip.If(fixture.UnavailableReason is not null, fixture.UnavailableReason);
 
         var connectionString = fixture.NewDatabaseConnectionString();

@@ -188,6 +188,7 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
         using var doc = await JsonDocument.ParseAsync(jsonStream, cancellationToken: cancellationToken);
 
         var createdRuns = 0;
+        var latestByMonitor = new Dictionary<Guid, DateTimeOffset>();
 
         // Branch: array-of-groups format (preferred for importing multiple tests at once).
         if (doc.RootElement.ValueKind == JsonValueKind.Array)
@@ -202,11 +203,11 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
                     continue;
                 }
 
-                createdRuns += await ImportAlertArrayAsync(testId!, data.Value, warnings, cancellationToken);
+                createdRuns += await ImportAlertArrayAsync(testId!, data.Value, latestByMonitor, warnings, cancellationToken);
             }
 
             if (createdRuns != 0)
-                await db.SaveChangesAsync(cancellationToken);
+                await SaveAlertImportAsync(latestByMonitor, cancellationToken);
 
             logger.LogInformation("StatusCake alert import complete: runsCreated={RunsCreated} warnings={Warnings}", createdRuns, warnings.Count);
             return new StatusCakeImportResult(0, createdRuns, warnings);
@@ -221,15 +222,51 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
             return new StatusCakeImportResult(0, 0, warnings);
         }
 
-        createdRuns += await ImportAlertArrayAsync(singleTestId!, alerts.Value, warnings, cancellationToken);
+        createdRuns += await ImportAlertArrayAsync(singleTestId!, alerts.Value, latestByMonitor, warnings, cancellationToken);
         if (createdRuns != 0)
-            await db.SaveChangesAsync(cancellationToken);
+            await SaveAlertImportAsync(latestByMonitor, cancellationToken);
 
         logger.LogInformation("StatusCake alert import complete: runsCreated={RunsCreated} warnings={Warnings}", createdRuns, warnings.Count);
         return new StatusCakeImportResult(0, createdRuns, warnings);
     }
 
-    private async Task<int> ImportAlertArrayAsync(string testId, JsonElement alerts, List<string> warnings, CancellationToken cancellationToken)
+    /// <summary>
+    /// Saves the imported runs and advances each monitor's <c>LastRunAt</c> in one transaction.
+    /// <c>LastRunAt</c> is bookkeeping: it is written set-based (like <c>MonitorExecutor.SetLastRunAtAsync</c>), so it
+    /// never checks or renews the concurrency stamp and a concurrent edit/pause cannot fail the import.
+    /// </summary>
+    private async Task SaveAlertImportAsync(Dictionary<Guid, DateTimeOffset> latestByMonitor, CancellationToken cancellationToken)
+    {
+        if (!db.Database.IsRelational())
+        {
+            // Branch: EF InMemory (unit tests) supports neither ExecuteUpdate nor transactions.
+            foreach (var (monitorId, latest) in latestByMonitor)
+            {
+                var m = await db.Monitors.FindAsync([monitorId], cancellationToken);
+                if (m is not null && (m.LastRunAt is null || latest > m.LastRunAt))
+                    m.LastRunAt = latest;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        foreach (var (monitorId, latest) in latestByMonitor)
+        {
+            await db.Monitors
+                .Where(m => m.Id == monitorId && (m.LastRunAt == null || m.LastRunAt < latest))
+                .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.LastRunAt, latest), cancellationToken);
+        }
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    private async Task<int> ImportAlertArrayAsync(
+        string testId,
+        JsonElement alerts,
+        Dictionary<Guid, DateTimeOffset> latestByMonitor,
+        List<string> warnings,
+        CancellationToken cancellationToken)
     {
         var marker = $"(sc:{testId.Trim()})".ToLower();
         var monitor = await db.Monitors
@@ -299,8 +336,9 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
             createdRuns++;
         }
 
-        if (latest is not null && (monitor.LastRunAt is null || latest > monitor.LastRunAt))
-            monitor.LastRunAt = latest;
+        // Applied after the runs are saved (SaveAlertImportAsync); several groups may target the same monitor.
+        if (latest is not null && (!latestByMonitor.TryGetValue(monitor.Id, out var known) || latest > known))
+            latestByMonitor[monitor.Id] = latest.Value;
 
         return createdRuns;
     }
