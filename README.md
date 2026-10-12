@@ -1,6 +1,6 @@
 # Hawk
 
-ASP.NET Razor Pages uptime checker and URL verifier with Hangfire scheduling, SQL Server storage, and Docker-first deployment. Styled with Tailwind CSS v4 and supports dark mode.
+ASP.NET Razor Pages uptime checker and URL verifier with Hangfire scheduling, SQL Server or PostgreSQL storage, and Docker-first deployment. Styled with Tailwind CSS v4 and supports dark mode.
 
 ## Screenshots
 
@@ -28,6 +28,12 @@ Optional tmux mode:
 ```bash
 ./run-dev.sh --tmux
 tmux attach -t hawk-dev
+```
+
+Use PostgreSQL 17 instead of SQL Server (starts `docker-compose.postgres.yml`, Postgres on `localhost:17834`):
+
+```bash
+./run-dev.sh --postgres
 ```
 
 Stop all dev processes started by the script:
@@ -128,6 +134,66 @@ docker run --rm -p 17800:8080 \
   ghcr.io/aduggleby/hawk:latest
 ```
 
+## Using PostgreSQL
+
+SQL Server is the default provider, so existing installs are unchanged. To use PostgreSQL (tested with 17), set the provider and a Npgsql connection string:
+
+| Setting | Value |
+| --- | --- |
+| `Hawk__Database__Provider` | `Postgres` (default: `SqlServer`; any other value stops startup with an error) |
+| `ConnectionStrings__DefaultConnection` | `Host=YOUR_PG_HOST;Port=5432;Database=hawk;Username=hawk;Password=...` |
+
+The same connection string is used for EF Core (Identity + app data) and Hangfire. On startup Hawk applies its EF migrations (PostgreSQL has its own migration set) and Hangfire creates/upgrades its tables in the schema `hangfire`. The database user therefore needs permission to create tables (for example, own the database):
+
+```sql
+CREATE ROLE hawk LOGIN PASSWORD 'CHANGE_ME';
+CREATE DATABASE hawk OWNER hawk;
+```
+
+Docker:
+
+```bash
+docker run --rm -p 17800:8080 \
+  -e Hawk__Database__Provider=Postgres \
+  -e ConnectionStrings__DefaultConnection="Host=192.168.1.50;Port=5432;Database=hawk;Username=hawk;Password=CHANGE_ME" \
+  -e Hawk__DisableHttpsRedirection=true \
+  ghcr.io/aduggleby/hawk:latest
+```
+
+Local stack on PostgreSQL: `docker compose -f docker-compose.postgres.yml up -d --build` (same ports as `docker-compose.yml`; run one stack at a time).
+
+Notes:
+- Switching provider does not move data. To move monitors between installs (for example SQL Server to PostgreSQL), use **Admin -> Transfer** (export all / import), see [Export / Import All Monitors](#export--import-all-monitors-admin).
+- All timestamps are stored in UTC (`timestamptz`).
+
+## Health Endpoints
+
+Both endpoints are anonymous and lightweight, intended for container/reverse-proxy health checks:
+
+| Endpoint | Meaning |
+| --- | --- |
+| `GET /live` | The process is up. Does not touch the database. Always `200 Healthy`. |
+| `GET /ready` | The database is reachable. `200 Healthy`, or `503 Unhealthy` when it is not. |
+
+If HTTPS redirection is enabled (the default), plain-HTTP probes get a redirect; set `Hawk__DisableHttpsRedirection=true` when TLS is terminated by a proxy. Consider blocking `/ready` at your public reverse proxy.
+
+## Container Image: Non-Root User And Read-Only Root Filesystem
+
+Since `0.9.27` the image runs as the non-root .NET user (`app`, UID/GID `1654`) instead of root.
+
+- Installs **without volumes** (such as the TrueNAS YAML below) keep working: the image owns `/app/logs` and `/var/lib/hawk` for that user.
+- Installs **with volumes or host paths** created by an older image are owned by root. DataProtection key files are written with mode `0600`, so the new user cannot read them and logins/forms fail (Hawk logs an error at startup). Fix the ownership once, then restart:
+
+  ```bash
+  # Host path (TrueNAS host path, bind mount):
+  sudo chown -R 1654:1654 /path/to/hawk/dpkeys /path/to/hawk/logs
+  # Named Docker volume:
+  docker run --rm -v hawk_hawk_dpkeys:/v alpine chown -R 1654:1654 /v
+  ```
+
+  Alternatively keep the old behaviour by running the container as root (`user: "0:0"` in compose).
+- File logging: `Hawk__Logging__File__Enabled` (default `true`) writes rolling logs to `/app/logs`. Set it to `false` for console-only logging, for example with a read-only root filesystem (`--read-only --tmpfs /tmp`). The only other write location is the DataProtection keys path (`Hawk__DataProtection__KeysPath`, default `/var/lib/hawk/dpkeys`), which must be a writable volume.
+
 ## Install On TrueNAS SCALE (Install via YAML)
 
 These instructions target TrueNAS SCALE's **Apps** feature using **Install via YAML** (Docker Compose format). Hawk connects to an existing SQL Server instance (external to the Hawk container).
@@ -195,6 +261,8 @@ Values to replace:
 | `YOUR_HAWK_PASSWORD` | Password you set for the `hawk` login |
 | `YOUR_RESEND_APIKEY` | Resend (or compatible gateway) API key |
 | `Hawk <hawk@yourdomain>` | Your verified sender address |
+
+Upgrading to `0.9.27` or later: the image now runs as a non-root user. The YAML above has no volumes and needs no change. If you added volumes or host paths, see [Container Image: Non-Root User](#container-image-non-root-user-and-read-only-root-filesystem).
 
 ### 4) Expose The App (Reverse Proxy)
 
@@ -445,7 +513,7 @@ ando run
 ### Publish (Artifacts + Container Image)
 
 Publishes the app to `./artifacts/publish/Hawk.Web` and builds a multi-arch (amd64 + arm64) container image pushed to GHCR.
-The image contains only the ASP.NET app. SQL Server is external and configured via `ConnectionStrings__DefaultConnection`.
+The image contains only the ASP.NET app. The database (SQL Server or PostgreSQL) is external and configured via `Hawk__Database__Provider` and `ConnectionStrings__DefaultConnection`.
 
 Override the destination with `GHCR_IMAGE=ghcr.io/<owner>/<name>`.
 Ensure auth is available (recommended: `GITHUB_TOKEN` in CI, or `gh auth login` locally).
@@ -456,6 +524,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.26` in the `.csproj` files.
+- Project version is set to `0.9.27` in the `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.

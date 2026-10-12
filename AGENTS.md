@@ -1,18 +1,18 @@
 # Hawk Project Notes (For Agents)
 
-This repository is building an ASP.NET Razor Pages uptime checker and URL verifier with Hangfire-based scheduling, SQL Server storage, and Docker-first deployment.
+This repository is building an ASP.NET Razor Pages uptime checker and URL verifier with Hangfire-based scheduling, SQL Server or PostgreSQL storage, and Docker-first deployment.
 
-## Current State (As Of 2026-02-12)
+## Current State (As Of 2026-10-12)
 
 - Solution: `Hawk.sln`
 - Web app: `Hawk.Web` (Razor Pages + ASP.NET Core Identity)
 - Unit tests: `Hawk.Tests` (xUnit)
-- E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs)
+- E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs; SQL Server and PostgreSQL stacks)
 - Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture + `/flaky` alternating endpoint)
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
-- Primary database: SQL Server (EF Core SQL Server provider)
+- Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.26`
+- Version: `0.9.27`
 
 ## Ports
 
@@ -21,6 +21,7 @@ Reserved ports for this project:
 - Web: `17800` (container port `8080`)
 - Mock server: `17801` (container port `8081`)
 - SQL Server (dev compose only): `17833` (container port `1433`)
+- PostgreSQL (`docker-compose.postgres.yml` only): `17834` (container port `5432`)
 
 ## Auth / Users
 
@@ -43,9 +44,49 @@ Admin users can manage other users via Admin -> Users (edit name/email/roles, re
 
 ## Migrations On Startup
 
-- The app currently calls `db.Database.MigrateAsync()` during startup seeding.
-- Goal: keep this behavior for container deployments (web container applies migrations against the SQL Server container at boot).
-- Current behavior includes retries to handle SQL Server still starting.
+- The app currently calls `db.Database.MigrateAsync()` during startup seeding (both providers).
+- Goal: keep this behavior for container deployments (web container applies migrations against the database container at boot).
+- Current behavior includes retries (20 attempts, backoff up to 10s) to handle the database still starting.
+
+## Database Providers
+
+- `Hawk:Database:Provider` (env `Hawk__Database__Provider`): `SqlServer` (default; missing/empty also means SqlServer) or `Postgres`, case-insensitive. Any other value throws at startup. Parsed by `DatabaseSetup.GetProvider` in `Hawk.Web/Infrastructure/DatabaseSetup.cs`.
+- One connection string, `ConnectionStrings:DefaultConnection`, for EF Core, Identity and Hangfire.
+- EF Core registration (`DatabaseSetup.AddHawkDbContext`):
+  - SqlServer: `ApplicationDbContext` with `UseSqlServer`.
+  - Postgres: `PostgresApplicationDbContext` (a subclass with no model changes) registered as `ApplicationDbContext` with `UseNpgsql`. Application code always depends on `ApplicationDbContext`.
+- Hangfire storage (`DatabaseSetup.UseHawkStorage`): `Hangfire.SqlServer` for SqlServer; `Hangfire.PostgreSql` (schema `hangfire`, `PrepareSchemaIfNecessary=true`, 5 min sliding invisibility timeout, 5s queue poll) for Postgres. `CommandBatchMaxTimeout`, `UseRecommendedIsolationLevel` and `DisableGlobalLocks` have no PostgreSQL equivalent. `PostgreSqlDistributedLockException` derives from `DistributedLockTimeoutException`, so the scheduler/alert lock handling works unchanged on both.
+- Identity registration lives in `IdentitySetup.AddHawkIdentity` (`Hawk.Web/Infrastructure/IdentitySetup.cs`) and is shared with the EF design-time factories, because `AddDefaultIdentity` sets `Stores.MaxLengthForKeys = 128`, which changes the Identity part of the model.
+- Model rules (keep the model provider-agnostic):
+  - No column types or provider-specific SQL in `OnModelCreating`; no raw SQL anywhere (`scripts/` diagnostics are SQL Server only and not used by the app).
+  - String comparisons in LINQ: SQL Server's default collation is case-insensitive, PostgreSQL's is case-sensitive. For user-facing sorting/dedupe either sort/compare in memory with `StringComparer.OrdinalIgnoreCase` or use `.ToLower()` on both sides. Identity lookups use the normalized columns and are fine.
+  - `DateTimeOffset` values must be UTC (offset 0); Npgsql rejects other offsets for `timestamptz`. Use `DateTimeOffset.UtcNow`; normalise parsed input with `ToUniversalTime()` (see `StatusCakeImporter`).
+  - NULL ordering differs (SQL Server: first in ASC, PostgreSQL: last). Order nullable columns explicitly (see `MonitorScheduler`: `OrderBy(m => m.NextRunAt == null ? 0 : 1).ThenBy(m => m.NextRunAt)`).
+
+### Migrations (two sets)
+
+Microsoft's "one context type per provider" approach (single assembly, separate folders):
+
+- SQL Server: `Hawk.Web/Data/Migrations/` bound to `ApplicationDbContext` (the existing history; never regenerate or rename these).
+- PostgreSQL: `Hawk.Web/Data/Migrations/Postgres/` bound to `PostgresApplicationDbContext` (starts with `InitialPostgres`).
+- EF matches migrations to the exact context type, so the sets never mix.
+- Design-time factories (`Hawk.Web/Data/DesignTimeDbContextFactories.cs`) create each context without starting the app or a database, independent of `Hawk:Database:Provider`.
+
+After every model change, add a migration for **both** providers (from the repo root, with `dotnet tool restore` done once):
+
+```bash
+dotnet ef migrations add <Name> --project Hawk.Web --context ApplicationDbContext --output-dir Data/Migrations
+dotnet ef migrations add <Name> --project Hawk.Web --context PostgresApplicationDbContext --output-dir Data/Migrations/Postgres
+```
+
+`DatabaseSetupTests.Migrations_are_up_to_date_with_the_model` fails when either set is missing a model change (startup would otherwise fail with `PendingModelChangesWarning`).
+
+## Health Endpoints
+
+- `GET /live`: process up, runs no checks (no DB). Always `200 Healthy`.
+- `GET /ready`: `DatabaseHealthCheck` (`db.Database.CanConnectAsync`, 5s timeout); `200 Healthy` or `503 Unhealthy`.
+- Both are mapped with `MapHealthChecks(...).AllowAnonymous()` in `Program.cs`; request logging for them is at `Verbose` so probes don't flood the log.
+- Plain-HTTP probes need `Hawk__DisableHttpsRedirection=true` (otherwise they get a redirect). The app server's Caddy health-checks `/ready` and blocks `/ready` and `/health/*` publicly.
 
 ## Allowed Status Codes
 
@@ -72,6 +113,11 @@ Implemented v1 URL checker service in `Hawk.Web/Services/UrlCheckModels.cs`:
 - GET `https://example.com` with regex match
 - POST `https://example.com` returns a failure result but should not throw
 
+Database-related tests:
+- `DatabaseSetupTests` — provider parsing/validation, per-provider context registration, disjoint migration sets, no pending model changes for either provider (no DB needed).
+- `ConcurrencyStampTests` — concurrency token configuration and semantics (EF InMemory).
+- `PostgresIntegrationTests` — real PostgreSQL 17 via Testcontainers (`postgres:17-alpine`, needs Docker; skipped via `SkippableFact` when Docker is unavailable): migrations, Edit page concurrency (no conflict after a scheduler tick + executor run, conflict after a concurrent edit or pause), scheduler NULL ordering, Hangfire.PostgreSql alert lock timeout, StatusCake case-insensitive dedupe + UTC timestamps, `/ready` check.
+
 ## E2E (Playwright)
 
 Location: `e2e/`
@@ -90,6 +136,8 @@ Location: `e2e/`
 
 Run:
 - Docker (recommended): `docker compose -f docker-compose.e2e.yml up --build --exit-code-from e2e e2e`
+- PostgreSQL: same suite and topology on `postgres:17` (tmpfs, project `hawk-e2e-postgres`):
+  `docker compose -f docker-compose.e2e.postgres.yml down --remove-orphans; docker compose -f docker-compose.e2e.postgres.yml up --build --force-recreate --renew-anon-volumes --exit-code-from e2e e2e; docker compose -f docker-compose.e2e.postgres.yml down --remove-orphans`
   - Note: this writes screenshots to host `./screenshots` (mounted into the Playwright container).
   - Preferred: `npm --prefix e2e test` which performs `docker compose down` first to guarantee a fresh DB each run.
 
@@ -112,19 +160,22 @@ E2E uses HTTP because Playwright `webServer.url` expects a stable plain URL.
 - Auth cookie name: `Hawk.Auth`; `HttpOnly=true`, `IsEssential=true`, `SameSite=Lax`.
 - Auth challenges and principal validations are logged at `Warning`/`Debug` level under the `Hawk.Auth` logger to aid login diagnostics.
 
-## Docker / SQL Server / Hangfire
+## Docker / Database / Hangfire
 
 Implemented architecture:
 - `docker-compose.yml` runs:
   - `web` (ASP.NET)
   - `db` (SQL Server)
   - `mock` (optional mock server; useful for testing alerting)
-- App uses SQL Server for:
+- `docker-compose.postgres.yml` (project `hawk-postgres`) is the same stack on `postgres:17` with `Hawk__Database__Provider=Postgres` (same web/mock ports; run one stack at a time).
+- App uses the configured database for:
   - Identity
   - Hangfire storage
   - Monitoring configuration + check history
 - The web container:
   - Multi-stage Docker build: `node:20-alpine` stage compiles Tailwind CSS, then .NET SDK stage builds the app
+  - Runs as the non-root .NET user (`USER $APP_UID`, UID 1654). The image creates and chowns `/app/logs`, `/var/lib/hawk/dpkeys` and `/var/lib/hawk/keys`, so installs without volumes and fresh named volumes work. Volumes/host paths created by older (root) images must be `chown -R 1654:1654` (startup logs an error if key files are unreadable, a warning if the keys directory is not writable).
+  - Read-only root filesystem: supported with `--read-only --tmpfs /tmp`, `Hawk__Logging__File__Enabled=false` and a writable DataProtection keys volume. Nothing else is written at runtime (Tailwind is built into the image; large form uploads buffer to `/tmp`).
   - Applies EF migrations on startup
   - Runs Hangfire server and dashboard (dashboard is Admin-only)
 
@@ -255,7 +306,7 @@ Alert recipient resolution (in order):
 ## Alert State Seeding And LastRunAt
 
 - `MonitorExecutor.GetOrCreateAlertStateAsync` seeds a missing `MonitorAlertState` from history via `MonitorAlertingDecider.SeedFromHistory`, using only `State == "completed"` runs and excluding the run being evaluated (the pre-created "Run now" run is saved as `running` before alert evaluation and must not be counted).
-- `Monitor.LastRunAt` is written set-based (`ExecuteUpdateAsync`, `SetLastRunAtAsync`) so it can never conflict with the rowversion. A conflict after the alert email was sent would fail the save and make Hangfire retry (re-sending the alert).
+- `Monitor.LastRunAt` is written set-based (`ExecuteUpdateAsync`, `SetLastRunAtAsync`) so it never conflicts with (or renews) the monitor's concurrency stamp. A conflict after the alert email was sent would fail the save and lose the run record and alert-state update.
 
 ## Failure Alert Retry Rule
 
@@ -263,9 +314,13 @@ Alert recipient resolution (in order):
 
 ## Monitor Edit Concurrency
 
-- `Monitor.RowVersion` — a SQL Server `rowversion` column used for optimistic concurrency control on the Edit page.
-- `MonitorForm.RowVersion` carries the token through the form as a hidden field (base64-encoded).
-- `Edit.cshtml.cs` catches `DbUpdateConcurrencyException` and returns an error message asking the user to reload and retry.
+- `Monitor.ConcurrencyStamp` and `MonitorAlertState.ConcurrencyStamp` — app-managed `Guid` concurrency tokens (`.IsConcurrencyToken()`), provider-agnostic. They replaced the SQL Server `rowversion` columns (migration `ReplaceRowVersionWithConcurrencyStamp`; existing rows get `Guid.Empty`, which is fine).
+- Why: a `rowversion` changes on every write, including scheduler/executor bookkeeping, so the Edit page reported a spurious conflict whenever a run finished while the form was open.
+- The stamp is renewed (`Guid.NewGuid()`) only on intentional changes:
+  - Monitor: create/import/StatusCake import (entity default), Edit save, pause/resume (index "Pause all"/"Resume all"/batch, set in the same `ExecuteUpdateAsync`).
+  - MonitorAlertState: `MonitorExecutor` renews it when a run actually changed the state (checked via the change tracker).
+  - Never on `NextRunAt`/`LastRunAt` bookkeeping (scheduler and executor write those set-based).
+- `MonitorForm.ConcurrencyStamp` carries the token through the Edit form as a hidden field; `Edit.cshtml.cs` sets it as the original value, renews it, and catches `DbUpdateConcurrencyException` with a "changed by someone else" flash message.
 
 ## Monitors Index — Failing Group
 
@@ -297,7 +352,7 @@ Alert recipient resolution (in order):
 ## Monitor JSON Export / Import
 
 - `Hawk.Web/Pages/Monitors/MonitorJsonPort.cs` contains the JSON model (`MonitorExportEnvelope`, `MonitorExportModel`) and mapping helpers.
-- **Format v2** (`MonitorJsonPort.CurrentVersion = 2`): envelope `{ version, exportedAtUtc, monitors[] }`; each monitor has the config fields, `headers`, `matchRules` and an optional `ownerEmail`. Excluded: ids, run history, alert state, `LastRunAt`/`NextRunAt`/`CreatedAt`, `RowVersion`, per-user settings. Headers/match rules are written in a deterministic order.
+- **Format v2** (`MonitorJsonPort.CurrentVersion = 2`): envelope `{ version, exportedAtUtc, monitors[] }`; each monitor has the config fields, `headers`, `matchRules` and an optional `ownerEmail`. Excluded: ids, run history, alert state, `LastRunAt`/`NextRunAt`/`CreatedAt`, `ConcurrencyStamp`, per-user settings. Headers/match rules are written in a deterministic order.
 - The parser (`TryParse`) accepts v1 files (no `ownerEmail`) and three shapes: an envelope with a `monitors` array, a bare array, or a single object. Versions above 2 are rejected.
 - **Single monitor export** — `Details.cshtml.cs` `OnGetExport` (emits v2 without `ownerEmail`). **Single import** — `Create.cshtml.cs` `OnPostImport` prefills the create form with the first monitor (unchanged).
 - Export uses `System.Text.Json` with `JsonStringEnumConverter` (camelCase) and `WriteIndented`.
@@ -343,8 +398,8 @@ Alert recipient resolution (in order):
 ### run-dev.sh / stop-dev.sh
 
 - `run-dev.sh` starts the full local dev environment: restores .NET packages, installs/builds Tailwind, starts `db` + `mock` via Docker Compose, and runs `Hawk.Web` with `dotnet watch`.
-- Runs in tmux by default (`hawk-dev` session); use `--no-tmux` for foreground mode, `--no-deps` to skip Docker services.
-- `stop-dev.sh` stops all processes started by `run-dev.sh` (dotnet watch, Docker containers, tmux session).
+- Runs in tmux by default (`hawk-dev` session); use `--no-tmux` for foreground mode, `--no-deps` to skip Docker services, `--postgres` to use PostgreSQL (`docker-compose.postgres.yml`, `localhost:17834`, `PG_PORT`/`POSTGRES_PASSWORD` overrides) instead of SQL Server.
+- `stop-dev.sh` stops all processes started by `run-dev.sh` (dotnet watch, Docker containers of either stack, tmux session).
 
 ### Monitor Seeder
 
@@ -367,6 +422,8 @@ Implementation notes:
 
 Implementation:
 - Serilog file sink rolls daily to `logs/hawk-.log` with `retainedFileCountLimit: 30`.
+- `Hawk:Logging:File:Enabled` (env `Hawk__Logging__File__Enabled`, default `true`): when `false`, no file sink is added (console only). Used for read-only root filesystems (app server).
+- Startup logs `Database provider: ... File logging: ...`.
 
 ## DataProtection Keys (Docker)
 
@@ -377,7 +434,8 @@ Problem:
 Implementation:
 - When running in a container (`DOTNET_RUNNING_IN_CONTAINER=true`), keys are persisted to `/var/lib/hawk/dpkeys`.
 - `docker-compose.yml` mounts a named volume `hawk_dpkeys` at `/var/lib/hawk/dpkeys`.
-- Override path via `Hawk:DataProtection:KeysPath` if needed.
+- Override path via `Hawk:DataProtection:KeysPath` if needed (the app server uses `/var/lib/hawk/keys`).
+- Key files are written with mode `0600`; after the switch to the non-root image, keys created by a root container are unreadable until the volume is chowned to 1654.
 
 ## E2E In Docker
 
@@ -395,6 +453,7 @@ Implementation notes:
 
 Implementation:
 - `docker-compose.e2e.yml` runs `web` + `db` + `mock` + `e2e`.
+- `docker-compose.e2e.postgres.yml` is the same topology on `postgres:17` (tmpfs data dir) with `Hawk__Database__Provider=Postgres`.
 - `e2e/Dockerfile` runs headed Chromium via `Xvfb` (not headless) and waits for `HAWK_BASE_URL`.
 - Screenshots are written to host `./screenshots` by `e2e/tests/helpers.ts`.
  - Playwright is forced to run serially in Docker via `E2E_DOCKER=1` in `docker-compose.e2e.yml`.
@@ -425,9 +484,14 @@ Service endpoints on the VM:
 
 ## Configuration Cheatsheet
 
-- SQL Server:
-  - `ConnectionStrings__DefaultConnection` (used by EF Core + Hangfire)
-  - `SA_PASSWORD` (compose)
+- Database:
+  - `Hawk__Database__Provider` (`SqlServer` default, or `Postgres`; anything else fails startup)
+  - `ConnectionStrings__DefaultConnection` (used by EF Core + Identity + Hangfire; SQL Server or Npgsql syntax to match the provider)
+  - `SA_PASSWORD` (SQL Server compose), `POSTGRES_PASSWORD` (PostgreSQL compose)
+- Logging / container:
+  - `Hawk__Logging__File__Enabled` (default true; false = console only, for read-only root filesystems)
+  - `Hawk__DataProtection__KeysPath` (default `/var/lib/hawk/dpkeys` in containers)
+- Health: `GET /live` (no DB), `GET /ready` (DB reachable, else 503)
 - Scheduler:
   - `Hawk__Scheduler__Enabled` (default true)
   - `Hawk__Scheduler__TickSeconds` (default 30, or 5 in Testing unless overridden)
@@ -465,7 +529,7 @@ Service endpoints on the VM:
 - EF include behavior:
   - `MonitorRunner` uses `.AsSplitQuery()` when loading `Monitor.Headers` and `Monitor.MatchRules` to avoid cartesian explosion.
 - Scheduler `NextRunAt` updates:
-  - `MonitorScheduler` uses `ExecuteUpdateAsync` (set-based) to write `NextRunAt` rather than loading full entities. This avoids concurrency conflicts with the rowversion column when the worker (`MonitorRunner`) updates `LastRunAt` on the same row simultaneously.
+  - `MonitorScheduler` uses `ExecuteUpdateAsync` (set-based) to write `NextRunAt` rather than loading full entities. It never touches `ConcurrencyStamp`, so bookkeeping cannot conflict with Edit-page saves.
 
 ## Removed Features
 
