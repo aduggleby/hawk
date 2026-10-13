@@ -6,6 +6,13 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+### Fixed
+
+- Public account security (version 0.9.30): preserve Identity cookie validation, check session revocation every minute, rate-limit login and account-email submissions, count failed logins toward lockout, and share an account-email cooldown.
+- Production errors and anonymous account-email failures no longer disclose exception details; malformed confirmation/reset tokens return controlled validation errors.
+- Manual monitor execution requires an antiforgery-protected POST; the old GET Test route redirects to monitor details, and saved diagnostics provide a protected **Run again** action.
+- Mock email capture is disabled unless explicitly enabled in Development or Testing; captures omit bearer credentials and local mock ports bind to loopback.
+
 ### Added
 
 - Profile page: **Send confirmation email** button for unconfirmed accounts (version 0.9.29).

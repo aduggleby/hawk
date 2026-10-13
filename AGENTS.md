@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.29`
+- Version: `0.9.30`
 
 ## Ports
 
