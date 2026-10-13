@@ -1,26 +1,16 @@
 // <file>
 // <summary>
-// Interactive diagnostics page: executes a monitor immediately and shows raw request/response details.
+// Compatibility route for older monitor test links. GET and HEAD remain passive.
 // </summary>
 // </file>
 
-using Hawk.Web.Services.Monitoring;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Hawk.Web.Pages.Monitors;
 
-public sealed class TestModel(IMonitorExecutor executor) : PageModel
+public sealed class TestModel : PageModel
 {
-    public MonitorExecutionResult? Execution { get; private set; }
-
-    public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken cancellationToken)
-    {
-        Execution = await executor.ExecuteAsync(id, "manual", cancellationToken);
-        if (Execution is null)
-            return NotFound();
-
-        return Page();
-    }
+    public IActionResult OnGet(Guid id) => RedirectToPage("/Monitors/Details", new { id });
 }
 

@@ -6,8 +6,10 @@
 
 using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Hosting;
 
 namespace Hawk.Web.Pages;
 
@@ -16,8 +18,10 @@ namespace Hawk.Web.Pages;
 /// </summary>
 [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
 [IgnoreAntiforgeryToken]
-public class ErrorModel : PageModel
+public class ErrorModel(IWebHostEnvironment environment, ILogger<ErrorModel> logger) : PageModel
 {
+    public bool IsProduction => environment.IsProduction();
+
     /// <summary>
     /// Current request id (activity id or trace identifier).
     /// </summary>
@@ -74,7 +78,14 @@ public class ErrorModel : PageModel
                  ?? exceptionFeature?.Error
                  ?? HttpContext.Items["Hawk.Exception"] as Exception;
 
-        Path = pathFeature?.Path ?? HttpContext.Request.Path.Value;
+        var path = pathFeature?.Path ?? HttpContext.Request.Path.Value;
+        if (ex is not null)
+            logger.LogError(ex, "Unhandled exception for {Path}. Request ID: {RequestId}.", path, RequestId);
+
+        if (IsProduction)
+            return;
+
+        Path = path;
         if (ex is null)
         {
             ExceptionType = "Unknown";

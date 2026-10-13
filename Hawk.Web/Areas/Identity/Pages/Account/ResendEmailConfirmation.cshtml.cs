@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
+using Hawk.Web.Infrastructure;
 
 namespace Hawk.Web.Areas.Identity.Pages.Account
 {
@@ -23,12 +24,14 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IEmailSender _emailSender;
         private readonly ILogger<ResendEmailConfirmationModel> _logger;
+        private readonly AccountEmailCooldown _emailCooldown;
 
-        public ResendEmailConfirmationModel(UserManager<IdentityUser> userManager, IEmailSender emailSender, ILogger<ResendEmailConfirmationModel> logger)
+        public ResendEmailConfirmationModel(UserManager<IdentityUser> userManager, IEmailSender emailSender, ILogger<ResendEmailConfirmationModel> logger, AccountEmailCooldown emailCooldown)
         {
             _userManager = userManager;
             _emailSender = emailSender;
             _logger = logger;
+            _emailCooldown = emailCooldown;
         }
 
         /// <summary>
@@ -71,6 +74,12 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
                 return Page();
             }
 
+            if (!_emailCooldown.TryBegin(await _userManager.GetUserIdAsync(user)))
+            {
+                ModelState.AddModelError(string.Empty, "Verification email sent. Please check your email.");
+                return Page();
+            }
+
             var userId = await _userManager.GetUserIdAsync(user);
             var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
@@ -90,7 +99,7 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send verification email (email={Email})", Input.Email);
-                ModelState.AddModelError(string.Empty, $"Email failed to send: {ex.Message}");
+                ModelState.AddModelError(string.Empty, "Verification email sent. Please check your email.");
                 return Page();
             }
 

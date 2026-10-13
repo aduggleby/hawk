@@ -15,7 +15,7 @@
     return;
 }
 
-<div class="flex items-start justify-between gap-4 mb-6">
+<div class="flex items-start justify-between gap-4 mb-6" style="flex-wrap: wrap">
     <div>
         <h1 class="text-2xl font-semibold tracking-tight mb-1">Run diagnostics</h1>
         <div class="text-sm text-[color:var(--text-secondary)]">
@@ -26,7 +26,12 @@
             <time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="short">@UtcFallback(Model.Run.StartedAt)</time>
         </div>
     </div>
-    <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@Model.Monitor.Id">Back to monitor</a>
+    <div class="flex items-center gap-2" style="flex-wrap: wrap">
+        <form method="post" asp-page="/Monitors/Details" asp-page-handler="RunNow" asp-route-id="@Model.Monitor.Id">
+            <button class="hawk-btn hawk-btn-primary" type="submit">Run again</button>
+        </form>
+        <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@Model.Monitor.Id">Back to monitor</a>
+    </div>
 </div>
 
 @section Scripts {

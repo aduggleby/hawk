@@ -303,6 +303,26 @@ Admin users can manage other users from the Admin panel:
 - **Reset Password**: reset a user's password.
 - **Delete**: remove a user.
 
+## Account Security
+
+Login cookies validate the account's security stamp on the first authenticated request after a one-minute interval. Password changes/resets and account deletion invalidate old sessions; periodic validation refreshes role assignments.
+
+Failed password attempts count toward a temporary lockout. Login and anonymous account-email POSTs are rate-limited by client IP. Password-reset and confirmation-resend actions share a per-account cooldown; provider failures and suppressed sends return generic results, with diagnostics in server logs. Scheduled monitor alerts do not use these account-email limits.
+
+| Setting | Default |
+|---------|---------|
+| `Hawk__Security__LoginRequestsPerMinute` | 10 |
+| `Hawk__Security__EmailRequestsPer15Minutes` | 5 |
+| `Hawk__Security__FailedLoginAttempts` | 5 |
+| `Hawk__Security__LockoutMinutes` | 5 |
+| `Hawk__Security__EmailCooldownMinutes` | 1 |
+
+Excess client requests receive HTTP 429 with `Retry-After`. Limits and cooldowns are held in memory for the current app instance. Production error pages show only a generic message and request ID; full exceptions stay in server logs.
+
+Manual monitor execution uses antiforgery-protected **Run now**/**Run again** POST forms and redirects to saved diagnostics. Opening or refreshing a diagnostics page does not run another check. Older `/monitors/test/<id>` links redirect to monitor details without executing.
+
+The mock server's `/emails` capture/list/reset endpoints are disabled by default. Enable them only for Development or Testing with `Hawk__MockServer__EmailCaptureEnabled=true`; Production keeps them absent regardless of that setting. Captured data omits bearer headers. The local Compose stacks bind mock port 17801 to loopback; E2E mocks are internal to their Docker network.
+
 ## Allowed Status Codes
 
 By default, Hawk treats any 2xx response as success and everything else as failure. You can override this per monitor by setting **Allowed Status Codes** — a comma-separated list of additional HTTP status codes that should count as success (e.g. `404,429`).

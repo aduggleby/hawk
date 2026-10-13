@@ -19,8 +19,9 @@ public static class IdentitySetup
     /// <summary>
     /// Registers Identity (default UI, roles, EF stores on <see cref="ApplicationDbContext"/>).
     /// </summary>
-    public static IdentityBuilder AddHawkIdentity(this IServiceCollection services)
+    public static IdentityBuilder AddHawkIdentity(this IServiceCollection services, IConfiguration? configuration = null)
     {
+        var security = HawkSecurityOptions.Read(configuration);
         return services.AddDefaultIdentity<IdentityUser>(options =>
             {
                 // For an internal uptime tool, email confirmation is usually friction with no upside.
@@ -31,6 +32,9 @@ public static class IdentitySetup
                 options.Password.RequireUppercase = false;
                 options.Password.RequireNonAlphanumeric = false;
                 options.Password.RequiredUniqueChars = 0;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(security.LockoutMinutes);
+                options.Lockout.MaxFailedAccessAttempts = security.FailedLoginAttempts;
+                options.Lockout.AllowedForNewUsers = true;
             })
             .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<ApplicationDbContext>();

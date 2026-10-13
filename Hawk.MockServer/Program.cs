@@ -11,7 +11,6 @@ using System.Collections.Concurrent;
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-var sentEmails = new ConcurrentQueue<object>();
 var flakyCounter = 0;
 
 app.MapGet("/", () => Results.Text("hawk-mockserver"));
@@ -47,28 +46,34 @@ app.MapPost("/echo", async (HttpContext ctx) =>
     return Results.Json(new { body, headers = hdr, contentType = ctx.Request.ContentType });
 });
 
-app.MapPost("/emails", async (HttpContext ctx) =>
+if ((app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing")) &&
+    app.Configuration.GetValue<bool>("Hawk:MockServer:EmailCaptureEnabled"))
 {
-    // Resend-compatible-ish capture endpoint for E2E tests.
-    using var reader = new StreamReader(ctx.Request.Body);
-    var body = await reader.ReadToEndAsync(ctx.RequestAborted);
-    var item = new
+    var sentEmails = new ConcurrentQueue<object>();
+
+    app.MapPost("/emails", async (HttpContext ctx) =>
     {
-        at = DateTimeOffset.UtcNow,
-        auth = ctx.Request.Headers.Authorization.ToString(),
-        body
-    };
-    sentEmails.Enqueue(item);
-    return Results.Json(new { id = Guid.NewGuid().ToString("n") });
-});
+        // Resend-compatible capture endpoint for local development and E2E tests.
+        using var reader = new StreamReader(ctx.Request.Body);
+        var body = await reader.ReadToEndAsync(ctx.RequestAborted);
+        sentEmails.Enqueue(new { at = DateTimeOffset.UtcNow, body });
+        return Results.Json(new { id = Guid.NewGuid().ToString("n") });
+    });
 
-app.MapGet("/emails", () => Results.Json(sentEmails.ToArray()));
+    app.MapGet("/emails", () => Results.Json(sentEmails.ToArray()));
 
-app.MapPost("/emails/reset", () =>
-{
-    // Branch: clear captured emails between E2E tests.
-    while (sentEmails.TryDequeue(out _)) { }
-    return Results.Ok();
-});
+    app.MapPost("/emails/reset", () =>
+    {
+        // Clear captured emails between E2E tests.
+        while (sentEmails.TryDequeue(out _)) { }
+        return Results.Ok();
+    });
+}
 
 app.Run();
+
+// Lets endpoint tests select this assembly without colliding with Hawk.Web's Program.
+namespace Hawk.MockServer
+{
+    public sealed class MockServerEntryPoint { }
+}

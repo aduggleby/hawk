@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
+using Hawk.Web.Infrastructure;
 
 namespace Hawk.Web.Areas.Identity.Pages.Account
 {
@@ -22,12 +23,14 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IEmailSender _emailSender;
         private readonly ILogger<ForgotPasswordModel> _logger;
+        private readonly AccountEmailCooldown _emailCooldown;
 
-        public ForgotPasswordModel(UserManager<IdentityUser> userManager, IEmailSender emailSender, ILogger<ForgotPasswordModel> logger)
+        public ForgotPasswordModel(UserManager<IdentityUser> userManager, IEmailSender emailSender, ILogger<ForgotPasswordModel> logger, AccountEmailCooldown emailCooldown)
         {
             _userManager = userManager;
             _emailSender = emailSender;
             _logger = logger;
+            _emailCooldown = emailCooldown;
         }
 
         /// <summary>
@@ -63,6 +66,9 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
                     return RedirectToPage("./ForgotPasswordConfirmation");
                 }
 
+                if (!_emailCooldown.TryBegin(await _userManager.GetUserIdAsync(user)))
+                    return RedirectToPage("./ForgotPasswordConfirmation");
+
                 // For more information on how to enable account confirmation and password reset please
                 // visit https://go.microsoft.com/fwlink/?LinkID=532713
                 var code = await _userManager.GeneratePasswordResetTokenAsync(user);
@@ -83,8 +89,7 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to send password reset email (email={Email})", Input.Email);
-                    ModelState.AddModelError(string.Empty, $"Email failed to send: {ex.Message}");
-                    return Page();
+                    return RedirectToPage("./ForgotPasswordConfirmation");
                 }
 
                 return RedirectToPage("./ForgotPasswordConfirmation");

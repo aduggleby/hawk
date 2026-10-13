@@ -13,7 +13,6 @@
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
@@ -112,49 +111,9 @@ if (!string.IsNullOrWhiteSpace(dpKeysPath) || runningInContainer)
         .SetApplicationName("Hawk");
 }
 
-builder.Services.AddHawkIdentity();
-
-builder.Services.ConfigureApplicationCookie(options =>
-{
-    var httpsDisabled = builder.Configuration.GetValue("Hawk:DisableHttpsRedirection", false);
-
-    options.Cookie.Name = "Hawk.Auth";
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.Cookie.SameSite = SameSiteMode.Lax;
-    options.Cookie.SecurePolicy = httpsDisabled
-        ? CookieSecurePolicy.SameAsRequest
-        : CookieSecurePolicy.Always;
-    options.LoginPath = "/Identity/Account/Login";
-    options.AccessDeniedPath = "/Identity/Account/AccessDenied";
-    options.Events = new CookieAuthenticationEvents
-    {
-        OnRedirectToLogin = context =>
-        {
-            var logger = context.HttpContext.RequestServices
-                .GetRequiredService<ILoggerFactory>()
-                .CreateLogger("Hawk.Auth");
-            logger.LogWarning(
-                "Auth challenge for {Path}. Cookie header present: {HasCookieHeader}. Auth cookie present: {HasAuthCookie}. User authenticated: {IsAuthenticated}.",
-                context.Request.Path,
-                context.Request.Headers.Cookie.Count > 0,
-                context.Request.Cookies.ContainsKey("Hawk.Auth"),
-                context.HttpContext.User.Identity?.IsAuthenticated == true);
-            context.Response.Redirect(context.RedirectUri);
-            return Task.CompletedTask;
-        },
-        OnValidatePrincipal = context =>
-        {
-            var logger = context.HttpContext.RequestServices
-                .GetRequiredService<ILoggerFactory>()
-                .CreateLogger("Hawk.Auth");
-            logger.LogDebug(
-                "Validated Hawk auth cookie for {Name}.",
-                context.Principal?.Identity?.Name ?? "(anonymous)");
-            return Task.CompletedTask;
-        }
-    };
-});
+builder.Services.AddHawkIdentity(builder.Configuration);
+builder.Services.AddHawkApplicationCookie(builder.Configuration);
+builder.Services.AddHawkAuthAbuseProtection(builder.Configuration);
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -234,6 +193,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 
 // Configure the HTTP request pipeline.
 app.UseForwardedHeaders();
+app.UseHawkAuthAbuseProtection();
 
 if (app.Environment.IsDevelopment())
 {

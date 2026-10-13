@@ -77,12 +77,23 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
             {
                 return BadRequest("A code must be supplied for password reset.");
             }
-            else
+
+            try
             {
                 Input = new InputModel
                 {
                     Code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code))
                 };
+                return Page();
+            }
+            catch (FormatException)
+            {
+                ModelState.AddModelError(string.Empty, "The password reset link is invalid.");
+                return Page();
+            }
+            catch (ArgumentException)
+            {
+                ModelState.AddModelError(string.Empty, "The password reset link is invalid.");
                 return Page();
             }
         }

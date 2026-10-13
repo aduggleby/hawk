@@ -217,18 +217,23 @@ Handy commands:
 
 ## Error Page
 
-- `Hawk.Web/Pages/Error.cshtml(.cs)` — styled error page with exception diagnostics.
+- `Hawk.Web/Pages/Error.cshtml(.cs)` — styled error page; Production shows only a generic message and request ID, with exceptions logged server-side.
 - Only used in non-Development environments (Development uses the built-in developer exception page).
-- Displays request ID, failing path, exception type, and message in a grid layout.
-- An expandable `<details>` section shows the full stack trace and inner exception chain when diagnostics are available.
-- Exception capture uses multiple fallback sources: `IExceptionHandlerPathFeature`, `HttpContext.Items["UnhandledException"]` (set by custom middleware in `Program.cs`), and `IExceptionHandlerFeature`. This ensures diagnostics render even when the primary feature is unavailable.
-- A **Copy technical details** button copies the error info (request ID, path, exception type, message, stack trace) to the clipboard for easy bug reporting.
+- Non-Production diagnostics display the failing path, exception type/message, stack trace, and a **Copy technical details** button. These fields, controls, and their scripts are absent in Production.
+- Exception capture uses `IExceptionHandlerPathFeature`, `HttpContext.Items["Hawk.Exception"]` (set by middleware in `Program.cs`), and `IExceptionHandlerFeature`.
 
 ## Flash Messages
 
 - `Hawk.Web/Pages/Shared/_Flash.cshtml` renders flash messages from `TempData["FlashError"]` and `TempData["FlashInfo"]`.
 - Included in `_Layout.cshtml` so flash messages appear on any page after a redirect.
-- Used by Identity pages (Register, ForgotPassword, ResendEmailConfirmation) to show email delivery errors to the user instead of crashing.
+- Registration uses flash messages for email delivery errors. Anonymous ForgotPassword and ResendEmailConfirmation actions return generic responses and log provider failures so they do not expose account existence or exception details.
+
+## Account Security
+
+- `AuthCookieSetup.AddHawkApplicationCookie` preserves Identity's security-stamp validator while adding Hawk logging. Validation runs on the first authenticated request after one minute, rejects reset/deleted-account cookies, and refreshes role claims.
+- `AuthAbuseProtection` rate-limits only login and anonymous password-reset/confirmation-resend POSTs by the forwarded client IP; rejected requests return 429 and `Retry-After`.
+- `Hawk:Security` settings: `LoginRequestsPerMinute` (10), `EmailRequestsPer15Minutes` (5), `FailedLoginAttempts` (5), `LockoutMinutes` (5), `EmailCooldownMinutes` (1). Invalid out-of-range values fail startup.
+- Anonymous account-email actions share a bounded, expiring `AccountEmailCooldown` keyed by user ID. Scheduled monitor alerts do not use it.
 
 ## Email Alerts
 
@@ -388,8 +393,8 @@ Alert recipient resolution (in order):
 
 ## Monitor Test Page
 
-- `Hawk.Web/Pages/Monitors/Test.cshtml(.cs)` — runs a monitor immediately via `IMonitorExecutor` and displays full diagnostics (request details, response headers, match rule results, body snippet).
-- Accessible from the monitor detail page.
+- `Hawk.Web/Pages/Monitors/Test.cshtml(.cs)` — compatibility GET/HEAD route that redirects to monitor details without executing.
+- **Run now** and diagnostics **Run again** use antiforgery-protected POSTs to the monitor Details handler, queue a run, and redirect to passive saved diagnostics.
 
 ## Monitor Form Validation
 
@@ -447,6 +452,8 @@ Implementation:
 - Key files are written with mode `0600`; after the switch to the non-root image, keys created by a root container are unreadable until the volume is chowned to 1654.
 
 ## E2E In Docker
+
+Mock email capture must be explicitly enabled with `Hawk__MockServer__EmailCaptureEnabled=true` and `ASPNETCORE_ENVIRONMENT=Testing` (Development is also allowed for local use). All `/emails` endpoints are absent in Production even if the switch is enabled. Enabled captures retain body/timestamp but no Authorization value.
 
 Requirement:
 - Run E2E tests in Docker with:
