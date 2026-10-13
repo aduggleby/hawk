@@ -12,7 +12,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.28`
+- Version: `0.9.29`
 
 ## Ports
 
@@ -272,7 +272,7 @@ Alert recipient resolution (in order):
 ## Account Manage Pages
 
 - Account settings have been restructured under `/Identity/Account/Manage/` with a sidebar layout:
-  - **Profile** (`/Identity/Account/Manage/Index`) — display name and email.
+  - **Profile** (`/Identity/Account/Manage/Index`) — display name and email; unconfirmed accounts get a **Send confirmation email** button (`OnPostSendConfirmationAsync`, covered by `e2e/tests/email-confirmation.spec.ts`).
   - **Security** (`/Identity/Account/Manage/ChangePassword`) — change password.
   - **Alerts & Crawler** (`/Identity/Account/Manage/Settings`) — alert email override + User-Agent override + run retention override.
 - Old routes (`/Account/Settings`, `/Account/Alerting`) redirect to the new locations for back-compat.

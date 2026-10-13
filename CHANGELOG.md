@@ -8,6 +8,7 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ### Added
 
+- Profile page: **Send confirmation email** button for unconfirmed accounts (version 0.9.29).
 - File logging location and retention are configurable (version 0.9.28): `Hawk__Logging__File__Path` (default `logs`) and `Hawk__Logging__File__RetainedDays` (default 30).
 - PostgreSQL support (version 0.9.27): `Hawk__Database__Provider=Postgres` (SQL Server stays the default; unknown values fail startup). Separate PostgreSQL migration set, Hangfire.PostgreSql storage, `docker-compose.postgres.yml` and `docker-compose.e2e.postgres.yml`, `./run-dev.sh --postgres`.
 - Health endpoints: `GET /live` (process up) and `GET /ready` (database reachable, `503` otherwise).

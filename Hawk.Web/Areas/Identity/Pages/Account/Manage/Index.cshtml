@@ -24,7 +24,12 @@
         }
         else
         {
-            <span class="hawk-badge hawk-badge-danger inline-flex min-w-[8.5rem] justify-center">Unconfirmed</span>
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="hawk-badge hawk-badge-danger inline-flex min-w-[8.5rem] justify-center">Unconfirmed</span>
+                <form method="post" asp-page-handler="SendConfirmation">
+                    <button class="hawk-btn hawk-btn-ghost" type="submit">Send confirmation email</button>
+                </form>
+            </div>
         }
     </dd>
 
