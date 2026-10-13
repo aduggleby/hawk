@@ -27,8 +27,9 @@ services:
       context: .
       dockerfile: Hawk.MockServer/Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_ENVIRONMENT: "Testing"
       ASPNETCORE_URLS: "http://+:8081"
+      Hawk__MockServer__EmailCaptureEnabled: "true"
     expose:
       - "8081"
 
