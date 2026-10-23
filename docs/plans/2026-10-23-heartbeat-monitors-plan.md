@@ -4,7 +4,7 @@ type: feat
 date: 2026-10-23
 artifact_contract: ce-unified-plan/v1
 execution: code
-status: ready
+status: completed
 ---
 
 # Heartbeat (Push) Monitors - Plan
@@ -223,3 +223,20 @@ The per-IP limit caps unknown-token floods from a single source. Rejected reques
 4. **HTTP intervals**: unchanged. Heartbeat periods (up to 7 days) live outside the scheduler clamp.
 5. **Path**: `/ping/{token}`.
 6. **Version**: 0.10.0.
+
+## Production Deployment — 2026-10-23
+
+- Version **0.10.0**; source commit `fcef699247ef2389252fda18dc2d0cf3e78310c5`.
+- Image `registry.dualconsult.net/dualconsult/hawk@sha256:e111226e121f82ad7953d6f7a24ba8f08e706ca3aa2dfb42386ef12a5c584c5c`, built from `git archive HEAD`.
+- Release pin and Caddy `log_skip /ping/*`: infra commit `629df55`. Deployed with `scripts/deploy-app.sh hawk app edge`.
+- Verification before the deploy:
+  - `HAWK_REQUIRE_POSTGRES_TESTS=1 dotnet test`: 161/161 passed.
+  - E2E: 13/13 on PostgreSQL and 13/13 on SQL Server.
+  - Two Codex (`gpt-6-astra`) implementation reviews; the second found no remaining code defects.
+- Live checks:
+  - Migration `AddHeartbeatMonitors` applied on PostgreSQL.
+  - The container runs 0.10.0 with 0 restarts, UID 1654 and a read-only root filesystem.
+  - `/live` returns 200; public `/ready` returns 404.
+  - `/ping/<unknown token>` and `/ping/<malformed>` return 404.
+  - No warnings or errors in the app log, and test tokens appear in neither the app log nor the Caddy access log.
+- Rollback: restore the previous pin (`sha256:c855af1e905e95588c21412d3754bb0fa527e63453610283011c6838a0ce7266`, 0.9.30) and rerun the app deploy. The migration only adds columns, so 0.9.30 still runs against the migrated schema.
