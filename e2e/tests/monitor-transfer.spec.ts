@@ -74,7 +74,7 @@ test('export all monitors, delete two, preview and import them back paused, then
   const exportPath = await download.path();
   const exportBuffer = fs.readFileSync(exportPath);
   const exported = JSON.parse(exportBuffer.toString('utf-8')) as { version: number; monitors: { name: string }[] };
-  expect(exported.version).toBe(2);
+  expect(exported.version).toBe(3);
   const names = exported.monitors.map(m => m.name);
   expect(names).toContain(nameA);
   expect(names).toContain(nameB);
