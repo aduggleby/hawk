@@ -12,7 +12,9 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
+using Hawk.Web.Data.Monitoring;
 using Hawk.Web.Pages.Monitors;
+using Hawk.Web.Services.Monitoring;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Web.Services.Import;
@@ -28,7 +30,10 @@ public enum MonitorImportStatus
     /// <summary>The monitor failed validation.</summary>
     Invalid,
 
-    /// <summary>A monitor with the same name and URL already exists (or appeared earlier in the file).</summary>
+    /// <summary>
+    /// A monitor with the same name and URL already exists (or appeared earlier in the file). Heartbeats with a token
+    /// are duplicates only when the token is already known.
+    /// </summary>
     Duplicate,
 }
 
@@ -110,7 +115,7 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
     private static readonly SemaphoreSlim ImportLock = new(1, 1);
 
     /// <summary>
-    /// Serializes every monitor of every user (ordered by name) as a v2 export document.
+    /// Serializes every monitor of every user (ordered by name) as a v3 export document.
     /// </summary>
     public async Task<string> ExportAllJsonAsync(CancellationToken cancellationToken)
     {
@@ -125,6 +130,7 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
         monitors = monitors
             .OrderBy(m => m.Name, StringComparer.Ordinal)
             .ThenBy(m => m.Url, StringComparer.Ordinal)
+            .ThenBy(m => m.HeartbeatToken, StringComparer.Ordinal)
             .ToList();
 
         var ownerIds = monitors.Select(m => m.CreatedByUserId).OfType<string>().Distinct().ToList();
@@ -162,9 +168,11 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
 
         var existing = await db.Monitors
             .AsNoTracking()
-            .Select(m => new { m.Name, m.Url })
+            .Select(m => new { m.Name, m.Url, m.HeartbeatToken })
             .ToListAsync(cancellationToken);
-        var existingKeys = existing.Select(m => DuplicateKey(m.Name, m.Url));
+        var existingKeys = existing
+            .Select(m => DuplicateKey(m.Name, m.Url))
+            .Concat(existing.Where(m => m.HeartbeatToken is not null).Select(m => TokenKey(m.HeartbeatToken!)));
 
         var users = await db.Users
             .AsNoTracking()
@@ -221,7 +229,7 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
     /// Pure planning step: parses, de-duplicates (case-insensitively on name + URL), validates and maps owners.
     /// </summary>
     /// <param name="json">Raw import JSON.</param>
-    /// <param name="existingKeys">Duplicate keys (see <see cref="DuplicateKey"/>) of monitors already present.</param>
+    /// <param name="existingKeys">Duplicate keys (see <see cref="DuplicateKey"/>, plus <see cref="TokenKey"/> for heartbeats) of monitors already present.</param>
     /// <param name="userIdsByEmail">Existing user ids keyed by email (case-insensitive comparer expected).</param>
     /// <param name="adminUserId">Fallback owner.</param>
     /// <param name="createPaused">Force imported monitors to be paused.</param>
@@ -247,7 +255,17 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
             var ownerEmail = string.IsNullOrWhiteSpace(model.OwnerEmail) ? null : model.OwnerEmail.Trim();
             var pausedOrDisabled = !model.Enabled || model.IsPaused;
 
-            if (!seen.Add(DuplicateKey(name, url)))
+            // Heartbeat identity is the 128-bit token: the same token is the same monitor (re-import skips it, a move
+            // keeps the URL) and same-name heartbeats with different tokens are distinct. Without a valid token fall
+            // back to the name (heartbeat URLs are empty) and issue a new token on import.
+            var heartbeat = model.Type == MonitorType.Heartbeat;
+            var hasToken = HeartbeatTokens.TryNormalize(model.HeartbeatToken, out var heartbeatToken);
+            var nameKey = DuplicateKey(name, heartbeat ? string.Empty : url);
+            var isNew = heartbeat && hasToken ? seen.Add(TokenKey(heartbeatToken)) : seen.Add(nameKey);
+            if (heartbeat && hasToken)
+                seen.Add(nameKey);
+
+            if (!isNew)
             {
                 items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Duplicate, null, ownerEmail, false, pausedOrDisabled, null));
                 continue;
@@ -268,6 +286,11 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
 
         return new MonitorImportPlan { Items = items };
     }
+
+    /// <summary>
+    /// Duplicate key for a heartbeat token (tokens are normalized lowercase hex).
+    /// </summary>
+    public static string TokenKey(string token) => $"token:{token}";
 
     /// <summary>
     /// Duplicate key for a monitor: trimmed name and URL (compared case-insensitively by the caller's set).

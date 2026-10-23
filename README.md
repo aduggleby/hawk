@@ -353,6 +353,19 @@ When a monitor triggers an alert, the email recipient is resolved in this order:
 3. **Owner's login email** — the Identity email of the user who created the monitor.
 4. **Admin fallback** — all users with the `Admin` role.
 
+## Heartbeat Monitors
+
+A heartbeat monitor is a dead man's switch for jobs Hawk cannot reach (cron jobs, backups behind a firewall). Choose **Heartbeat** when creating a monitor, set **Expected every** (1 min to 7 days) and **Grace**, and call the ping URL shown on the monitor page when the job succeeds:
+
+```bash
+curl -fsS -m 10 --retry 3 https://hawk.example.com/ping/<token>
+```
+
+- `GET`, `HEAD` and `POST` are accepted and return `200 OK`; an unknown token returns `404`. The URL is a secret: **Regenerate URL** on the Edit page invalidates the old one.
+- Every ping is an OK run. If no ping arrives within period + grace, a failed run is recorded (and again every period while it stays silent), using the normal alert threshold, reminders and recovery email.
+- New, imported and resumed heartbeats get a full period plus grace before they can fail. Pings to a paused or disabled heartbeat return `200` and are ignored.
+- Pings are rate limited per token (`Hawk__Security__PingRequestsPerMinute`, default 30) and per client IP (`Hawk__Security__PingRequestsPerMinutePerIp`, default 300). Ping tokens are redacted from Hawk's request log; configure your reverse proxy to skip access logging for `/ping/*` (Caddy: `log_skip /ping/*`).
+
 ## Monitor Pause
 
 Monitors can be temporarily paused without disabling them. A paused monitor:
@@ -555,6 +568,6 @@ ando run --dind -p publish
 
 ### Versioning And CHANGELOG
 
-- Project version is set to `0.9.30` in the web and test `.csproj` files.
+- Project version is set to `0.10.0` in the web and test `.csproj` files.
 - The intent is to use `ando release` which automatically bumps versions from there.
 - Changelog is tracked in `CHANGELOG.md`.

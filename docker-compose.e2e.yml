@@ -33,6 +33,7 @@ services:
       Hawk__DisableHttpsRedirection: "true"
       Hawk__SeedAdmin__Email: "ad@dualconsult.com"
       Hawk__SeedAdmin__Password: "Hawk!2026-Admin#1"
+      Hawk__Security__LoginRequestsPerMinute: "100"
       Hawk__Scheduler__Enabled: "true"
       Hawk__Scheduler__TickSeconds: "1"
       Hawk__Email__Enabled: "true"

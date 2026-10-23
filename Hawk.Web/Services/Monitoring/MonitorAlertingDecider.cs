@@ -110,10 +110,11 @@ public static class MonitorAlertingDecider
         int threshold,
         DateTimeOffset nowUtc)
     {
-        threshold = Math.Clamp(threshold, 1, 20);
-
         var wasFailing = state.ConsecutiveFailures > 0;
-        var wasAlertedIncident = state.ConsecutiveFailures >= threshold && state.LastFailureAlertSentAt is not null;
+
+        // LastFailureAlertSentAt is cleared on every success, so it alone says whether this incident was alerted
+        // (comparing against the current threshold would suppress recovery after the threshold was raised).
+        var wasAlertedIncident = state.LastFailureAlertSentAt is not null;
 
         // Transition to success always closes the incident.
         state.ConsecutiveFailures = 0;

@@ -15,6 +15,8 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ### Added
 
+- Heartbeat (push) monitors (version 0.10.0): a dead man's switch for cron jobs and backups. The client calls the secret URL `GET|HEAD|POST /ping/{token}`; if no ping arrives within the expected period plus grace, the monitor fails and uses the normal alerting (threshold, reminders, recovery). Per-token and per-IP ping rate limits (`Hawk__Security__PingRequestsPerMinute`, `Hawk__Security__PingRequestsPerMinutePerIp`), ping tokens are redacted from request logs, JSON export format v3, and a **Regenerate URL** action. Adds a schema migration (additive; back up before upgrading). Add `log_skip /ping/*` to the reverse proxy access log so tokens stay out of proxy logs.
+- Recovery emails are now also sent when the alert threshold is raised during an alerted incident.
 - Profile page: **Send confirmation email** button for unconfirmed accounts (version 0.9.29).
 - File logging location and retention are configurable (version 0.9.28): `Hawk__Logging__File__Path` (default `logs`) and `Hawk__Logging__File__RetainedDays` (default 30).
 - PostgreSQL support (version 0.9.27): `Hawk__Database__Provider=Postgres` (SQL Server stays the default; unknown values fail startup). Separate PostgreSQL migration set, Hangfire.PostgreSql storage, `docker-compose.postgres.yml` and `docker-compose.e2e.postgres.yml`, `./run-dev.sh --postgres`.

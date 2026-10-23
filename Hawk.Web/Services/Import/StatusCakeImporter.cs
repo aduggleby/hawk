@@ -107,7 +107,7 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
             // Branch: avoid creating duplicates if the same export is imported twice.
             // Case-insensitive on every provider (SQL Server's default collation is, PostgreSQL's is not).
             var finalNameLower = finalName.ToLower();
-            var existing = await db.Monitors.AnyAsync(m => m.Name.ToLower() == finalNameLower, cancellationToken);
+            var existing = await db.Monitors.AnyAsync(m => m.Type == MonitorType.Http && m.Name.ToLower() == finalNameLower, cancellationToken);
             if (existing)
             {
                 warnings.Add($"Skipped '{finalName}' (already exists).");
@@ -269,7 +269,9 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
         CancellationToken cancellationToken)
     {
         var marker = $"(sc:{testId.Trim()})".ToLower();
+        // Heartbeats never receive imported HTTP history, even if their name contains the marker.
         var monitor = await db.Monitors
+            .Where(m => m.Type == MonitorType.Http)
             .OrderByDescending(m => m.CreatedAt)
             .FirstOrDefaultAsync(m => m.Name.ToLower().Contains(marker), cancellationToken);
 

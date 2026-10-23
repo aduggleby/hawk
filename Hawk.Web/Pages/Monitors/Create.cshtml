@@ -3,6 +3,7 @@
 @model Hawk.Web.Pages.Monitors.CreateModel
 @{
     ViewData["Title"] = "New monitor";
+    var isHeartbeat = Model.Form.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat;
     var isPostMethod = string.Equals(Model.Form.Method, "POST", StringComparison.OrdinalIgnoreCase);
     var hasPostValues =
         string.Equals(Model.Form.Method, "POST", StringComparison.OrdinalIgnoreCase) ||
@@ -18,7 +19,7 @@
 <div class="flex items-start justify-between gap-4 mb-6">
     <div>
         <h1 class="text-2xl font-semibold tracking-tight">New monitor</h1>
-        <p class="text-sm text-zinc-600">Create a new uptime or content check.</p>
+        <p class="text-sm text-zinc-600">Create an HTTP check, or a heartbeat that waits for your job to call Hawk.</p>
         <p class="text-xs text-zinc-500 mt-2">
             You can import a previously exported monitor JSON to prefill this form. Review it, then click Create.
         </p>
@@ -37,12 +38,21 @@
     <div asp-validation-summary="All" class="hawk-error-message"></div>
 
     <div class="hawk-card">
+        <label class="hawk-label" for="Form_Type">@Html.DisplayNameFor(m => m.Form.Type)</label>
+        <select class="hawk-select mt-2" id="Form_Type" name="Form.Type">
+            <option value="Http" selected="@(!isHeartbeat)">HTTP check</option>
+            <option value="Heartbeat" selected="@isHeartbeat">Heartbeat (your job calls Hawk)</option>
+        </select>
+        <div class="text-xs text-zinc-500 mt-1">Cannot be changed later.</div>
+    </div>
+
+    <div class="hawk-card">
         <label class="hawk-label" asp-for="Form.Name"></label>
         <input class="hawk-input mt-2" asp-for="Form.Name" />
         <div class="hawk-error-message" asp-validation-for="Form.Name"></div>
     </div>
 
-    <div class="hawk-card">
+    <div class="hawk-card" data-http-only hidden="@isHeartbeat">
         <label class="hawk-label" asp-for="Form.Url"></label>
         <input class="hawk-input mt-2 font-mono" asp-for="Form.Url" placeholder="https://example.com/health" />
         <div class="hawk-error-message" asp-validation-for="Form.Url"></div>
@@ -50,7 +60,7 @@
 
     <div class="hawk-card">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
+            <div data-http-only hidden="@isHeartbeat">
                 <label class="hawk-label" asp-for="Form.Method"></label>
                 <select class="hawk-select mt-2" asp-for="Form.Method">
                     <option value="GET">GET</option>
@@ -58,9 +68,9 @@
                 </select>
                 <div class="hawk-error-message" asp-validation-for="Form.Method"></div>
             </div>
-            <div>
+            <div data-http-only hidden="@isHeartbeat">
                 <label class="hawk-label" asp-for="Form.IntervalSeconds"></label>
-                <select class="hawk-select mt-2" asp-for="Form.IntervalSeconds">
+                <select class="hawk-select mt-2" asp-for="Form.IntervalSeconds" data-interval="http" disabled="@isHeartbeat">
                     @foreach (var s in Model.AllowedIntervals)
                     {
                         <option value="@s">@((s < 60) ? $"{s}s" : $"{s/60}m")</option>
@@ -68,7 +78,28 @@
                 </select>
                 <div class="hawk-error-message" asp-validation-for="Form.IntervalSeconds"></div>
             </div>
-            <div>
+            <div data-heartbeat-only hidden="@(!isHeartbeat)">
+                <label class="hawk-label" for="Form_IntervalSeconds_Heartbeat">Expected every</label>
+                <select class="hawk-select mt-2" id="Form_IntervalSeconds_Heartbeat" name="Form.IntervalSeconds" data-interval="heartbeat" disabled="@(!isHeartbeat)">
+                    @foreach (var s in Model.AllowedHeartbeatPeriods)
+                    {
+                        <option value="@s" selected="@(s == Model.Form.IntervalSeconds || (s == 3600 && !Model.AllowedHeartbeatPeriods.Contains(Model.Form.IntervalSeconds)))">@Hawk.Web.Services.Monitoring.MonitorIntervals.FormatDuration(s)</option>
+                    }
+                </select>
+                <div class="text-xs text-zinc-500 mt-1">How often your job should call the ping URL.</div>
+            </div>
+            <div data-heartbeat-only hidden="@(!isHeartbeat)">
+                <label class="hawk-label" asp-for="Form.GraceSeconds"></label>
+                <select class="hawk-select mt-2" asp-for="Form.GraceSeconds">
+                    @foreach (var g in Model.AllowedHeartbeatGraces)
+                    {
+                        <option value="@g">@Hawk.Web.Services.Monitoring.MonitorIntervals.FormatDuration(g)</option>
+                    }
+                </select>
+                <div class="hawk-error-message" asp-validation-for="Form.GraceSeconds"></div>
+                <div class="text-xs text-zinc-500 mt-1">Extra time after the period before a missing ping counts as a failure.</div>
+            </div>
+            <div data-http-only hidden="@isHeartbeat">
                 <label class="hawk-label" asp-for="Form.TimeoutSeconds"></label>
                 <input class="hawk-input mt-2" asp-for="Form.TimeoutSeconds" type="number" min="1" max="300" />
                 <div class="hawk-error-message" asp-validation-for="Form.TimeoutSeconds"></div>
@@ -92,7 +123,7 @@
                 <div class="hawk-error-message" asp-validation-for="Form.AlertEmailOverride"></div>
                 <div class="text-xs text-zinc-500 mt-1">Optional. Overrides the alert recipient for this monitor.</div>
             </div>
-            <div>
+            <div data-http-only hidden="@isHeartbeat">
                 <label class="hawk-label" asp-for="Form.AllowedStatusCodes"></label>
                 <input class="hawk-input mt-2 font-mono" asp-for="Form.AllowedStatusCodes" placeholder="404,429" />
                 <div class="hawk-error-message" asp-validation-for="Form.AllowedStatusCodes"></div>
@@ -107,7 +138,7 @@
         </div>
     </div>
 
-    <div class="hawk-card" id="post-options-card" hidden="@(!isPostMethod)">
+    <div class="hawk-card" id="post-options-card" data-http-only hidden="@(isHeartbeat || !isPostMethod)">
         <details @if (hasPostValues) { <text>open</text> }>
             <summary class="cursor-pointer select-none">
                 <div class="font-semibold inline">POST options</div>
@@ -132,7 +163,7 @@
         </details>
     </div>
 
-    <div class="hawk-card">
+    <div class="hawk-card" data-http-only hidden="@isHeartbeat">
         <details @if (hasHeaderValues) { <text>open</text> }>
             <summary class="cursor-pointer select-none">
                 <div class="font-semibold inline">Headers</div>
@@ -154,7 +185,7 @@
         </details>
     </div>
 
-    <div class="hawk-card">
+    <div class="hawk-card" data-http-only hidden="@isHeartbeat">
         <details @if (hasMatchRuleValues) { <text>open</text> }>
             <summary class="cursor-pointer select-none">
                 <div class="font-semibold inline">Match rules</div>
@@ -201,16 +232,26 @@
                 });
             }
 
+            const typeSelect = document.getElementById("Form_Type");
             const methodSelect = document.getElementById("Form_Method");
             const postOptionsCard = document.getElementById("post-options-card");
-            if (!methodSelect || !postOptionsCard) return;
 
+            // Show only the sections of the selected type. The two interval selects share one field name, so the inactive one is disabled.
             const sync = () => {
-                const isPost = (methodSelect.value || "").toUpperCase() === "POST";
-                postOptionsCard.hidden = !isPost;
+                const heartbeat = typeSelect?.value === "Heartbeat";
+                document.querySelectorAll("[data-http-only]").forEach(el => { el.hidden = heartbeat; });
+                document.querySelectorAll("[data-heartbeat-only]").forEach(el => { el.hidden = !heartbeat; });
+                document.querySelectorAll("select[data-interval]").forEach(el => {
+                    el.disabled = (el.dataset.interval === "heartbeat") !== heartbeat;
+                });
+                if (postOptionsCard && methodSelect) {
+                    const isPost = (methodSelect.value || "").toUpperCase() === "POST";
+                    postOptionsCard.hidden = heartbeat || !isPost;
+                }
             };
 
-            methodSelect.addEventListener("change", sync);
+            typeSelect?.addEventListener("change", sync);
+            methodSelect?.addEventListener("change", sync);
             sync();
         })();
     </script>

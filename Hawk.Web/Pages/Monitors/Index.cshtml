@@ -80,6 +80,10 @@ else
                                     <a asp-page="/Monitors/Details"
                                        asp-route-id="@m.Id"
                                        class="no-underline text-red-700 hover:text-red-800">@m.Name</a>
+                                    @if (m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat)
+                                    {
+                                        <span class="hawk-badge ml-2">Heartbeat</span>
+                                    }
                                 </td>
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     @if (!m.Enabled)
@@ -148,6 +152,10 @@ else
                                 <a asp-page="/Monitors/Details"
                                    asp-route-id="@m.Id"
                                    class="no-underline @(failing ? "text-red-700 hover:text-red-800" : "")">@m.Name</a>
+                                @if (m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat)
+                                {
+                                    <span class="hawk-badge ml-2">Heartbeat</span>
+                                }
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
                                 @if (!m.Enabled)

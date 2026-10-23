@@ -6,6 +6,7 @@
 // </file>
 
 using System.ComponentModel.DataAnnotations;
+using Hawk.Web.Data.Monitoring;
 using Hawk.Web.Services;
 using Hawk.Web.Services.Monitoring;
 
@@ -30,11 +31,17 @@ public sealed class MonitorForm
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Absolute URL to request.
+    /// Monitor type. Create binds it; Edit overwrites it with the persisted type (the type is immutable).
+    /// </summary>
+    [Display(Name = "Monitor type")]
+    public MonitorType Type { get; set; } = MonitorType.Http;
+
+    /// <summary>
+    /// Absolute URL to request. Required for HTTP monitors only (see <see cref="Validate"/>).
     /// </summary>
     [Display(Name = "URL")]
-    [Required, MaxLength(2048)]
-    public string Url { get; set; } = string.Empty;
+    [MaxLength(2048)]
+    public string? Url { get; set; } = string.Empty;
 
     /// <summary>
     /// HTTP method: GET or POST.
@@ -57,10 +64,16 @@ public sealed class MonitorForm
     public int TimeoutSeconds { get; set; } = 15;
 
     /// <summary>
-    /// Fixed interval in seconds between runs.
+    /// Fixed interval in seconds between runs (for heartbeats: the expected period).
     /// </summary>
     [Display(Name = "Interval")]
     public int IntervalSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Heartbeat only: grace time in seconds after the period.
+    /// </summary>
+    [Display(Name = "Grace")]
+    public int GraceSeconds { get; set; } = 300;
 
     /// <summary>
     /// Number of consecutive failed runs required before an alert email is sent.
@@ -125,15 +138,36 @@ public sealed class MonitorForm
     public string[] MatchPatterns { get; set; } = new string[5];
 
     /// <summary>
-    /// Validates URL scheme and allowed intervals.
+    /// Validates the form for its <see cref="Type"/>: URL/method/match rules for HTTP monitors, period and grace for heartbeats.
     /// </summary>
     public IEnumerable<ValidationResult> Validate(IHostEnvironment env)
     {
-        if (!Uri.TryCreate(Url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
-            yield return new ValidationResult("URL must be an absolute http/https URL.", [nameof(Url)]);
+        // Undefined numeric values (e.g. from a bulk import) would persist a monitor the scheduler cannot advance.
+        if (!Enum.IsDefined(Type))
+        {
+            yield return new ValidationResult("Monitor type is not valid.", [nameof(Type)]);
+            yield break;
+        }
 
-        if (!MonitorIntervals.AllowedSeconds(env).Contains(IntervalSeconds))
-            yield return new ValidationResult("Interval is not allowed in this environment.", [nameof(IntervalSeconds)]);
+        var heartbeat = Type == MonitorType.Heartbeat;
+
+        if (heartbeat)
+        {
+            if (!MonitorIntervals.AllowedHeartbeatPeriods(env).Contains(IntervalSeconds))
+                yield return new ValidationResult("Expected period is not allowed in this environment.", [nameof(IntervalSeconds)]);
+            if (!MonitorIntervals.AllowedHeartbeatGraces(env).Contains(GraceSeconds))
+                yield return new ValidationResult("Grace is not allowed in this environment.", [nameof(GraceSeconds)]);
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(Url))
+                yield return new ValidationResult("URL is required.", [nameof(Url)]);
+            else if (!Uri.TryCreate(Url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
+                yield return new ValidationResult("URL must be an absolute http/https URL.", [nameof(Url)]);
+
+            if (!MonitorIntervals.AllowedSeconds(env).Contains(IntervalSeconds))
+                yield return new ValidationResult("Interval is not allowed in this environment.", [nameof(IntervalSeconds)]);
+        }
 
         if (AlertAfterConsecutiveFailures < 1 || AlertAfterConsecutiveFailures > 20)
             yield return new ValidationResult("Alert threshold must be between 1 and 20.", [nameof(AlertAfterConsecutiveFailures)]);
@@ -145,11 +179,22 @@ public sealed class MonitorForm
                 yield return new ValidationResult("Alert email override must be a valid email address.", [nameof(AlertEmailOverride)]);
         }
 
-        if (!AllowedStatusCodesParser.TryParse(AllowedStatusCodes, out _, out var statusCodeError))
-            yield return new ValidationResult(statusCodeError ?? "Allowed HTTP status codes are invalid.", [nameof(AllowedStatusCodes)]);
-
         if (RunRetentionDays is < 1 or > 3650)
             yield return new ValidationResult("Run retention override must be between 1 and 3650 days.", [nameof(RunRetentionDays)]);
+
+        // PostgreSQL text columns reject NUL characters (SQL Server accepts them); refuse them on every provider.
+        string?[] texts = heartbeat
+            ? [Name, AlertEmailOverride]
+            : [Name, Url, Method, ContentType, Body, AlertEmailOverride, AllowedStatusCodes, .. HeaderNames, .. HeaderValues, .. MatchPatterns];
+        if (texts.Any(t => t is not null && t.Contains('\0')))
+            yield return new ValidationResult("Fields must not contain NUL characters.", [string.Empty]);
+
+        // Everything below configures the HTTP request; heartbeats have none.
+        if (heartbeat)
+            yield break;
+
+        if (!AllowedStatusCodesParser.TryParse(AllowedStatusCodes, out _, out var statusCodeError))
+            yield return new ValidationResult(statusCodeError ?? "Allowed HTTP status codes are invalid.", [nameof(AllowedStatusCodes)]);
 
         for (var i = 0; i < Math.Min(MatchModes.Length, MatchPatterns.Length); i++)
         {
@@ -157,11 +202,6 @@ public sealed class MonitorForm
             if (MatchModes[i] == ContentMatchMode.Regex && pattern.Length > 0 && !IsValidRegex(pattern, out var regexError))
                 yield return new ValidationResult($"Match rule {i + 1}: invalid regular expression ({regexError}).", [$"{nameof(MatchPatterns)}[{i}]"]);
         }
-
-        // PostgreSQL text columns reject NUL characters (SQL Server accepts them); refuse them on every provider.
-        string?[] texts = [Name, Url, Method, ContentType, Body, AlertEmailOverride, AllowedStatusCodes, .. HeaderNames, .. HeaderValues, .. MatchPatterns];
-        if (texts.Any(t => t is not null && t.Contains('\0')))
-            yield return new ValidationResult("Fields must not contain NUL characters.", [string.Empty]);
 
         var method = (Method ?? string.Empty).Trim().ToUpperInvariant();
         if (method is not ("GET" or "POST"))

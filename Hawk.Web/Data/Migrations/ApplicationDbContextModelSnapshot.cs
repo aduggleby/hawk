@@ -120,11 +120,21 @@ namespace Hawk.Web.Data.Migrations
                     b.Property<bool>("Enabled")
                         .HasColumnType("bit");
 
+                    b.Property<int>("HeartbeatGraceSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<string>("HeartbeatToken")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<int>("IntervalSeconds")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsPaused")
                         .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("LastPingAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset?>("LastRunAt")
                         .HasColumnType("datetimeoffset");
@@ -148,6 +158,9 @@ namespace Hawk.Web.Data.Migrations
                     b.Property<int>("TimeoutSeconds")
                         .HasColumnType("int");
 
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
                     b.Property<string>("Url")
                         .IsRequired()
                         .HasMaxLength(2048)
@@ -156,6 +169,10 @@ namespace Hawk.Web.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Enabled");
+
+                    b.HasIndex("HeartbeatToken")
+                        .IsUnique()
+                        .HasFilter("[HeartbeatToken] IS NOT NULL");
 
                     b.HasIndex("NextRunAt");
 

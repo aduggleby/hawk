@@ -39,6 +39,21 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
     public IReadOnlyList<int> AllowedIntervals { get; private set; } = [];
 
     /// <summary>
+    /// True when the persisted monitor is a heartbeat. The type is immutable and never taken from the form.
+    /// </summary>
+    public bool IsHeartbeat { get; private set; }
+
+    /// <summary>
+    /// Allowed heartbeat periods (seconds).
+    /// </summary>
+    public IReadOnlyList<int> AllowedHeartbeatPeriods => Services.Monitoring.MonitorIntervals.AllowedHeartbeatPeriods(env);
+
+    /// <summary>
+    /// Allowed heartbeat grace times (seconds).
+    /// </summary>
+    public IReadOnlyList<int> AllowedHeartbeatGraces => Services.Monitoring.MonitorIntervals.AllowedHeartbeatGraces(env);
+
+    /// <summary>
     /// Loads the edit form.
     /// </summary>
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
@@ -52,15 +67,20 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         if (m is null)
             return NotFound();
 
+        IsHeartbeat = m.Type == MonitorType.Heartbeat;
+        var intervals = IsHeartbeat ? AllowedHeartbeatPeriods : AllowedIntervals;
+
         Form = new MonitorForm
         {
             ConcurrencyStamp = m.ConcurrencyStamp.ToString("D"),
             Name = m.Name,
+            Type = m.Type,
             Url = m.Url,
             Method = m.Method,
             Enabled = m.Enabled,
             TimeoutSeconds = m.TimeoutSeconds,
-            IntervalSeconds = AllowedIntervals.Contains(m.IntervalSeconds) ? m.IntervalSeconds : AllowedIntervals.FirstOrDefault(),
+            IntervalSeconds = intervals.Contains(m.IntervalSeconds) ? m.IntervalSeconds : intervals.FirstOrDefault(),
+            GraceSeconds = m.HeartbeatGraceSeconds,
             AlertAfterConsecutiveFailures = Math.Clamp(m.AlertAfterConsecutiveFailures, 1, 20),
             AlertEmailOverride = m.AlertEmailOverride,
             AllowedStatusCodes = m.AllowedStatusCodes,
@@ -94,6 +114,14 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
     {
         AllowedIntervals = Services.Monitoring.MonitorIntervals.AllowedSeconds(env);
 
+        var m = await db.Monitors.FirstOrDefaultAsync(x => x.Id == Id, cancellationToken);
+        if (m is null)
+            return NotFound();
+
+        // The type is immutable: validate and save against the persisted type, never the submitted one.
+        IsHeartbeat = m.Type == MonitorType.Heartbeat;
+        Form.Type = m.Type;
+
         MonitorFormValidation.AddResults(ModelState, Form.Validate(env));
 
         if (!ModelState.IsValid)
@@ -105,33 +133,46 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
             return RedirectToPage("/Monitors/Edit", new { id = Id });
         }
 
-        var m = await db.Monitors.FirstOrDefaultAsync(x => x.Id == Id, cancellationToken);
-        if (m is null)
-            return NotFound();
-
         // Ensure EF checks the stamp from when the user loaded the page, not the one we just fetched,
         // and renew it so other open Edit forms conflict with this change.
         db.Entry(m).Property(x => x.ConcurrencyStamp).OriginalValue = originalStamp;
         m.ConcurrencyStamp = Guid.NewGuid();
 
+        var wasEnabled = m.Enabled;
+        var oldPeriod = m.IntervalSeconds;
+        var oldGrace = m.HeartbeatGraceSeconds;
+
         m.Name = Form.Name.Trim();
-        m.Url = Form.Url.Trim();
-        m.Method = Form.Method.Trim().ToUpperInvariant();
         m.Enabled = Form.Enabled;
-        m.TimeoutSeconds = Form.TimeoutSeconds;
         m.IntervalSeconds = Form.IntervalSeconds;
         m.AlertAfterConsecutiveFailures = Form.AlertAfterConsecutiveFailures;
         m.AlertEmailOverride = string.IsNullOrWhiteSpace(Form.AlertEmailOverride) ? null : Form.AlertEmailOverride.Trim();
-        m.AllowedStatusCodes = AllowedStatusCodesParser.Normalize(Form.AllowedStatusCodes);
         m.RunRetentionDays = Form.RunRetentionDays;
-        m.ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim();
-        m.Body = Form.Body;
 
-        // Reset scheduling to "run soon" when config changes.
-        m.NextRunAt = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60));
+        if (IsHeartbeat)
+        {
+            m.HeartbeatGraceSeconds = Form.GraceSeconds;
+
+            // NextRunAt is the ping deadline: only an intentional change (period, grace, re-enable) gives a fresh
+            // period plus grace. Saving other fields must not move it.
+            if (m.IntervalSeconds != oldPeriod || m.HeartbeatGraceSeconds != oldGrace || (!wasEnabled && m.Enabled) || m.NextRunAt is null)
+                m.NextRunAt = HeartbeatTokens.InitialDeadline(DateTimeOffset.UtcNow, m.IntervalSeconds, m.HeartbeatGraceSeconds);
+        }
+        else
+        {
+            m.Url = (Form.Url ?? string.Empty).Trim();
+            m.Method = Form.Method.Trim().ToUpperInvariant();
+            m.TimeoutSeconds = Form.TimeoutSeconds;
+            m.AllowedStatusCodes = AllowedStatusCodesParser.Normalize(Form.AllowedStatusCodes);
+            m.ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim();
+            m.Body = Form.Body;
+
+            // Reset scheduling to "run soon" when config changes.
+            m.NextRunAt = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60));
+        }
 
         var newHeaders = new List<MonitorHeader>();
-        for (var i = 0; i < Math.Min(Form.HeaderNames.Length, Form.HeaderValues.Length); i++)
+        for (var i = 0; !IsHeartbeat && i < Math.Min(Form.HeaderNames.Length, Form.HeaderValues.Length); i++)
         {
             var hn = (Form.HeaderNames[i] ?? string.Empty).Trim();
             var hv = (Form.HeaderValues[i] ?? string.Empty).Trim();
@@ -141,7 +182,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
         }
 
         var newRules = new List<MonitorMatchRule>();
-        for (var i = 0; i < Math.Min(Form.MatchModes.Length, Form.MatchPatterns.Length); i++)
+        for (var i = 0; !IsHeartbeat && i < Math.Min(Form.MatchModes.Length, Form.MatchPatterns.Length); i++)
         {
             var pat = (Form.MatchPatterns[i] ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(pat))
@@ -175,5 +216,25 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
             TempData["FlashError"] = "This monitor was changed by someone else while you were editing. Please review the latest values and try again.";
             return RedirectToPage("/Monitors/Edit", new { id = Id });
         }
+    }
+
+    /// <summary>
+    /// Issues a new ping token for a heartbeat; the old URL stops working immediately.
+    /// </summary>
+    public async Task<IActionResult> OnPostRegenerateAsync(CancellationToken cancellationToken)
+    {
+        // Set-based: independent of the Edit form's concurrency stamp. Still an intentional user change, so the stamp is renewed.
+        var token = HeartbeatTokens.Generate();
+        var stamp = Guid.NewGuid();
+        var updated = await db.Monitors
+            .Where(m => m.Id == Id && m.Type == MonitorType.Heartbeat)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(m => m.HeartbeatToken, token)
+                .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
+        if (updated == 0)
+            return NotFound();
+
+        TempData["FlashInfo"] = "Issued a new ping URL. The old URL no longer works.";
+        return RedirectToPage("/Monitors/Details", new { id = Id });
     }
 }

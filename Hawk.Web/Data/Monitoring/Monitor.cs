@@ -10,6 +10,18 @@ using System.ComponentModel.DataAnnotations;
 namespace Hawk.Web.Data.Monitoring;
 
 /// <summary>
+/// How a monitor is checked.
+/// </summary>
+public enum MonitorType
+{
+    /// <summary>Hawk requests a URL on a schedule.</summary>
+    Http = 0,
+
+    /// <summary>The client calls Hawk (<c>/ping/{token}</c>); Hawk fails the monitor when no ping arrives in time.</summary>
+    Heartbeat = 1,
+}
+
+/// <summary>
 /// A configured uptime/content check.
 /// </summary>
 public sealed class Monitor
@@ -26,7 +38,12 @@ public sealed class Monitor
     public required string Name { get; set; }
 
     /// <summary>
-    /// Absolute URL to request.
+    /// Check type. Immutable after creation.
+    /// </summary>
+    public MonitorType Type { get; set; } = MonitorType.Http;
+
+    /// <summary>
+    /// Absolute URL to request (empty for heartbeats).
     /// </summary>
     [MaxLength(2048)]
     public required string Url { get; set; }
@@ -53,12 +70,29 @@ public sealed class Monitor
     public int TimeoutSeconds { get; set; } = 15;
 
     /// <summary>
-    /// Fixed interval in seconds between executions.
+    /// Fixed interval in seconds between executions (for heartbeats: the expected period between pings).
     /// </summary>
     public int IntervalSeconds { get; set; } = 60;
 
     /// <summary>
-    /// When the scheduler should run this monitor next.
+    /// Heartbeat only: extra seconds after the period before a missing ping counts as a failure.
+    /// </summary>
+    public int HeartbeatGraceSeconds { get; set; }
+
+    /// <summary>
+    /// Heartbeat only: secret URL token (32 lowercase hex characters, unique). Null for HTTP monitors.
+    /// </summary>
+    [MaxLength(32)]
+    public string? HeartbeatToken { get; set; }
+
+    /// <summary>
+    /// Heartbeat only: when the last accepted ping arrived (UTC). Written set-based.
+    /// </summary>
+    public DateTimeOffset? LastPingAt { get; set; }
+
+    /// <summary>
+    /// When the scheduler should run this monitor next. For heartbeats this is the ping deadline, which the
+    /// scheduler never writes (only create/import/resume/edit, pings and recorded misses do).
     /// </summary>
     public DateTimeOffset? NextRunAt { get; set; }
 

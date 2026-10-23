@@ -5,6 +5,7 @@
 // </file>
 
 using System.Diagnostics;
+using Hawk.Web.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -80,7 +81,7 @@ public class ErrorModel(IWebHostEnvironment environment, ILogger<ErrorModel> log
 
         var path = pathFeature?.Path ?? HttpContext.Request.Path.Value;
         if (ex is not null)
-            logger.LogError(ex, "Unhandled exception for {Path}. Request ID: {RequestId}.", path, RequestId);
+            logger.LogError(ex, "Unhandled exception for {Path}. Request ID: {RequestId}.", HeartbeatEndpoints.RedactPath(path ?? string.Empty), RequestId);
 
         if (IsProduction)
             return;

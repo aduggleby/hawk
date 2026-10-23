@@ -48,7 +48,7 @@ public sealed class MonitorTransferTests
 
         Assert.True(MonitorJsonPort.TryParse(json, out var parsed, out var error), error);
         Assert.NotNull(parsed);
-        Assert.Equal(2, parsed.Version);
+        Assert.Equal(MonitorJsonPort.CurrentVersion, parsed.Version);
 
         var m = Assert.Single(parsed.Monitors);
         Assert.Equal(source.Name, m.Name);
@@ -244,7 +244,7 @@ public sealed class MonitorTransferTests
         var json = await svc.ExportAllJsonAsync(CancellationToken.None);
 
         Assert.True(MonitorJsonPort.TryParse(json, out var env, out _));
-        Assert.Equal(2, env!.Version);
+        Assert.Equal(MonitorJsonPort.CurrentVersion, env!.Version);
         Assert.Equal(["Alpha", "Beta"], env.Monitors.Select(m => m.Name));
         Assert.Null(env.Monitors[0].OwnerEmail);
         Assert.Equal("bob@example.com", env.Monitors[1].OwnerEmail);

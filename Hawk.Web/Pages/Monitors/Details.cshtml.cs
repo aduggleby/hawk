@@ -33,6 +33,13 @@ public class DetailsModel(ApplicationDbContext db, IBackgroundJobClient jobs) : 
     public List<MonitorRun> Runs { get; private set; } = [];
 
     /// <summary>
+    /// Full ping URL of a heartbeat (scheme and host as seen by the client, via forwarded headers), or null.
+    /// </summary>
+    public string? PingUrl => Monitor?.HeartbeatToken is { } token
+        ? $"{Request.Scheme}://{Request.Host}/ping/{token}"
+        : null;
+
+    /// <summary>
     /// Loads monitor and recent run history.
     /// </summary>
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken cancellationToken)
@@ -65,6 +72,13 @@ public class DetailsModel(ApplicationDbContext db, IBackgroundJobClient jobs) : 
             .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
         if (monitor is null)
             return NotFound();
+
+        // Heartbeats have nothing to run: they wait for the client to call the ping URL.
+        if (monitor.Type == MonitorType.Heartbeat)
+        {
+            TempData["FlashError"] = "Heartbeat monitors cannot be run manually. They wait for a ping.";
+            return RedirectToPage(new { id });
+        }
 
         // Create a run record up front so we can redirect to diagnostics immediately.
         var run = new MonitorRun

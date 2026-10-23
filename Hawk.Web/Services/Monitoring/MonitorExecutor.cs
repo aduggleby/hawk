@@ -29,9 +29,41 @@ public sealed record MonitorExecutionResult(
     MonitorRun Run
 );
 
+/// <summary>
+/// Facts about an incoming heartbeat ping that are kept in the run diagnostics (never the secret token).
+/// </summary>
+public sealed record PingRequestInfo(string Method, string? UserAgent, string? ContentType, string? ClientIp);
+
+/// <summary>
+/// Outcome of <see cref="IMonitorExecutor.RecordPingAsync"/>.
+/// </summary>
+public enum PingResult
+{
+    /// <summary>The ping was recorded.</summary>
+    Recorded = 0,
+
+    /// <summary>The monitor is paused or disabled; nothing was written.</summary>
+    Paused = 1,
+
+    /// <summary>No heartbeat monitor has this token (any more).</summary>
+    NotFound = 2,
+
+    /// <summary>The alert lock was busy or the monitor kept changing; nothing was written and the client should retry (503).</summary>
+    Busy = 3,
+}
+
 public interface IMonitorExecutor
 {
+    /// <summary>
+    /// Runs a monitor. For heartbeats this is the missed-ping check (reason <c>schedule</c>) and always returns null.
+    /// </summary>
     Task<MonitorExecutionResult?> ExecuteAsync(Guid monitorId, string? reason, CancellationToken cancellationToken, Guid? runId = null);
+
+    /// <summary>
+    /// Records a heartbeat ping for an already normalized token (see <see cref="HeartbeatTokens.TryNormalize"/>).
+    /// Handled inline: takes the per-monitor alert lock, reloads, then writes the run, the new deadline and any recovery alert in one transaction.
+    /// </summary>
+    Task<PingResult> RecordPingAsync(string token, PingRequestInfo info, CancellationToken cancellationToken);
 }
 
 public sealed class MonitorExecutor(
@@ -44,6 +76,9 @@ public sealed class MonitorExecutor(
     IConfiguration config) : IMonitorExecutor
 {
     private const int AlertLockTimeoutSeconds = 60;
+    private const int HeartbeatMissLockTimeoutSeconds = 10;
+    private const int PingLockTimeoutSeconds = 5;
+    private const string AlertLockBusyMessage = "Alert state lock busy; skipped alert evaluation to avoid duplicate alert.";
     private const int FailureLogEntryLimit = 20;
 
     private sealed record FailureLogEntry(DateTimeOffset StartedAt, int? StatusCode);
@@ -59,6 +94,14 @@ public sealed class MonitorExecutor(
         if (monitor is null)
         {
             logger.LogWarning("Monitor {MonitorId} not found (reason={Reason})", monitorId, reason);
+            return null;
+        }
+
+        // Branch: heartbeats have no request to run; "schedule" jobs are missed-ping checks.
+        if (monitor.Type == MonitorType.Heartbeat)
+        {
+            if (!string.Equals(reason, "manual", StringComparison.OrdinalIgnoreCase))
+                await CheckHeartbeatMissAsync(monitorId, reason, cancellationToken);
             return null;
         }
 
@@ -175,11 +218,6 @@ public sealed class MonitorExecutor(
             m.Details
         }));
 
-        var threshold = Math.Clamp(monitor.AlertAfterConsecutiveFailures, 1, 20);
-        var repeatHours = config.GetValue("Hawk:Alerting:RepeatFailureAlertEveryHours", 24);
-        repeatHours = Math.Clamp(repeatHours, 1, 24 * 30);
-        var repeatEvery = TimeSpan.FromHours(repeatHours);
-
         var saved = false;
         try
         {
@@ -188,84 +226,7 @@ public sealed class MonitorExecutor(
                 $"hawk:monitor-alert:{monitor.Id}",
                 TimeSpan.FromSeconds(AlertLockTimeoutSeconds));
 
-            var state = await GetOrCreateAlertStateAsync(monitor.Id, run.Id, cancellationToken);
-
-            // Capture prior state for composing emails (duration, etc.).
-            var incidentOpenedAt = state.FailureIncidentOpenedAt;
-            var lastFailureAlertSentAt = state.LastFailureAlertSentAt;
-
-            MonitorAlertDecision decision;
-            if (!run.Success)
-            {
-                decision = MonitorAlertingDecider.OnFailure(state, threshold, run.StartedAt, repeatEvery);
-
-                if (decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder)
-                {
-                    var failureLog = await GetFailureLogEntriesAsync(
-                        monitor.Id,
-                        run,
-                        state.FailureIncidentOpenedAt,
-                        state.ConsecutiveFailures,
-                        cancellationToken);
-
-                    var sent = await TrySendFailureAlertAsync(
-                        monitor,
-                        run,
-                        decision.Kind,
-                        state.ConsecutiveFailures,
-                        threshold,
-                        state.FailureIncidentOpenedAt,
-                        lastFailureAlertSentAt,
-                        failureLog,
-                        cancellationToken);
-
-                    if (sent)
-                    {
-                        state.LastFailureAlertSentAt = run.StartedAt;
-                        state.LastFailureAlertError = null;
-                    }
-                    else
-                    {
-                        state.LastFailureAlertError = run.AlertError;
-                    }
-                }
-                else
-                {
-                    run.AlertSent = false;
-                    run.AlertError = decision.Reason;
-                }
-            }
-            else
-            {
-                decision = MonitorAlertingDecider.OnSuccess(state, threshold, run.StartedAt);
-
-                if (decision.Kind == MonitorAlertKind.Recovered)
-                {
-                    var sent = await TrySendRecoveredAlertAsync(
-                        monitor,
-                        run,
-                        incidentOpenedAt,
-                        lastFailureAlertSentAt,
-                        cancellationToken);
-
-                    if (sent)
-                    {
-                        state.PendingRecoveryAlert = false;
-                        state.LastRecoveryAlertSentAt = run.StartedAt;
-                        state.LastRecoveryAlertError = null;
-                    }
-                    else
-                    {
-                        state.LastRecoveryAlertError = run.AlertError;
-                    }
-                }
-            }
-
-            // Renew the alert-state concurrency stamp only when this run actually changed the state,
-            // so unchanged states don't cause an extra UPDATE on every run.
-            db.ChangeTracker.DetectChanges();
-            if (db.Entry(state).State == EntityState.Modified)
-                state.ConcurrencyStamp = Guid.NewGuid();
+            await EvaluateAlertsAsync(monitor, run, cancellationToken);
 
             await SetLastRunAtAsync(monitor, started, cancellationToken);
             if (existingRun is null)
@@ -277,7 +238,7 @@ public sealed class MonitorExecutor(
         {
             logger.LogWarning(ex, "Skipped alert evaluation for monitor {MonitorId} because alert state lock was busy.", monitor.Id);
             run.AlertSent = false;
-            run.AlertError = "Alert state lock busy; skipped alert evaluation to avoid duplicate alert.";
+            run.AlertError = AlertLockBusyMessage;
         }
 
         if (!saved)
@@ -292,6 +253,278 @@ public sealed class MonitorExecutor(
 
         return new MonitorExecutionResult(monitor, req, res, run);
     }
+
+    /// <summary>
+    /// Decides and sends the alert for <paramref name="run"/> and updates the (tracked) alert state.
+    /// The caller must hold the <c>hawk:monitor-alert:{id}</c> lock and saves afterwards. Shared by HTTP checks,
+    /// heartbeat misses and heartbeat pings.
+    /// </summary>
+    private async Task EvaluateAlertsAsync(MonitorEntity monitor, MonitorRun run, CancellationToken cancellationToken)
+    {
+        var threshold = Math.Clamp(monitor.AlertAfterConsecutiveFailures, 1, 20);
+        var repeatHours = config.GetValue("Hawk:Alerting:RepeatFailureAlertEveryHours", 24);
+        repeatHours = Math.Clamp(repeatHours, 1, 24 * 30);
+        var repeatEvery = TimeSpan.FromHours(repeatHours);
+
+        var state = await GetOrCreateAlertStateAsync(monitor.Id, run.Id, cancellationToken);
+
+        // Capture prior state for composing emails (duration, etc.).
+        var incidentOpenedAt = state.FailureIncidentOpenedAt;
+        var lastFailureAlertSentAt = state.LastFailureAlertSentAt;
+
+        MonitorAlertDecision decision;
+        if (!run.Success)
+        {
+            decision = MonitorAlertingDecider.OnFailure(state, threshold, run.StartedAt, repeatEvery);
+
+            if (decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder)
+            {
+                var failureLog = await GetFailureLogEntriesAsync(
+                    monitor.Id,
+                    run,
+                    state.FailureIncidentOpenedAt,
+                    state.ConsecutiveFailures,
+                    cancellationToken);
+
+                var sent = await TrySendFailureAlertAsync(
+                    monitor,
+                    run,
+                    decision.Kind,
+                    state.ConsecutiveFailures,
+                    threshold,
+                    state.FailureIncidentOpenedAt,
+                    lastFailureAlertSentAt,
+                    failureLog,
+                    cancellationToken);
+
+                if (sent)
+                {
+                    state.LastFailureAlertSentAt = run.StartedAt;
+                    state.LastFailureAlertError = null;
+                }
+                else
+                {
+                    state.LastFailureAlertError = run.AlertError;
+                }
+            }
+            else
+            {
+                run.AlertSent = false;
+                run.AlertError = decision.Reason;
+            }
+        }
+        else
+        {
+            decision = MonitorAlertingDecider.OnSuccess(state, threshold, run.StartedAt);
+
+            if (decision.Kind == MonitorAlertKind.Recovered)
+            {
+                var sent = await TrySendRecoveredAlertAsync(
+                    monitor,
+                    run,
+                    incidentOpenedAt,
+                    lastFailureAlertSentAt,
+                    cancellationToken);
+
+                if (sent)
+                {
+                    state.PendingRecoveryAlert = false;
+                    state.LastRecoveryAlertSentAt = run.StartedAt;
+                    state.LastRecoveryAlertError = null;
+                }
+                else
+                {
+                    state.LastRecoveryAlertError = run.AlertError;
+                }
+            }
+        }
+
+        // Renew the alert-state concurrency stamp only when this run actually changed the state,
+        // so unchanged states don't cause an extra UPDATE on every run.
+        db.ChangeTracker.DetectChanges();
+        if (db.Entry(state).State == EntityState.Modified)
+            state.ConcurrencyStamp = Guid.NewGuid();
+    }
+
+    /// <summary>
+    /// Missed-ping check, run by the scheduler job. Everything happens under the alert lock after reloading:
+    /// a ping, resume or edit that moved the deadline since the job was queued makes this a no-op.
+    /// </summary>
+    private async Task CheckHeartbeatMissAsync(Guid monitorId, string? reason, CancellationToken cancellationToken)
+    {
+        using var lockConnection = jobStorage.GetConnection();
+        IDisposable alertLock;
+        try
+        {
+            alertLock = lockConnection.AcquireDistributedLock($"hawk:monitor-alert:{monitorId}", TimeSpan.FromSeconds(HeartbeatMissLockTimeoutSeconds));
+        }
+        catch (DistributedLockTimeoutException)
+        {
+            // Record nothing: the deadline stays in the past, so the next scheduler tick retries.
+            logger.LogDebug("Heartbeat miss check for monitor {MonitorId} skipped (lock busy).", monitorId);
+            return;
+        }
+
+        using (alertLock)
+        {
+            db.ChangeTracker.Clear();
+            var monitor = await db.Monitors.FirstOrDefaultAsync(x => x.Id == monitorId, cancellationToken);
+            if (monitor is null || monitor.Type != MonitorType.Heartbeat || !monitor.Enabled || monitor.IsPaused)
+                return;
+
+            var now = DateTimeOffset.UtcNow;
+            if (monitor.NextRunAt is not { } deadline)
+            {
+                // No deadline (should not happen): give a full period plus grace instead of failing immediately.
+                var initial = HeartbeatTokens.InitialDeadline(now, monitor.IntervalSeconds, monitor.HeartbeatGraceSeconds);
+                await db.Monitors
+                    .Where(m => m.Id == monitorId && m.NextRunAt == null)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.NextRunAt, initial), cancellationToken);
+                return;
+            }
+
+            if (deadline > now)
+                return;
+
+            var since = monitor.LastPingAt is { } lastPing ? $"since {lastPing.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC" : "since monitoring started";
+            var run = new MonitorRun
+            {
+                MonitorId = monitor.Id,
+                State = "completed",
+                StartedAt = now,
+                FinishedAt = now,
+                Reason = NormalizeReason(reason),
+                Success = false,
+                ErrorMessage = $"No ping received {since} ({DescribeHeartbeat(monitor)}).",
+            };
+
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+
+            // Claim the miss first: only if the monitor is still in the generation observed above (an Edit, pause/resume or
+            // token change renews the stamp; a ping moves the deadline). Edit and resume do not take the alert lock.
+            var observedStamp = monitor.ConcurrencyStamp;
+            var next = now.AddSeconds(monitor.IntervalSeconds);
+            var claimed = await db.Monitors
+                .Where(m => m.Id == monitor.Id && m.ConcurrencyStamp == observedStamp && m.NextRunAt == deadline)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(m => m.NextRunAt, next)
+                    .SetProperty(m => m.LastRunAt, now), cancellationToken);
+            if (claimed == 0)
+                return;
+
+            await EvaluateAlertsAsync(monitor, run, cancellationToken);
+            db.MonitorRuns.Add(run);
+            await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+
+            await PruneRunHistoryAsync(monitor, cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<PingResult> RecordPingAsync(string token, PingRequestInfo info, CancellationToken cancellationToken)
+    {
+        var monitorId = await db.Monitors
+            .AsNoTracking()
+            .Where(m => m.HeartbeatToken == token && m.Type == MonitorType.Heartbeat)
+            .Select(m => (Guid?)m.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (monitorId is null)
+            return PingResult.NotFound;
+
+        try
+        {
+            return await RecordPingCoreAsync(monitorId.Value, token, info, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Log the monitor id only: the request path carries the secret token.
+            logger.LogError(ex, "Recording a heartbeat ping failed for monitor {MonitorId}", monitorId);
+            throw;
+        }
+    }
+
+    private async Task<PingResult> RecordPingCoreAsync(Guid monitorId, string token, PingRequestInfo info, CancellationToken cancellationToken)
+    {
+        using var lockConnection = jobStorage.GetConnection();
+        IDisposable alertLock;
+        try
+        {
+            alertLock = lockConnection.AcquireDistributedLock($"hawk:monitor-alert:{monitorId}", TimeSpan.FromSeconds(PingLockTimeoutSeconds));
+        }
+        catch (DistributedLockTimeoutException ex)
+        {
+            // Never accept a ping outside the lock (a concurrent missed check could overwrite it); the client retries on 503.
+            logger.LogWarning(ex, "Heartbeat ping for monitor {MonitorId} rejected: alert lock busy.", monitorId);
+            return PingResult.Busy;
+        }
+
+        using (alertLock)
+        {
+            // Edit/pause/resume/regenerate do not take the lock; they renew the concurrency stamp, which the write is conditioned on.
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                db.ChangeTracker.Clear();
+                var monitor = await db.Monitors.FirstOrDefaultAsync(x => x.Id == monitorId, cancellationToken);
+                if (monitor is null || monitor.Type != MonitorType.Heartbeat || !string.Equals(monitor.HeartbeatToken, token, StringComparison.Ordinal))
+                    return PingResult.NotFound;
+                if (!monitor.Enabled || monitor.IsPaused)
+                    return PingResult.Paused;
+
+                var now = DateTimeOffset.UtcNow;
+                var clientHeaders = new Dictionary<string, string>();
+                if (!string.IsNullOrWhiteSpace(info.UserAgent))
+                    clientHeaders["User-Agent"] = info.UserAgent.Replace('\0', '\uFFFD')[..Math.Min(info.UserAgent.Length, 500)];
+                if (!string.IsNullOrWhiteSpace(info.ClientIp))
+                    clientHeaders["Client-IP"] = info.ClientIp;
+
+                var run = new MonitorRun
+                {
+                    MonitorId = monitor.Id,
+                    State = "completed",
+                    StartedAt = now,
+                    FinishedAt = now,
+                    Reason = "ping",
+                    Success = true,
+                    StatusCode = 200,
+                    // The path without the secret token.
+                    RequestUrl = "/ping/{token}",
+                    RequestMethod = info.Method.Length <= 16 ? info.Method : info.Method[..16],
+                    RequestContentType = TrimOrNull(info.ContentType, 200),
+                    RequestHeadersJson = SerializeHeaders(clientHeaders),
+                };
+
+                await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+
+                // Claim before any recovery email is sent.
+                var observedStamp = monitor.ConcurrencyStamp;
+                var deadline = HeartbeatTokens.InitialDeadline(now, monitor.IntervalSeconds, monitor.HeartbeatGraceSeconds);
+                var claimed = await db.Monitors
+                    .Where(m => m.Id == monitorId && m.HeartbeatToken == token && m.ConcurrencyStamp == observedStamp)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(m => m.LastRunAt, now)
+                        .SetProperty(m => m.NextRunAt, deadline)
+                        .SetProperty(m => m.LastPingAt, now), cancellationToken);
+                if (claimed == 0)
+                    continue; // changed since the reload: reload once and re-check paused/token
+
+                await EvaluateAlertsAsync(monitor, run, cancellationToken);
+                db.MonitorRuns.Add(run);
+                await db.SaveChangesAsync(cancellationToken);
+                await tx.CommitAsync(cancellationToken);
+
+                await PruneRunHistoryAsync(monitor, cancellationToken);
+                return PingResult.Recorded;
+            }
+
+            db.ChangeTracker.Clear();
+            var current = await db.Monitors.AsNoTracking().Where(x => x.Id == monitorId).Select(x => x.HeartbeatToken).FirstOrDefaultAsync(cancellationToken);
+            return string.Equals(current, token, StringComparison.Ordinal) ? PingResult.Busy : PingResult.NotFound;
+        }
+    }
+
+    private static string DescribeHeartbeat(MonitorEntity monitor) =>
+        $"expected every {MonitorIntervals.FormatDuration(monitor.IntervalSeconds)} + {MonitorIntervals.FormatDuration(monitor.HeartbeatGraceSeconds)} grace";
 
     /// <summary>
     /// Writes <c>LastRunAt</c> set-based so it can never conflict with the monitor's concurrency stamp
@@ -446,20 +679,28 @@ public sealed class MonitorExecutor(
             return false;
         }
 
+        var heartbeat = monitor.Type == MonitorType.Heartbeat;
         var status = run.StatusCode is null ? "NO_RESPONSE" : run.StatusCode.ToString()!;
         var subjectPrefix = kind == MonitorAlertKind.FailureReminder ? "[ALERT FAIL REMINDER]" : "[ALERT FAIL]";
-        var subject = $"{subjectPrefix} {monitor.Name} ({status})";
+        var subject = $"{subjectPrefix} {monitor.Name} ({(heartbeat ? "NO_PING" : status)})";
         var failureWord = consecutiveFailures == 1 ? "failure" : "failures";
         var failuresLine = $"<p><b>Failures:</b> {consecutiveFailures} consecutive {failureWord} (alert threshold: {threshold})</p>";
         var incidentLine = incidentOpenedAt is null ? "" : $"<p><b>Incident opened:</b> {incidentOpenedAt:O} UTC</p>";
         var lastAlertLine = lastFailureAlertSentAt is null ? "" : $"<p><b>Last alert sent:</b> {lastFailureAlertSentAt:O} UTC</p>";
-        var failureLogHtml = BuildFailureLogHtml(failureLog, consecutiveFailures);
+        var failureLogHtml = BuildFailureLogHtml(failureLog, consecutiveFailures, heartbeat);
+        var targetLines = heartbeat
+            ? $"""
+              <p><b>Type:</b> Heartbeat ({WebUtility.HtmlEncode(DescribeHeartbeat(monitor))})</p>
+              """
+            : $"""
+              <p><b>URL:</b> {WebUtility.HtmlEncode(monitor.Url)}</p>
+              <p><b>Method:</b> {WebUtility.HtmlEncode(monitor.Method)}</p>
+              <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
+              """;
         var html = $"""
-            <h2>Monitor failed</h2>
+            <h2>{(heartbeat ? "Heartbeat missed" : "Monitor failed")}</h2>
             <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
-            <p><b>URL:</b> {WebUtility.HtmlEncode(monitor.Url)}</p>
-            <p><b>Method:</b> {WebUtility.HtmlEncode(monitor.Method)}</p>
-            <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
+            {targetLines}
             <p><b>Error:</b> {WebUtility.HtmlEncode(run.ErrorMessage ?? "(none)")}</p>
             {failuresLine}
             <p><b>When:</b> {run.StartedAt:O} UTC</p>
@@ -484,7 +725,7 @@ public sealed class MonitorExecutor(
         }
     }
 
-    private static string BuildFailureLogHtml(IReadOnlyList<FailureLogEntry> entries, int consecutiveFailures)
+    private static string BuildFailureLogHtml(IReadOnlyList<FailureLogEntry> entries, int consecutiveFailures, bool timesOnly)
     {
         if (entries.Count == 0)
             return "";
@@ -495,6 +736,12 @@ public sealed class MonitorExecutor(
 
         foreach (var entry in entries)
         {
+            if (timesOnly)
+            {
+                sb.AppendLine($"{entry.StartedAt:O} UTC");
+                continue;
+            }
+
             var status = entry.StatusCode is null ? "NO_RESPONSE" : entry.StatusCode.Value.ToString();
             sb.AppendLine($"{entry.StartedAt:O} UTC status={status}");
         }
@@ -536,19 +783,28 @@ public sealed class MonitorExecutor(
             return false;
         }
 
+        var heartbeat = monitor.Type == MonitorType.Heartbeat;
         var status = run.StatusCode is null ? "NO_RESPONSE" : run.StatusCode.ToString()!;
-        var subject = $"[ALERT RECOVERED] {monitor.Name} ({status})";
+        var subject = $"[ALERT RECOVERED] {monitor.Name} ({(heartbeat ? "PING_RECEIVED" : status)})";
 
         var incidentOpenedLine = incidentOpenedAt is null ? "" : $"<p><b>Incident opened:</b> {incidentOpenedAt:O} UTC</p>";
         var incidentDurationLine = incidentOpenedAt is null ? "" : $"<p><b>Incident duration:</b> {(run.StartedAt - incidentOpenedAt.Value).TotalMinutes:F1} minutes</p>";
         var lastAlertLine = lastFailureAlertSentAt is null ? "" : $"<p><b>Last failure alert sent:</b> {lastFailureAlertSentAt:O} UTC</p>";
+        var targetLines = heartbeat
+            ? $"""
+              <p><b>Type:</b> Heartbeat ({WebUtility.HtmlEncode(DescribeHeartbeat(monitor))})</p>
+              <p><b>Status:</b> Ping received</p>
+              """
+            : $"""
+              <p><b>URL:</b> {WebUtility.HtmlEncode(monitor.Url)}</p>
+              <p><b>Method:</b> {WebUtility.HtmlEncode(monitor.Method)}</p>
+              <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
+              """;
 
         var html = $"""
-            <h2>Monitor recovered</h2>
+            <h2>{(heartbeat ? "Heartbeat recovered" : "Monitor recovered")}</h2>
             <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
-            <p><b>URL:</b> {WebUtility.HtmlEncode(monitor.Url)}</p>
-            <p><b>Method:</b> {WebUtility.HtmlEncode(monitor.Method)}</p>
-            <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
+            {targetLines}
             <p><b>When:</b> {run.StartedAt:O} UTC</p>
             {incidentOpenedLine}
             {incidentDurationLine}

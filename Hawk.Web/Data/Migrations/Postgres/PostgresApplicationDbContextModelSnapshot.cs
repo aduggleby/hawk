@@ -120,11 +120,21 @@ namespace Hawk.Web.Data.Migrations.Postgres
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("HeartbeatGraceSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("HeartbeatToken")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<int>("IntervalSeconds")
                         .HasColumnType("integer");
 
                     b.Property<bool>("IsPaused")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("LastPingAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset?>("LastRunAt")
                         .HasColumnType("timestamp with time zone");
@@ -148,6 +158,9 @@ namespace Hawk.Web.Data.Migrations.Postgres
                     b.Property<int>("TimeoutSeconds")
                         .HasColumnType("integer");
 
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Url")
                         .IsRequired()
                         .HasMaxLength(2048)
@@ -156,6 +169,9 @@ namespace Hawk.Web.Data.Migrations.Postgres
                     b.HasKey("Id");
 
                     b.HasIndex("Enabled");
+
+                    b.HasIndex("HeartbeatToken")
+                        .IsUnique();
 
                     b.HasIndex("NextRunAt");
 

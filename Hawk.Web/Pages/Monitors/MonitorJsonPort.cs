@@ -25,6 +25,7 @@ public sealed record MonitorExportEnvelope
 public sealed record MonitorExportModel
 {
     public string Name { get; init; } = string.Empty;
+    public MonitorType Type { get; init; } = MonitorType.Http;
     public string Url { get; init; } = string.Empty;
     public string Method { get; init; } = "GET";
     public bool Enabled { get; init; } = true;
@@ -32,6 +33,8 @@ public sealed record MonitorExportModel
     public string? OwnerEmail { get; init; }
     public int TimeoutSeconds { get; init; } = 15;
     public int IntervalSeconds { get; init; } = 60;
+    public int HeartbeatGraceSeconds { get; init; }
+    public string? HeartbeatToken { get; init; }
     public int AlertAfterConsecutiveFailures { get; init; } = 1;
     public string? AlertEmailOverride { get; init; }
     public string? AllowedStatusCodes { get; init; }
@@ -57,9 +60,10 @@ public sealed record MonitorMatchRuleExportModel
 public static class MonitorJsonPort
 {
     /// <summary>
-    /// Current export format version. Version 2 adds <c>exportedAtUtc</c> and per-monitor <c>ownerEmail</c>; version 1 files are still accepted.
+    /// Current export format version. Version 2 adds <c>exportedAtUtc</c> and per-monitor <c>ownerEmail</c>; version 3 adds heartbeat
+    /// monitors (<c>type</c>, <c>heartbeatGraceSeconds</c>, <c>heartbeatToken</c>). Versions 1 and 2 are still accepted.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -85,6 +89,7 @@ public static class MonitorJsonPort
         return new MonitorExportModel
         {
             Name = monitor.Name,
+            Type = monitor.Type,
             Url = monitor.Url,
             Method = monitor.Method,
             Enabled = monitor.Enabled,
@@ -92,6 +97,8 @@ public static class MonitorJsonPort
             OwnerEmail = string.IsNullOrWhiteSpace(ownerEmail) ? null : ownerEmail,
             TimeoutSeconds = monitor.TimeoutSeconds,
             IntervalSeconds = monitor.IntervalSeconds,
+            HeartbeatGraceSeconds = monitor.HeartbeatGraceSeconds,
+            HeartbeatToken = monitor.HeartbeatToken,
             AlertAfterConsecutiveFailures = monitor.AlertAfterConsecutiveFailures,
             AlertEmailOverride = monitor.AlertEmailOverride,
             AllowedStatusCodes = monitor.AllowedStatusCodes,
@@ -208,14 +215,17 @@ public static class MonitorJsonPort
         monitor = default!;
         error = null;
 
+        var heartbeat = model.Type == MonitorType.Heartbeat;
         var form = new MonitorForm
         {
             Name = model.Name,
+            Type = model.Type,
             Url = model.Url,
             Method = model.Method,
             Enabled = model.Enabled,
             TimeoutSeconds = model.TimeoutSeconds,
             IntervalSeconds = model.IntervalSeconds,
+            GraceSeconds = model.HeartbeatGraceSeconds,
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,
             AlertEmailOverride = model.AlertEmailOverride,
             AllowedStatusCodes = model.AllowedStatusCodes,
@@ -231,7 +241,7 @@ public static class MonitorJsonPort
             .Concat(form.Validate(env))
             .Select(v => v.ErrorMessage)
             .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m))
-            ?? ValidateChildren(model);
+            ?? (heartbeat ? null : ValidateChildren(model));
         if (!string.IsNullOrWhiteSpace(validationError))
         {
             error = validationError;
@@ -241,20 +251,30 @@ public static class MonitorJsonPort
         monitor = new MonitorEntity
         {
             Name = (model.Name ?? string.Empty).Trim(),
-            Url = (model.Url ?? string.Empty).Trim(),
-            Method = (model.Method ?? "GET").Trim().ToUpperInvariant(),
+            Type = model.Type,
+            Url = heartbeat ? string.Empty : (model.Url ?? string.Empty).Trim(),
+            Method = heartbeat ? "GET" : (model.Method ?? "GET").Trim().ToUpperInvariant(),
             Enabled = model.Enabled,
             IsPaused = forcePaused || (model.Enabled && model.IsPaused),
             TimeoutSeconds = model.TimeoutSeconds,
             IntervalSeconds = model.IntervalSeconds,
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,
             AlertEmailOverride = string.IsNullOrWhiteSpace(model.AlertEmailOverride) ? null : model.AlertEmailOverride.Trim(),
-            AllowedStatusCodes = AllowedStatusCodesParser.Normalize(model.AllowedStatusCodes),
+            AllowedStatusCodes = heartbeat ? null : AllowedStatusCodesParser.Normalize(model.AllowedStatusCodes),
             RunRetentionDays = model.RunRetentionDays,
-            ContentType = string.IsNullOrWhiteSpace(model.ContentType) ? null : model.ContentType.Trim(),
-            Body = model.Body,
+            ContentType = heartbeat || string.IsNullOrWhiteSpace(model.ContentType) ? null : model.ContentType.Trim(),
+            Body = heartbeat ? null : model.Body,
             CreatedByUserId = createdByUserId,
         };
+
+        if (heartbeat)
+        {
+            // A valid exported token is kept (a move keeps client URLs); the caller dedupes by token first.
+            monitor.HeartbeatGraceSeconds = model.HeartbeatGraceSeconds;
+            monitor.HeartbeatToken = HeartbeatTokens.TryNormalize(model.HeartbeatToken, out var token) ? token : HeartbeatTokens.Generate();
+            monitor.NextRunAt = HeartbeatTokens.InitialDeadline(DateTimeOffset.UtcNow, monitor.IntervalSeconds, monitor.HeartbeatGraceSeconds);
+            return true;
+        }
 
         foreach (var header in model.Headers.Where(h => h is not null))
         {

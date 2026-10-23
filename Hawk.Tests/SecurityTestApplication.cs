@@ -180,6 +180,9 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
             Executions++;
             throw new InvalidOperationException("Test execution must not run on navigation.");
         }
+
+        public Task<PingResult> RecordPingAsync(string token, PingRequestInfo info, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Test ping must not run.");
     }
 
     private sealed class CookieContainerHandler(HttpMessageHandler inner) : DelegatingHandler(inner)

@@ -55,6 +55,47 @@ public class AuthAbuseProtectionTests
     }
 
     [Fact]
+    public async Task Pings_are_limited_per_normalized_token_for_any_method()
+    {
+        await using var app = await CreateAppAsync(new Dictionary<string, string?>
+        {
+            ["Hawk:Security:PingRequestsPerMinute"] = "2",
+            ["Hawk:Security:PingRequestsPerMinutePerIp"] = "100"
+        });
+        using var client = app.GetTestClient();
+        const string token = "0123456789abcdef0123456789abcdef";
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, $"/ping/{token}", "198.51.100.1")).StatusCode);
+        // Case variants and other methods share the budget (the database lookup is case-insensitive on SQL Server).
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Post, $"/ping/{token.ToUpperInvariant()}", "198.51.100.2")).StatusCode);
+        using var rejected = await Send(client, HttpMethod.Head, $"/ping/{token}", "198.51.100.3");
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.True(int.TryParse(rejected.Headers.GetValues("Retry-After").Single(), out var seconds) && seconds is > 0 and <= 60);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/ping/fedcba9876543210fedcba9876543210", "198.51.100.1")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Floods_of_distinct_unknown_or_malformed_tokens_are_limited_per_client_ip()
+    {
+        await using var app = await CreateAppAsync(new Dictionary<string, string?>
+        {
+            ["Hawk:Security:PingRequestsPerMinute"] = "30",
+            ["Hawk:Security:PingRequestsPerMinutePerIp"] = "3"
+        });
+        using var client = app.GetTestClient();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/ping/00000000000000000000000000000001", "203.0.113.9")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/ping/00000000000000000000000000000002", "203.0.113.9")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/ping/not-a-token", "203.0.113.9")).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await Send(client, HttpMethod.Get, "/ping/00000000000000000000000000000003", "203.0.113.9")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/ping/00000000000000000000000000000003", "203.0.113.10")).StatusCode);
+        // Other paths are never touched by the ping limiters.
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/ready", "203.0.113.9")).StatusCode);
+    }
+
+    [Fact]
     public void Account_cooldown_is_shared_bounded_and_expires()
     {
         var clock = new ManualTimeProvider();
@@ -79,6 +120,10 @@ public class AuthAbuseProtectionTests
     [InlineData("FailedLoginAttempts", "1")]
     [InlineData("LockoutMinutes", "bad")]
     [InlineData("EmailCooldownMinutes", "61")]
+    [InlineData("PingRequestsPerMinute", "0")]
+    [InlineData("PingRequestsPerMinute", "601")]
+    [InlineData("PingRequestsPerMinutePerIp", "6001")]
+    [InlineData("PingRequestsPerMinutePerIp", "x")]
     public void Security_settings_reject_out_of_bounds_values(string key, string value)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

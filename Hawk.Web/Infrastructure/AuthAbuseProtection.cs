@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
+using Hawk.Web.Services.Monitoring;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Hawk.Web.Infrastructure;
@@ -11,6 +12,8 @@ public sealed class HawkSecurityOptions
     public int FailedLoginAttempts { get; init; } = 5;
     public int LockoutMinutes { get; init; } = 5;
     public int EmailCooldownMinutes { get; init; } = 1;
+    public int PingRequestsPerMinute { get; init; } = 30;
+    public int PingRequestsPerMinutePerIp { get; init; } = 300;
 
     public static HawkSecurityOptions Read(IConfiguration? configuration)
     {
@@ -21,7 +24,9 @@ public sealed class HawkSecurityOptions
             EmailRequestsPer15Minutes = ReadBounded(section, nameof(EmailRequestsPer15Minutes), 5, 1, 100),
             FailedLoginAttempts = ReadBounded(section, nameof(FailedLoginAttempts), 5, 2, 20),
             LockoutMinutes = ReadBounded(section, nameof(LockoutMinutes), 5, 1, 60),
-            EmailCooldownMinutes = ReadBounded(section, nameof(EmailCooldownMinutes), 1, 1, 60)
+            EmailCooldownMinutes = ReadBounded(section, nameof(EmailCooldownMinutes), 1, 1, 60),
+            PingRequestsPerMinute = ReadBounded(section, nameof(PingRequestsPerMinute), 30, 1, 600),
+            PingRequestsPerMinutePerIp = ReadBounded(section, nameof(PingRequestsPerMinutePerIp), 300, 1, 6000)
         };
     }
 
@@ -39,6 +44,7 @@ public static class AuthAbuseProtection
 {
     private static readonly TimeSpan LoginWindow = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan EmailWindow = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan PingWindow = TimeSpan.FromMinutes(1);
 
     public static IServiceCollection AddHawkAuthAbuseProtection(this IServiceCollection services, IConfiguration configuration)
     {
@@ -50,7 +56,7 @@ public static class AuthAbuseProtection
 
         services.AddRateLimiter(options =>
         {
-            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            var authLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
             {
                 var path = context.Request.Path.Value?.TrimEnd('/');
                 if (!HttpMethods.IsPost(context.Request.Method))
@@ -77,12 +83,50 @@ public static class AuthAbuseProtection
                 });
             });
 
+            // Heartbeat pings (any method): one budget per token and one per client IP (chained IP first, so a rejected IP allocates no token partitions). The per-IP budget also bounds
+            // floods of random tokens; malformed tokens are rejected before any lookup and only count against the IP.
+            var pingTokenLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            {
+                var path = context.Request.Path.Value ?? string.Empty;
+                if (!path.StartsWith(HeartbeatEndpoints.PathPrefix, StringComparison.OrdinalIgnoreCase))
+                    return RateLimitPartition.GetNoLimiter("other");
+
+                // Valid-format tokens only: bounds the number of live partitions to what can reach the database.
+                if (!HeartbeatTokens.TryNormalize(path[HeartbeatEndpoints.PathPrefix.Length..].TrimEnd('/'), out var token))
+                    return RateLimitPartition.GetNoLimiter("other");
+
+                return RateLimitPartition.GetFixedWindowLimiter($"ping-token:{token}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = settings.PingRequestsPerMinute,
+                    Window = PingWindow,
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                });
+            });
+            var pingIpLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            {
+                if (!(context.Request.Path.Value ?? string.Empty).StartsWith(HeartbeatEndpoints.PathPrefix, StringComparison.OrdinalIgnoreCase))
+                    return RateLimitPartition.GetNoLimiter("other");
+
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    $"ping-ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = settings.PingRequestsPerMinutePerIp,
+                        Window = PingWindow,
+                        QueueLimit = 0,
+                        AutoReplenishment = true
+                    });
+            });
+            options.GlobalLimiter = PartitionedRateLimiter.CreateChained(authLimiter, pingIpLimiter, pingTokenLimiter);
+
             options.OnRejected = (context, _) =>
             {
                 var response = context.HttpContext.Response;
                 response.StatusCode = StatusCodes.Status429TooManyRequests;
-                var fallback = string.Equals(context.HttpContext.Request.Path.Value?.TrimEnd('/'),
-                    "/Identity/Account/Login", StringComparison.OrdinalIgnoreCase) ? LoginWindow : EmailWindow;
+                var requestPath = context.HttpContext.Request.Path.Value;
+                var fallback = (requestPath?.StartsWith(HeartbeatEndpoints.PathPrefix, StringComparison.OrdinalIgnoreCase) ?? false) ? PingWindow
+                    : string.Equals(requestPath?.TrimEnd('/'), "/Identity/Account/Login", StringComparison.OrdinalIgnoreCase) ? LoginWindow : EmailWindow;
                 var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan remaining)
                     ? remaining : fallback;
                 response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))

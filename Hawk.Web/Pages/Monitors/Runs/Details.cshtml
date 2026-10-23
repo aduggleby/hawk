@@ -3,6 +3,7 @@
 @{
     ViewData["Title"] = "Run diagnostics";
     var state = string.IsNullOrWhiteSpace(Model.Run?.State) ? "completed" : Model.Run!.State;
+    var isHeartbeat = Model.Monitor?.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat;
     static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
     static string UtcDetailedFallback(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
 }
@@ -27,9 +28,12 @@
         </div>
     </div>
     <div class="flex items-center gap-2" style="flex-wrap: wrap">
-        <form method="post" asp-page="/Monitors/Details" asp-page-handler="RunNow" asp-route-id="@Model.Monitor.Id">
-            <button class="hawk-btn hawk-btn-primary" type="submit">Run again</button>
-        </form>
+        @if (!isHeartbeat)
+        {
+            <form method="post" asp-page="/Monitors/Details" asp-page-handler="RunNow" asp-route-id="@Model.Monitor.Id">
+                <button class="hawk-btn hawk-btn-primary" type="submit">Run again</button>
+            </form>
+        }
         <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@Model.Monitor.Id">Back to monitor</a>
     </div>
 </div>
@@ -92,7 +96,7 @@
                 </dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Duration</dt>
                 <dd class="col-span-8 font-mono text-xs break-words py-1">@Model.Run.DurationMs ms</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">HTTP status</dt>
+                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">@(isHeartbeat ? "Response" : "HTTP status")</dt>
                 <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.StatusCode?.ToString() ?? "NO_RESPONSE")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Alert</dt>
                 <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.AlertSent ? "sent" : (Model.Run.AlertError ?? "not sent"))</dd>
@@ -104,23 +108,31 @@
 
     <div class="lg:col-span-8 space-y-4">
         <div class="hawk-card">
-            <div class="font-semibold mb-3">Request</div>
+            <div class="font-semibold mb-3">@(isHeartbeat ? "Ping" : "Request")</div>
             <div class="space-y-2 text-xs font-mono">
-                <div class="break-words"><span class="text-[color:var(--text-secondary)]">URL:</span> @(Model.Run.RequestUrl ?? "-")</div>
+                <div class="break-words"><span class="text-[color:var(--text-secondary)]">@(isHeartbeat ? "Path:" : "URL:")</span> @(Model.Run.RequestUrl ?? "-")</div>
                 <div class="break-words"><span class="text-[color:var(--text-secondary)]">Method:</span> @(Model.Run.RequestMethod ?? "-")</div>
                 <div class="break-words"><span class="text-[color:var(--text-secondary)]">Content-Type:</span> @(Model.Run.RequestContentType ?? "-")</div>
-                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Timeout:</span> @(Model.Run.RequestTimeoutMs?.ToString() ?? "-") ms</div>
+                @if (!isHeartbeat)
+                {
+                    <div class="break-words"><span class="text-[color:var(--text-secondary)]">Timeout:</span> @(Model.Run.RequestTimeoutMs?.ToString() ?? "-") ms</div>
+                }
                 <div>
-                    <div class="text-[color:var(--text-secondary)] mb-1">Headers</div>
+                    <div class="text-[color:var(--text-secondary)] mb-1">@(isHeartbeat ? "Source (client IP, User-Agent)" : "Headers")</div>
                     <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@((string.IsNullOrWhiteSpace(Model.Run.RequestHeadersJson) ? "{}" : Model.Run.RequestHeadersJson))</pre>
                 </div>
-                <div>
-                    <div class="text-[color:var(--text-secondary)] mb-1">Body snippet</div>
-                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@(string.IsNullOrWhiteSpace(Model.Run.RequestBodySnippet) ? "-" : Model.Run.RequestBodySnippet)</pre>
-                </div>
+                @if (!isHeartbeat)
+                {
+                    <div>
+                        <div class="text-[color:var(--text-secondary)] mb-1">Body snippet</div>
+                        <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@(string.IsNullOrWhiteSpace(Model.Run.RequestBodySnippet) ? "-" : Model.Run.RequestBodySnippet)</pre>
+                    </div>
+                }
             </div>
         </div>
 
+        @if (!isHeartbeat)
+        {
         <div class="hawk-card">
             <div class="font-semibold mb-3">Response</div>
             <div class="space-y-2 text-xs font-mono">
@@ -153,5 +165,6 @@
                 </div>
             </div>
         </div>
+        }
     </div>
 </div>

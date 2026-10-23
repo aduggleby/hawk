@@ -2,17 +2,18 @@
 
 This repository is building an ASP.NET Razor Pages uptime checker and URL verifier with Hangfire-based scheduling, SQL Server or PostgreSQL storage, and Docker-first deployment.
 
-## Current State (As Of 2026-10-12)
+## Current State (As Of 2026-10-23)
 
 - Solution: `Hawk.sln`
 - Web app: `Hawk.Web` (Razor Pages + ASP.NET Core Identity)
 - Unit tests: `Hawk.Tests` (xUnit)
 - E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs; SQL Server and PostgreSQL stacks)
+- Monitor types: HTTP checks and heartbeat (push) monitors (see "Heartbeat Monitors")
 - Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture + `/flaky` alternating endpoint)
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.9.30`
+- Version: `0.10.0`
 
 ## Ports
 
@@ -383,6 +384,24 @@ Alert recipient resolution (in order):
 - Exports from a `Testing` instance that use the 5-second interval are refused by Production (the interval is not allowed there); change those intervals before importing.
 - Tests: `Hawk.Tests/MonitorTransferTests.cs`, `e2e/tests/monitor-transfer.spec.ts`.
 
+## Heartbeat Monitors (Push / Dead Man's Switch)
+
+A second monitor type (`Monitor.Type` = `MonitorType.Http` or `Heartbeat`; immutable after creation). The client calls `GET|HEAD|POST /ping/{token}`; if no ping arrives within period + grace the monitor fails and uses the normal alerting (threshold, reminders, recovery, recipients). Plan: `docs/plans/2026-10-23-heartbeat-monitors-plan.md`.
+
+- Fields on `Monitor`: `Type`, `HeartbeatToken` (32 lowercase hex = 128 random bits, unique index, NULL for HTTP), `HeartbeatGraceSeconds`, `LastPingAt`. `IntervalSeconds` is the period; heartbeats store `Url = ""`, `Method = "GET"`. `HeartbeatTokens` (`Services/Monitoring/HeartbeatTokens.cs`): `Generate`, `TryNormalize` (lowercase + 32-hex check, always before any DB lookup), `InitialDeadline`.
+- Periods: 1 min, 5 min, 15 min, 1 h, 6 h, 12 h, 1 day, 7 days (+5s in `Testing`). Grace: 1 min, 5 min, 15 min, 1 h, 6 h, 1 day (+0s and 5s in `Testing`). Defined in `MonitorIntervals`.
+- **Invariant 1: the scheduler never writes a heartbeat's `NextRunAt`** (it is the deadline). Only create/import/resume/re-enable/edit-of-period-or-grace (`now + period + grace`), a ping (`now + period + grace`) and a recorded miss (`now + period`) write it. The scheduler's due query is unchanged (overdue heartbeats are enqueued every tick until a job moves the deadline); its set-based bump is filtered to `Type == Http`. Index resume/Resume all update heartbeats first, grouped by `(IntervalSeconds, HeartbeatGraceSeconds)` with a precomputed UTC deadline, in the same statement that unpauses them.
+- **Invariant 2: every heartbeat state change happens under the Hangfire lock `hawk:monitor-alert:{id}`, after reloading** the monitor and alert state. Missed check (`MonitorExecutor.ExecuteAsync`, reason `schedule`, always returns null): lock timeout (10s) = record nothing; exits if paused/disabled/not due (`NextRunAt > now`, which covers stale jobs after resume or a ping in between); records a FAIL run "No ping received since ...", sets `NextRunAt = now + period`, runs the shared alert evaluation (`EvaluateAlertsAsync`). Ping (`IMonitorExecutor.RecordPingAsync`, inline in the request, not enqueued): lock (5s), reload, paused/disabled = `200 "paused"` and nothing written, else one transaction with the OK run (reason `ping`; diagnostics hold method, `/ping/{token}` placeholder, User-Agent, client IP), `LastPingAt`/`NextRunAt` and the recovery alert. Ping lock timeout writes nothing and returns `503` with `Retry-After: 5` (`curl --retry` retries it). Edit, pause/resume and Regenerate do not take the lock, so both heartbeat paths claim their write with a conditional set-based update on the observed `ConcurrencyStamp` (miss: also on the observed `NextRunAt`; ping: also on the token) before any alert/email; 0 rows = miss exits, ping reloads once and then returns 404 (token gone) or 503. Every user change (Edit, pause/resume, Regenerate) must renew `ConcurrencyStamp`. `reason == "manual"` returns null; Details **Run now**, run diagnostics **Run again** and batch **Run now** exclude heartbeats (batch reports queued and skipped).
+- Endpoint: `Infrastructure/HeartbeatEndpoints.cs` (`MapHawkHeartbeats`, anonymous minimal API). Unknown or malformed token = 404; malformed tokens never reach the executor. The handler ignores `RequestAborted` (15s own timeout) so a client abort cannot leave a half-applied ping. Email is registered once via `EmailSetup.AddHawkEmail` as a typed client with a 5s timeout (recovery email is sent inside the request; clients typically use `curl -m 10`).
+- Rate limiting (`AuthAbuseProtection`, chained with the login/email limiter): `Hawk:Security:PingRequestsPerMinute` (30, per normalized token, valid-format tokens only) and `PingRequestsPerMinutePerIp` (300, any `/ping/*` request incl. malformed). 429 with `Retry-After`.
+- **Keep tokens out of logs**: Serilog request logging redacts `/ping/*` to `/ping/{redacted}` (`HeartbeatEndpoints.RedactPath`); `Microsoft.AspNetCore.Hosting.Diagnostics` and `HttpsPolicy` are `Warning` in `appsettings.json`; the executor logs only the monitor id on ping errors. Caddy (infra repo) must `log_skip /ping/*` in `apps/hawk/site.caddy` (Caddy 2.11), committed and pushed before deploy.
+- Form: `MonitorForm.Url` is `string?` without `[Required]`; `Validate` requires the URL only for Http and checks period/grace for heartbeats. Create has the type selector (JS shows/hides sections; the two interval selects share the field name `Form.IntervalSeconds`, the inactive one is disabled). Edit takes the type from the **persisted** entity (never the form), only resets the deadline when period, grace or `Enabled` (false to true) change, and has a **Regenerate URL** POST handler (new token, old URL 404s).
+- Details shows `{Request.Scheme}://{Request.Host}/ping/{token}` with a copy button, a `curl -fsS -m 10 --retry 3` example, last ping and deadline.
+- Alert emails have heartbeat wording (subject `(NO_PING)` / `(PING_RECEIVED)`, failure log lists times only). **Inherited fix:** `MonitorAlertingDecider.OnSuccess` uses `wasAlertedIncident = state.LastFailureAlertSentAt is not null`, so raising the threshold during an alerted incident no longer suppresses the recovery email.
+- JSON export **v3** (`type`, `heartbeatGraceSeconds`, `heartbeatToken`; v1/v2 files still parse). Bulk transfer identity for heartbeats: a valid token = same monitor (skipped if the token exists in the DB or earlier in the file; same-name heartbeats with different tokens both import and a moved monitor keeps its URL); without a (valid) token dedupe by trimmed name and issue a new token. Single import (Create prefill) always issues a new token. Imported heartbeats get a deadline. `StatusCakeImporter` matching/dedupe is restricted to `Type == Http`.
+- Seed: `[Seed] Heartbeat` (paused, 1 h + 5 min grace).
+- Tests: `Hawk.Tests/HeartbeatTests.cs` (pure logic), `HeartbeatHttpTests.cs` (Create page POSTs), heartbeat cases in `PostgresIntegrationTests.cs` (real executor/endpoint handler, ExecuteUpdate, unique index, locks), limiter cases in `AuthAbuseProtectionTests.cs`, `e2e/tests/heartbeat.spec.ts`.
+
 ## Run Diagnostics Page
 
 - `Hawk.Web/Pages/Monitors/Runs/Details.cshtml(.cs)` — displays full diagnostics for a single run:
@@ -529,6 +548,9 @@ Service endpoints on the VM:
   - `Hawk__UrlChecks__UserAgentPresets__<key>` (override built-in preset values)
 - Monitoring:
   - `Hawk__Monitoring__RunRetentionDaysDefault` (default 90; server-wide fallback for run history retention)
+- Heartbeat rate limits:
+  - `Hawk__Security__PingRequestsPerMinute` (default 30, 1-600; per token)
+  - `Hawk__Security__PingRequestsPerMinutePerIp` (default 300, 1-6000; per client IP)
 - Alerting:
   - `Hawk__Alerting__RepeatFailureAlertEveryHours` (default 24; how often to re-send failure reminders while a monitor is still failing, min 1, max 720)
 

@@ -13,6 +13,7 @@ using Hangfire;
 using Hangfire.Storage;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
+using Hawk.Web.Data.Monitoring;
 
 namespace Hawk.Web.Services.Monitoring;
 
@@ -29,7 +30,7 @@ public sealed class MonitorScheduler(
 {
     private const string LockKey = "hawk:scheduler:tick";
 
-    private sealed record DueMonitor(Guid Id, int IntervalSeconds);
+    private sealed record DueMonitor(Guid Id, int IntervalSeconds, MonitorType Type);
 
     /// <inheritdoc />
     [AutomaticRetry(Attempts = 0)]
@@ -61,7 +62,7 @@ public sealed class MonitorScheduler(
                 .OrderBy(m => m.NextRunAt == null ? 0 : 1)
                 .ThenBy(m => m.NextRunAt)
                 .Take(50)
-                .Select(m => new DueMonitor(m.Id, m.IntervalSeconds))
+                .Select(m => new DueMonitor(m.Id, m.IntervalSeconds, m.Type))
                 .ToListAsync(cancellationToken);
 
             foreach (var monitor in due)
@@ -75,7 +76,9 @@ public sealed class MonitorScheduler(
             {
                 // Update NextRunAt with direct set-based writes so scheduler ticks never conflict with concurrent
                 // worker updates. Bookkeeping deliberately leaves Monitor.ConcurrencyStamp unchanged.
-                foreach (var batch in due.GroupBy(m => Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60)))
+                // Heartbeats are excluded: their NextRunAt is the ping deadline, written only by pings, recorded
+                // misses and create/resume/edit/import (a bump here could overwrite a ping that just arrived).
+                foreach (var batch in due.Where(m => m.Type == MonitorType.Http).GroupBy(m => Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60)))
                 {
                     var ids = batch.Select(m => m.Id).ToArray();
                     var nextRunAt = now.AddSeconds(batch.Key);

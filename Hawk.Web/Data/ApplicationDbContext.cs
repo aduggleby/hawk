@@ -86,6 +86,7 @@ public class ApplicationDbContext : IdentityDbContext
         {
             b.HasIndex(x => x.Enabled);
             b.HasIndex(x => x.NextRunAt);
+            b.HasIndex(x => x.HeartbeatToken).IsUnique();
             b.Property(x => x.ConcurrencyStamp).IsConcurrencyToken();
             b.HasMany(x => x.Headers).WithOne(x => x.Monitor!).HasForeignKey(x => x.MonitorId).OnDelete(DeleteBehavior.Cascade);
             b.HasMany(x => x.MatchRules).WithOne(x => x.Monitor!).HasForeignKey(x => x.MonitorId).OnDelete(DeleteBehavior.Cascade);

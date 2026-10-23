@@ -6,6 +6,7 @@
 // - Startup seeding applies EF migrations and ensures a seed admin user exists.
 // - HTTPS redirection can be disabled (for E2E) via Hawk__DisableHttpsRedirection=true.
 // - Database provider (EF Core, Identity, Hangfire) is selected by Hawk:Database:Provider (SqlServer default, or Postgres).
+// - GET|HEAD|POST /ping/{token} is the anonymous heartbeat endpoint (secret token: redacted from request logs).
 // - GET /live (process up) and GET /ready (database reachable) are anonymous health endpoints.
 // - The Serilog file sink can be disabled with Hawk:Logging:File:Enabled=false (console only, read-only root FS).
 // </summary>
@@ -77,10 +78,7 @@ builder.Services.AddHttpClient("urlchecks", c =>
 builder.Services.AddScoped<IUrlChecker>(sp =>
     new UrlChecker(sp.GetRequiredService<IHttpClientFactory>().CreateClient("urlchecks")));
 
-builder.Services.Configure<ResendCompatibleEmailOptions>(builder.Configuration.GetSection("Hawk:Resend"));
-builder.Services.AddHttpClient<ResendCompatibleEmailSender>();
-builder.Services.AddScoped<IEmailSender, ResendCompatibleEmailSender>();
-builder.Services.AddScoped<Microsoft.AspNetCore.Identity.UI.Services.IEmailSender, IdentityUiEmailSender>();
+builder.Services.AddHawkEmail(builder.Configuration);
 
 builder.Services.AddHangfire(cfg =>
 {
@@ -222,6 +220,15 @@ app.UseSerilogRequestLogging(options =>
             : ex is not null || httpContext.Response.StatusCode >= 500
                 ? LogEventLevel.Error
                 : LogEventLevel.Information;
+
+    // The ping token is a bearer secret: never write it to the log.
+    options.GetMessageTemplateProperties = (httpContext, path, elapsedMs, statusCode) =>
+    [
+        new LogEventProperty("RequestMethod", new ScalarValue(httpContext.Request.Method)),
+        new LogEventProperty("RequestPath", new ScalarValue(HeartbeatEndpoints.RedactPath(path))),
+        new LogEventProperty("StatusCode", new ScalarValue(statusCode)),
+        new LogEventProperty("Elapsed", new ScalarValue(elapsedMs)),
+    ];
 });
 
 // Preserve exception details in HttpContext.Items so /Error can render diagnostics
@@ -253,6 +260,8 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
 // Health endpoints (anonymous, lightweight). /ready returns 503 when the database is unreachable.
 app.MapHealthChecks("/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
 app.MapHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains(DatabaseHealthCheck.ReadyTag) }).AllowAnonymous();
+
+app.MapHawkHeartbeats();
 
 app.MapStaticAssets();
 app.MapRazorPages()

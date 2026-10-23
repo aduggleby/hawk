@@ -145,6 +145,22 @@ public static class MonitorSeeder
                 IntervalSeconds = interval,
                 CreatedByUserId = ownerId,
                 AlertAfterConsecutiveFailures = 1,
+            },
+            new MonitorEntity
+            {
+                Name = "[Seed] Heartbeat",
+                Type = MonitorType.Heartbeat,
+                Url = string.Empty,
+                Method = "GET",
+                Enabled = true,
+                IsPaused = true,
+                IntervalSeconds = 3600,
+                HeartbeatGraceSeconds = 300,
+                HeartbeatToken = HeartbeatTokens.Generate(),
+                // Resuming sets a fresh deadline; this one only avoids a NULL while paused.
+                NextRunAt = HeartbeatTokens.InitialDeadline(DateTimeOffset.UtcNow, 3600, 300),
+                CreatedByUserId = ownerId,
+                AlertAfterConsecutiveFailures = 1,
             }
         };
 
