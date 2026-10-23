@@ -6,6 +6,7 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: "Developer"
+      MSSQL_MEMORY_LIMIT_MB: "2048"
       SA_PASSWORD: "${SA_PASSWORD:-YourStrong!Passw0rd}"
     # E2E should be hermetic: use an ephemeral database per run.
     tmpfs:
@@ -17,8 +18,9 @@ services:
       context: .
       dockerfile: Hawk.MockServer/Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_ENVIRONMENT: "Testing"
       ASPNETCORE_URLS: "http://+:8081"
+      Hawk__MockServer__EmailCaptureEnabled: "true"
     expose:
       - "8081"
 

@@ -6,6 +6,7 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: "Developer"
+      MSSQL_MEMORY_LIMIT_MB: "2048"
       SA_PASSWORD: "${SA_PASSWORD:-YourStrong!Passw0rd}"
     ports:
       - "17833:1433"
@@ -43,8 +44,11 @@ services:
     build:
       context: .
       dockerfile: Hawk.MockServer/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      Hawk__MockServer__EmailCaptureEnabled: "true"
     ports:
-      - "17801:8081"
+      - "127.0.0.1:17801:8081"
 
 volumes:
   hawk_db:
