@@ -494,32 +494,11 @@ Implementation:
  - Playwright is forced to run serially in Docker via `E2E_DOCKER=1` in `docker-compose.e2e.yml`.
 - If screenshot capture is flaky under Docker/Xvfb, `snap()` retries and then logs a warning instead of failing the whole suite.
 
-## Deployment To Proxmox VM
+## Upgrading To The Non-Root Image
 
-Deployed on `alex-office-proxmox1` using the SSH key `~/.sshkeys/id_ad_dualconsult_com`:
-
-- Proxmox host: `alex-office-proxmox1`
-- VM:
-  - VMID: `102`
-  - Name: `hawk`
-  - OS image: `/var/lib/vz/template/iso/ubuntu-22.04-cloudimg-amd64.img`
-  - User: `alex` (cloud-init), key-based auth
-  - IP (DHCP): `192.168.1.127`
-- Deployment path on VM: `/opt/hawk`
-
-Commands (high level):
-- Install Docker on the VM (Docker convenience script).
-- Copy repo to `/opt/hawk`.
-- Create `/opt/hawk/.env` with `SA_PASSWORD` and email env vars.
-- Start services: `sudo docker compose up -d --build`.
-
-Upgrading the VM to `0.9.27`+ (non-root image): the `hawk_dpkeys` volume and `./logs` bind mount were written by root. Before (or right after) `docker compose up -d --build`, run:
-`sudo docker run --rm -v hawk_hawk_dpkeys:/v alpine chown -R 1654:1654 /v && sudo chown -R 1654:1654 /opt/hawk/logs`
+Upgrading an existing deployment to `0.9.27`+ (non-root image): the `hawk_dpkeys` volume and `./logs` bind mount were written by root. Before (or right after) `docker compose up -d --build`, run:
+`sudo docker run --rm -v hawk_hawk_dpkeys:/v alpine chown -R 1654:1654 /v && sudo chown -R 1654:1654 ./logs`
 (otherwise logins fail and file logging silently stops). The same applies to the local `docker-compose.yml` stack (`./logs` is owned by your user).
-
-Service endpoints on the VM:
-- Hawk web: `http://192.168.1.127:17800`
-- Mock server: `http://192.168.1.127:17801`
 
 ## Configuration Cheatsheet
 
