@@ -1,7 +1,7 @@
 ---
 title: Grouped alert emails (digest)
 type: feat
-status: active
+status: completed
 date: 2026-10-29
 product_contract_source: ce-plan-bootstrap
 target_version: 0.15.0
@@ -74,3 +74,12 @@ A shared dependency failing makes many monitors fail in the same scheduler tick,
 
 - Crash between send and marking sent re-sends the group once (acceptable; at-least-once).
 - Rollback to 0.14.0: the table is additive; delete the `hawk-alert-digest` recurring job and scheduled `IAlertDigestSender` jobs; unsent queued alerts are lost.
+
+## Production Deployment (0.15.0), 2026-10-29
+
+- Source commit `c2cd3ab` (pushed to GitHub `main`); image `registry.dualconsult.net/dualconsult/hawk@sha256:47bc9e29bc4e7ff098e925d66119c49fdfadf6744790e83c651dae495819c1e7`, built from `git archive HEAD` (not pushed to GHCR).
+- Verified before deploy: `HAWK_REQUIRE_POSTGRES_TESTS=1 dotnet test` 444 passed; `ando run` green; Postgres E2E 18 passed; independent review findings addressed (send timeout handling, recurring flush always registered, busy-lock retry, email-disabled re-check, extra tests).
+- Backup: `/srv/dualconsult/backups/hawk/hawk-pre-0.15.0-20261029T122848Z.dump` on the db VM (88 MB, `pg_restore -l` lists 30 tables).
+- Infra: `f5868c6` (`apps/hawk/release.env` only), `scripts/deploy-app.sh hawk app edge`.
+- Live: v0.15.0, 0 restarts; migration `20261029121816_AddPendingAlerts` applied; recurring `hawk-alert-digest` registered and its first run succeeded; `/live` 200, `/api/v1/monitors` 401.
+- Rollback: pin 0.14.0 (`sha256:2f28e041…`) and redeploy; delete the `hawk-alert-digest` recurring job and scheduled `IAlertDigestSender` jobs in the Hangfire dashboard. The table is additive; queued unsent alerts are lost.
