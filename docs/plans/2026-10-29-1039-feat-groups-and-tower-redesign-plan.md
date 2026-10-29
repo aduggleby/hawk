@@ -368,3 +368,14 @@ Release A (U1-U4) ships and is deployed before release B (U5-U9) starts. Release
   - `/live` returns 200 and `/ready` returns 404.
   - `/api/v1` and `/api/v1/groups` without a key return 401 problem+json.
 - Rollback: the 0.12.0 digest `sha256:5dffc17d…` runs against the new schema (nullable column).
+
+## Production Deployment — Release B (0.14.0), 2026-10-29
+
+- Commits: U5 `6a213d1`, shared strip `59578cf`, U7+U8 `a725f5b`, U9 `2e20513`, docs/version `5e17cf2`, topbar fix `03ccd8b`, review fixes `1d53ee7` and `d542c27`, rollback note `78d19d4` (pushed to `main`).
+- Verification: 431 unit/integration tests (PostgreSQL required), e2e 18/18 on SQL Server and PostgreSQL, `ando run` green locally, screenshots (dark/light, desktop/390 px) without console errors or overflow, ce-code-review (Opus correctness/security, Sonnet personas, Codex gpt-6-luna cross-model) plus an Opus re-review of `1d53ee7`; `d542c27` was covered by tests and PostgreSQL e2e only.
+- Image: `registry.dualconsult.net/dualconsult/hawk@sha256:2f28e041f178b7b9e5b07345c3ae089d538cfc98801d95450fe115402b26595f` (from `git archive HEAD` at `78d19d4`).
+- Backup: `/srv/dualconsult/backups/hawk/hawk-pre-0.14.0-20261029T113944Z.dump` on the db VM.
+- Infra: `e2cc48c` (`apps/hawk/release.env` only), `scripts/deploy-app.sh hawk app edge`.
+- Live: v0.14.0, 0 restarts, UID 1654, read-only root; migration `20261029103344_AddMonitorRunBuckets` applied; startup backfill succeeded in about 9 s (37,845 buckets, 46 monitors, back to 2026-10-12); recurring `hawk-run-buckets` registered and its first refresh succeeded; no rollup errors in the log; `/live` 200, `/ready` 404 (blocked publicly by Caddy), `/api/v1/monitors` 401.
+- Rollback: pin the 0.13.0 digest `sha256:f61f9dd7e547b3887d8a34a8d20a5d862675db94b40b666061577b2f669dbd3e` (the new table is additive), then delete the `hawk-run-buckets` recurring job and any enqueued, scheduled or failed `IRunBucketRollup` jobs in the Hangfire dashboard.
+- Known, not fixed: `.dockerignore` excludes `Hawk.Web/wwwroot/lib/`, so client-side jQuery validation has never shipped (server validation unaffected); a StatusCake import into an old bucket whose runs are already pruned does not raise that bucket's counts; with the scheduler disabled the import-triggered recompute does nothing (by design).
