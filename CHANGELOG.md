@@ -6,6 +6,12 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-29
+
+### Added
+
+- Agent API (version 0.11.0): per-user API keys (Account -> API keys, `read` or `write` scope, shown once, stored only as SHA-256 hashes) and a JSON API under `/api/v1` with `Authorization: Bearer hawk_...`. Agents can list monitors with state, health and failure summary, read monitor detail, alert state, effective alert recipients and run diagnostics, change a monitor's alert threshold and email (`PATCH`), change the account alert email, pause and resume monitors and queue runs. Errors are `application/problem+json` with a stable `code`. Rate limits: `Hawk__Security__ApiRequestsPerMinute` (120 per key) and `Hawk__Security__ApiRequestsPerMinutePerIp` (600 per IP). Password resets revoke the user's keys. Adds an additive schema migration (back up before upgrading). See `docs/agent-api.md`.
+
 ### Fixed
 
 - Public account security (version 0.9.30): preserve Identity cookie validation, check session revocation every minute, rate-limit login and account-email submissions, count failed logins toward lockout, and share an account-email cooldown.

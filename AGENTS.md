@@ -2,7 +2,7 @@
 
 This repository is building an ASP.NET Razor Pages uptime checker and URL verifier with Hangfire-based scheduling, SQL Server or PostgreSQL storage, and Docker-first deployment.
 
-## Current State (As Of 2026-10-23)
+## Current State (As Of 2026-10-29)
 
 - Solution: `Hawk.sln`
 - Web app: `Hawk.Web` (Razor Pages + ASP.NET Core Identity)
@@ -13,7 +13,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.10.0`
+- Version: `0.11.0`
 
 ## Ports
 
@@ -281,6 +281,7 @@ Alert recipient resolution (in order):
   - **Profile** (`/Identity/Account/Manage/Index`) — display name and email; unconfirmed accounts get a **Send confirmation email** button (`OnPostSendConfirmationAsync`, covered by `e2e/tests/email-confirmation.spec.ts`).
   - **Security** (`/Identity/Account/Manage/ChangePassword`) — change password.
   - **Alerts & Crawler** (`/Identity/Account/Manage/Settings`) — alert email override + User-Agent override + run retention override.
+  - **API keys** (`/Identity/Account/Manage/ApiKeys`) — create (name + `read`/`write` scope; plaintext shown once on the create response), list (display prefix, created, last used) and revoke one/all. See "Agent API".
 - Old routes (`/Account/Settings`, `/Account/Alerting`) redirect to the new locations for back-compat.
 - Navigation uses an Account dropdown in the topbar with links to Profile, Security, Alerts & Crawler, plus Admin/Hangfire for admins.
 
@@ -401,6 +402,18 @@ A second monitor type (`Monitor.Type` = `MonitorType.Http` or `Heartbeat`; immut
 - JSON export **v3** (`type`, `heartbeatGraceSeconds`, `heartbeatToken`; v1/v2 files still parse). Bulk transfer identity for heartbeats: a valid token = same monitor (skipped if the token exists in the DB or earlier in the file; same-name heartbeats with different tokens both import and a moved monitor keeps its URL); without a (valid) token dedupe by trimmed name and issue a new token. Single import (Create prefill) always issues a new token. Imported heartbeats get a deadline. `StatusCakeImporter` matching/dedupe is restricted to `Type == Http`.
 - Seed: `[Seed] Heartbeat` (paused, 1 h + 5 min grace).
 - Tests: `Hawk.Tests/HeartbeatTests.cs` (pure logic), `HeartbeatHttpTests.cs` (Create page POSTs), heartbeat cases in `PostgresIntegrationTests.cs` (real executor/endpoint handler, ExecuteUpdate, unique index, locks), limiter cases in `AuthAbuseProtectionTests.cs`, `e2e/tests/heartbeat.spec.ts`.
+
+## Agent API
+
+A versioned JSON API under `/api/v1` for agents (e.g. Claude Code) using per-user API keys. Reference for callers: `docs/agent-api.md`. Plan: `docs/plans/2026-10-29-0654-feat-agent-api-plan.md`.
+
+- Files: `Infrastructure/ApiEndpoints.cs` (`MapHawkApi`, thin handlers), `ApiModels.cs` (response records, `ApiJson.Options`: web defaults + camelCase enums, nulls kept), `ApiKeyAuthentication.cs` (scheme, policies, handler), `ApiErrors.cs` (problem+json writer, `UseHawkApiErrors`), `Services/ApiKeys/ApiKeyService.cs`, `Data/ApiKeys/ApiKey.cs`, `Pages/.../Manage/ApiKeys.cshtml`. Shared services used by both UI and API: `MonitorStatusService`, `MonitorCommands`, `AlertRecipientResolver`, `AccountAlertSettings`, `AlertSettingsValidator`.
+- Keys: `hawk_` + 43 base64url chars (32 random bytes); only the SHA-256 hash is stored (unique index) plus a 12-char non-secret `DisplayPrefix`. Plaintext is shown once, never put in TempData or logs. `LastUsedAt` is touched at most every 5 minutes. A key acts as its user (all monitors visible, no roles). Revoked by the user, by any password reset (admin or Forgot password), and deleted with the user. Lockout and password change do not revoke.
+- Auth: scheme `ApiKey` is never a default; policies `ApiRead` (read or write scope) and `ApiWrite` (write scope) pin the scheme, so a login cookie never authorizes `/api` and a key never authorizes pages. Only `Authorization: Bearer` is read (query string ignored). Challenge = 401 `unauthorized`, forbid = 403 `insufficient_scope`.
+- Errors: every `/api/*` response is JSON. `UseHawkApiErrors` (after the exception handler, before routing) turns exceptions into 500 `internal_error` and empty 400/404/405/415 into problem+json (`validation_failed`, `not_found`, `method_not_allowed`). There is deliberately no `/api/{**path}` catch-all route (it would turn 405s into 404s); unknown `/api` paths get the middleware's 404. Write handlers parse their own body (`ReadBodyAsync`: JSON object, max 16 KB, no duplicate properties) because minimal-API binding rejects bad bodies with an empty response.
+- Limits: `AuthAbuseProtection` chain adds a per-IP limiter for any `/api/*` request (`ApiRequestsPerMinutePerIp`, 600) and a per-key limiter keyed on the SHA-256 of well-formed keys (`ApiRequestsPerMinute`, 120); 429 `rate_limited` with `Retry-After`.
+- Invariants: PATCH is a merge patch (property presence, not nullable DTOs); pause/resume/PATCH are set-based and renew `ConcurrencyStamp`, so an open Edit form detects them; heartbeat resume sets the deadline via the same path as the UI (invariant 1 of "Heartbeat Monitors" holds); run-now returns the in-flight manual run (started within timeout + 60 s) instead of queuing a duplicate, rejects disabled monitors and heartbeats with 409; the ping token is never returned. Write handlers log `user id, key id, monitor id, action` at Information (logger `Hawk.Api`). Key writes (touch, revoke) branch on `db.Database.IsRelational()` for EF InMemory tests.
+- Tests: `ApiKeyServiceTests`, `ApiAuthHttpTests`, `ApiKeysPageHttpTests`, `ApiHttpTests` (InMemory host: auth, scope, errors, reads), `ApiPostgresHttpTests` (pause/resume/PATCH/run over HTTP on Postgres), `MonitorStatusTests`, `e2e/tests/api.spec.ts`.
 
 ## Run Diagnostics Page
 
@@ -527,6 +540,9 @@ Upgrading an existing deployment to `0.9.27`+ (non-root image): the `hawk_dpkeys
   - `Hawk__UrlChecks__UserAgentPresets__<key>` (override built-in preset values)
 - Monitoring:
   - `Hawk__Monitoring__RunRetentionDaysDefault` (default 90; server-wide fallback for run history retention)
+- API rate limits:
+  - `Hawk__Security__ApiRequestsPerMinute` (default 120, 1-6000; per API key)
+  - `Hawk__Security__ApiRequestsPerMinutePerIp` (default 600, 1-60000; per client IP, any `/api/*` request)
 - Heartbeat rate limits:
   - `Hawk__Security__PingRequestsPerMinute` (default 30, 1-600; per token)
   - `Hawk__Security__PingRequestsPerMinutePerIp` (default 300, 1-6000; per client IP)
