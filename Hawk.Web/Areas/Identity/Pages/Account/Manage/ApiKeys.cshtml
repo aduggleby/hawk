@@ -1,0 +1,137 @@
+@page
+@model Hawk.Web.Areas.Identity.Pages.Account.Manage.ApiKeysModel
+@using Hawk.Web.Data.ApiKeys
+@{
+    ViewData["Title"] = "API keys";
+    var apiBase = $"{Request.Scheme}://{Request.Host}/api/v1";
+    static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
+}
+
+<div class="mb-4">
+    <div class="text-xs font-mono uppercase tracking-tight text-zinc-500">Account settings</div>
+    <h2 class="text-2xl font-semibold tracking-tight">API keys</h2>
+    <p class="text-sm text-zinc-600 mt-1">Keys let an agent or script use the Hawk API as you. Treat them like passwords.</p>
+</div>
+
+@if (Model.NewKey is not null)
+{
+    <div class="rounded-xl border border-[color:var(--border-primary)] bg-[color:var(--bg-secondary)] overflow-hidden mb-4" role="region" aria-label="New API key">
+        <div class="px-4 py-3 border-b border-[color:var(--border-primary)]">
+            <div class="font-semibold">Copy this key now, it will not be shown again</div>
+            <div class="text-sm text-zinc-600 mt-1">Key <span class="font-mono">@Model.NewKeyName</span> was created. Store it somewhere safe.</div>
+        </div>
+        <div class="p-4 space-y-3">
+            <div class="flex items-center gap-2">
+                <input id="new-api-key" class="hawk-input font-mono" type="text" readonly value="@Model.NewKey" aria-label="New API key" onfocus="this.select()" />
+                <button id="new-api-key-copy" class="hawk-btn hawk-btn-primary" type="button">Copy</button>
+            </div>
+            <div id="new-api-key-status" class="text-xs text-zinc-500" role="status" aria-live="polite"></div>
+            <div>
+                <div class="text-xs font-mono uppercase tracking-tight text-zinc-500 mb-1">Example</div>
+                <pre class="hawk-input font-mono text-xs overflow-x-auto">curl -fsS -H "Authorization: Bearer @Model.NewKey" @apiBase</pre>
+            </div>
+        </div>
+    </div>
+}
+
+<form method="post" class="space-y-4">
+    <div class="rounded-xl border border-[color:var(--border-primary)] bg-[color:var(--bg-secondary)] overflow-hidden">
+        <div class="px-4 py-3 border-b border-[color:var(--border-primary)]">
+            <div class="font-semibold">Create a key</div>
+        </div>
+        <div class="p-4 space-y-4">
+            <div>
+                <label class="hawk-label" asp-for="Name"></label>
+                <input class="hawk-input mt-2" asp-for="Name" maxlength="100" placeholder="Claude Code on my laptop" />
+                <span class="hawk-error-message block" asp-validation-for="Name"></span>
+            </div>
+            <fieldset>
+                <legend class="hawk-label">Scope</legend>
+                <label class="flex items-start gap-2 mt-2">
+                    <input type="radio" name="Scope" value="@ApiKeyScope.Read" checked="@(Model.Scope == ApiKeyScope.Read)" class="mt-1" />
+                    <span><span class="font-semibold">Read</span><br /><span class="text-sm text-zinc-600">List monitors and read runs and alert state.</span></span>
+                </label>
+                <label class="flex items-start gap-2 mt-2">
+                    <input type="radio" name="Scope" value="@ApiKeyScope.Write" checked="@(Model.Scope == ApiKeyScope.Write)" class="mt-1" />
+                    <span><span class="font-semibold">Write</span><br /><span class="text-sm text-zinc-600">Also pause and resume, run checks and change alert settings.</span></span>
+                </label>
+                <span class="hawk-error-message block" asp-validation-for="Scope"></span>
+            </fieldset>
+            <div>
+                <button class="hawk-btn hawk-btn-primary" type="submit">Create key</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="rounded-xl border border-[color:var(--border-primary)] bg-[color:var(--bg-secondary)] overflow-hidden mt-4">
+    <div class="px-4 py-3 border-b border-[color:var(--border-primary)] flex items-center justify-between gap-3">
+        <div class="font-semibold">Active keys</div>
+        @if (Model.Keys.Count > 0)
+        {
+            <form method="post" asp-page-handler="RevokeAll"
+                  onsubmit="return confirm('Revoke all @Model.Keys.Count API key(s)? They stop working immediately.');">
+                <button class="hawk-btn hawk-btn-danger" type="submit">Revoke all</button>
+            </form>
+        }
+    </div>
+    @if (Model.Keys.Count == 0)
+    {
+        <div class="p-4 text-sm text-zinc-600">No API keys yet.</div>
+    }
+    else
+    {
+        <div class="divide-y divide-[color:var(--border-primary)]">
+            @foreach (var key in Model.Keys)
+            {
+                <div class="p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="font-semibold break-words">@key.Name <span class="text-xs font-mono uppercase text-zinc-500">@key.Scope</span></div>
+                        <div class="text-sm text-zinc-600 mt-1">
+                            <span class="font-mono">@key.DisplayPrefix…</span>
+                            · Created <time data-utc="@key.CreatedAt.ToString("O")" data-utc-format="short">@UtcFallback(key.CreatedAt)</time>
+                            · Last used
+                            @if (key.LastUsedAt is { } lastUsed)
+                            {
+                                <time data-utc="@lastUsed.ToString("O")" data-utc-format="short">@UtcFallback(lastUsed)</time>
+                            }
+                            else
+                            {
+                                <span>Never</span>
+                            }
+                        </div>
+                    </div>
+                    <form method="post" asp-page-handler="Revoke"
+                          onsubmit="return confirm(@Html.Raw(System.Text.Json.JsonSerializer.Serialize($"Revoke the API key \"{key.Name}\"? It stops working immediately.", new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default })));">
+                        <input type="hidden" name="keyId" value="@key.Id" />
+                        <button class="hawk-btn hawk-btn-ghost" type="submit">Revoke</button>
+                    </form>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <partial name="/Areas/Identity/Pages/Shared/_ValidationScriptsPartial.cshtml" />
+    @if (Model.NewKey is not null)
+    {
+        <script>
+            (() => {
+                const input = document.getElementById("new-api-key");
+                const button = document.getElementById("new-api-key-copy");
+                const status = document.getElementById("new-api-key-status");
+                if (!input || !button || !status) return;
+                button.addEventListener("click", async () => {
+                    try {
+                        await navigator.clipboard.writeText(input.value);
+                    } catch {
+                        input.select();
+                        document.execCommand("copy");
+                    }
+                    status.textContent = "Copied";
+                });
+            })();
+        </script>
+    }
+}
