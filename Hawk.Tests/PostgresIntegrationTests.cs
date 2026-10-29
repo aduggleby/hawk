@@ -323,7 +323,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         await using (var scope = app.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var delete = new DeleteModel(db);
+            var delete = new DeleteModel(db, new MonitorEditor(db));
             InitPage(delete);
             Assert.IsType<RedirectToPageResult>(await delete.OnPostAsync(failingId, CancellationToken.None));
             Assert.False(await db.Monitors.AnyAsync(m => m.Id == failingId));
@@ -777,7 +777,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
 
         await using (var scope = app.Services.CreateAsyncScope())
         {
-            var page = new EditModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), Production) { Id = id };
+            var page = new EditModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), Production, scope.ServiceProvider.GetRequiredService<MonitorEditor>()) { Id = id };
             InitPage(page);
             Assert.IsType<RedirectToPageResult>(await page.OnPostRegenerateAsync(CancellationToken.None));
         }
@@ -1360,6 +1360,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         services.AddHawkDbContext(DatabaseProvider.Postgres, connectionString);
         services.AddHawkIdentity();
         services.AddScoped<ApiKeyService>();
+        services.AddScoped<MonitorEditor>();
         services.AddSingleton<JobStorage>(_ => DatabaseSetup.CreatePostgreSqlStorage(connectionString));
         var sp = services.BuildServiceProvider();
 
@@ -1479,7 +1480,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
     private static async Task<MonitorForm> LoadEditFormAsync(TestApp app, Guid id)
     {
         await using var scope = app.Services.CreateAsyncScope();
-        var page = new EditModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), Production) { Id = id };
+        var page = new EditModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), Production, scope.ServiceProvider.GetRequiredService<MonitorEditor>()) { Id = id };
         InitPage(page);
         Assert.IsType<PageResult>(await page.OnGetAsync(CancellationToken.None));
         return page.Form;
@@ -1488,7 +1489,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
     private static async Task<(IActionResult Result, string? FlashError)> PostEditAsync(TestApp app, Guid id, MonitorForm form)
     {
         await using var scope = app.Services.CreateAsyncScope();
-        var page = new EditModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), Production) { Id = id, Form = form };
+        var page = new EditModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), Production, scope.ServiceProvider.GetRequiredService<MonitorEditor>()) { Id = id, Form = form };
         InitPage(page);
         var result = await page.OnPostAsync(CancellationToken.None);
         return (result, page.TempData["FlashError"] as string);

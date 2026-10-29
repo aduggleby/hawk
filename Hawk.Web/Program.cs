@@ -154,6 +154,7 @@ builder.Services.AddScoped<IMonitorExecutor, MonitorExecutor>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
 builder.Services.AddScoped<MonitorStatusService>();
 builder.Services.AddScoped<MonitorCommands>();
+builder.Services.AddScoped<MonitorEditor>();
 builder.Services.AddScoped<AlertRecipientResolver>();
 builder.Services.AddScoped<AccountAlertSettings>();
 builder.Services.AddScoped<StatusCakeImporter>();

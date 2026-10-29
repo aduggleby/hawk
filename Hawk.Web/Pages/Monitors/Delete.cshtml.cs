@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
+using Hawk.Web.Services.Monitoring;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Web.Pages.Monitors;
@@ -15,7 +16,7 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Delete monitor page model.
 /// </summary>
-public class DeleteModel(ApplicationDbContext db) : PageModel
+public class DeleteModel(ApplicationDbContext db, MonitorEditor editor) : PageModel
 {
     /// <summary>
     /// Loaded monitor.
@@ -40,8 +41,7 @@ public class DeleteModel(ApplicationDbContext db) : PageModel
     {
         // Set-based delete (children cascade in the database): no concurrency-stamp check, so a concurrent
         // edit or pause cannot turn a confirmed delete into an error.
-        var deleted = await db.Monitors.Where(x => x.Id == id).ExecuteDeleteAsync(cancellationToken);
-        if (deleted == 0)
+        if (await editor.DeleteAsync(id, expectedStamp: null, cancellationToken) == MonitorDeleteOutcome.NotFound)
             return NotFound();
 
         return RedirectToPage("/Monitors/Index");

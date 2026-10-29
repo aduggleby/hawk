@@ -19,7 +19,7 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Edit monitor page model.
 /// </summary>
-public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageModel
+public class EditModel(ApplicationDbContext db, IHostEnvironment env, MonitorEditor editor) : PageModel
 {
     /// <summary>
     /// Monitor id.
@@ -114,13 +114,16 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
     {
         AllowedIntervals = Services.Monitoring.MonitorIntervals.AllowedSeconds(env);
 
-        var m = await db.Monitors.FirstOrDefaultAsync(x => x.Id == Id, cancellationToken);
-        if (m is null)
+        var type = await db.Monitors.AsNoTracking()
+            .Where(x => x.Id == Id)
+            .Select(x => (MonitorType?)x.Type)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (type is null)
             return NotFound();
 
         // The type is immutable: validate and save against the persisted type, never the submitted one.
-        IsHeartbeat = m.Type == MonitorType.Heartbeat;
-        Form.Type = m.Type;
+        IsHeartbeat = type == MonitorType.Heartbeat;
+        Form.Type = type.Value;
 
         MonitorFormValidation.AddResults(ModelState, Form.Validate(env));
 
@@ -133,88 +136,17 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env) : PageMode
             return RedirectToPage("/Monitors/Edit", new { id = Id });
         }
 
-        // Ensure EF checks the stamp from when the user loaded the page, not the one we just fetched,
-        // and renew it so other open Edit forms conflict with this change.
-        db.Entry(m).Property(x => x.ConcurrencyStamp).OriginalValue = originalStamp;
-        m.ConcurrencyStamp = Guid.NewGuid();
-
-        var wasEnabled = m.Enabled;
-        var oldPeriod = m.IntervalSeconds;
-        var oldGrace = m.HeartbeatGraceSeconds;
-
-        m.Name = Form.Name.Trim();
-        m.Enabled = Form.Enabled;
-        m.IntervalSeconds = Form.IntervalSeconds;
-        m.AlertAfterConsecutiveFailures = Form.AlertAfterConsecutiveFailures;
-        m.AlertEmailOverride = string.IsNullOrWhiteSpace(Form.AlertEmailOverride) ? null : Form.AlertEmailOverride.Trim();
-        m.RunRetentionDays = Form.RunRetentionDays;
-
-        if (IsHeartbeat)
+        // The editor checks the stamp from when the user loaded the page (not the one it fetches) and renews it.
+        switch (await editor.UpdateAsync(Id, Form, originalStamp, replaceHeaders: true, replaceMatchRules: true, cancellationToken))
         {
-            m.HeartbeatGraceSeconds = Form.GraceSeconds;
-
-            // NextRunAt is the ping deadline: only an intentional change (period, grace, re-enable) gives a fresh
-            // period plus grace. Saving other fields must not move it.
-            if (m.IntervalSeconds != oldPeriod || m.HeartbeatGraceSeconds != oldGrace || (!wasEnabled && m.Enabled) || m.NextRunAt is null)
-                m.NextRunAt = HeartbeatTokens.InitialDeadline(DateTimeOffset.UtcNow, m.IntervalSeconds, m.HeartbeatGraceSeconds);
-        }
-        else
-        {
-            m.Url = (Form.Url ?? string.Empty).Trim();
-            m.Method = Form.Method.Trim().ToUpperInvariant();
-            m.TimeoutSeconds = Form.TimeoutSeconds;
-            m.AllowedStatusCodes = AllowedStatusCodesParser.Normalize(Form.AllowedStatusCodes);
-            m.ContentType = string.IsNullOrWhiteSpace(Form.ContentType) ? null : Form.ContentType.Trim();
-            m.Body = Form.Body;
-
-            // Reset scheduling to "run soon" when config changes.
-            m.NextRunAt = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60));
-        }
-
-        var newHeaders = new List<MonitorHeader>();
-        for (var i = 0; !IsHeartbeat && i < Math.Min(Form.HeaderNames.Length, Form.HeaderValues.Length); i++)
-        {
-            var hn = (Form.HeaderNames[i] ?? string.Empty).Trim();
-            var hv = (Form.HeaderValues[i] ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(hn))
-                continue;
-            newHeaders.Add(new MonitorHeader { MonitorId = m.Id, Name = hn, Value = hv });
-        }
-
-        var newRules = new List<MonitorMatchRule>();
-        for (var i = 0; !IsHeartbeat && i < Math.Min(Form.MatchModes.Length, Form.MatchPatterns.Length); i++)
-        {
-            var pat = (Form.MatchPatterns[i] ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(pat))
-                continue;
-            var mode = Form.MatchModes[i];
-            if (mode == ContentMatchMode.None)
-                continue;
-            newRules.Add(new MonitorMatchRule { MonitorId = m.Id, Mode = mode, Pattern = pat });
-        }
-
-        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
-        try
-        {
-            // Replace children with set-based deletes to avoid per-row optimistic concurrency exceptions.
-            await db.MonitorHeaders.Where(h => h.MonitorId == m.Id).ExecuteDeleteAsync(cancellationToken);
-            await db.MonitorMatchRules.Where(r => r.MonitorId == m.Id).ExecuteDeleteAsync(cancellationToken);
-
-            if (newHeaders.Count != 0)
-                db.MonitorHeaders.AddRange(newHeaders);
-            if (newRules.Count != 0)
-                db.MonitorMatchRules.AddRange(newRules);
-
-            await db.SaveChangesAsync(cancellationToken);
-            await tx.CommitAsync(cancellationToken);
-
-            return RedirectToPage("/Monitors/Details", new { id = m.Id });
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // Another request updated/deleted this monitor between when the user loaded the page and now.
-            TempData["FlashError"] = "This monitor was changed by someone else while you were editing. Please review the latest values and try again.";
-            return RedirectToPage("/Monitors/Edit", new { id = Id });
+            case MonitorUpdateOutcome.NotFound:
+                return NotFound();
+            case MonitorUpdateOutcome.Conflict:
+                // Another request updated/deleted this monitor between when the user loaded the page and now.
+                TempData["FlashError"] = "This monitor was changed by someone else while you were editing. Please review the latest values and try again.";
+                return RedirectToPage("/Monitors/Edit", new { id = Id });
+            default:
+                return RedirectToPage("/Monitors/Details", new { id = Id });
         }
     }
 

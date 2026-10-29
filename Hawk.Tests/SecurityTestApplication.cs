@@ -73,6 +73,7 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
         builder.Services.AddSingleton<IMonitorExecutor>(services => services.GetRequiredService<TestExecutor>());
         builder.Services.AddScoped<MonitorStatusService>();
         builder.Services.AddScoped<MonitorCommands>();
+        builder.Services.AddScoped<MonitorEditor>();
         builder.Services.AddScoped<AccountAlertSettings>();
         builder.Services.AddScoped<AlertRecipientResolver>();
         builder.Services.AddRazorPages(options =>
