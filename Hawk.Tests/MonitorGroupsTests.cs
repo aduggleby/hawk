@@ -126,7 +126,8 @@ public sealed class MonitorGroupsTests
     }
 }
 
-public sealed class MonitorGroupsPostgresTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+[Collection(PostgresCollection.Name)]
+public sealed class MonitorGroupsPostgresTests(PostgresFixture fixture)
 {
     private sealed class RecordingJobs : IBackgroundJobClient
     {

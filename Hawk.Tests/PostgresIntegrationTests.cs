@@ -46,7 +46,17 @@ using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 namespace Hawk.Tests;
 
 /// <summary>
-/// Starts one PostgreSQL container for all tests in <see cref="PostgresIntegrationTests"/>.
+/// Shares one <see cref="PostgresFixture"/> across every PostgreSQL test class, so the container is started (or found
+/// unavailable, which can take about a minute without Docker) once per test run instead of once per class.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class PostgresCollection : ICollectionFixture<PostgresFixture>
+{
+    public const string Name = "Postgres";
+}
+
+/// <summary>
+/// Starts one PostgreSQL container for all PostgreSQL test classes (<see cref="PostgresCollection"/>).
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
@@ -60,7 +70,10 @@ public sealed class PostgresFixture : IAsyncLifetime
     {
         try
         {
-            _container = new PostgreSqlBuilder("postgres:17-alpine").Build();
+            _container = new PostgreSqlBuilder("postgres:17-alpine")
+                // One container serves every PostgreSQL test class; each test opens its own database and pool.
+                .WithCommand("-c", "max_connections=1000")
+                .Build();
             await _container.StartAsync();
         }
         catch (Exception ex)
@@ -87,7 +100,8 @@ public sealed class PostgresFixture : IAsyncLifetime
 /// <summary>
 /// PostgreSQL provider integration tests.
 /// </summary>
-public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+[Collection(PostgresCollection.Name)]
+public sealed class PostgresIntegrationTests(PostgresFixture fixture)
 {
     private static readonly IHostEnvironment Production = new FakeEnv("Production");
 

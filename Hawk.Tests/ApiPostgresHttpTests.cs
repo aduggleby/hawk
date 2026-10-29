@@ -31,7 +31,8 @@ using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Tests;
 
-public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+[Collection(PostgresCollection.Name)]
+public sealed class ApiPostgresHttpTests(PostgresFixture fixture)
 {
     private sealed class Host(WebApplication app, HttpClient client, string writeKey, string readKey, string userId, Jobs jobs, RaceInterceptor race) : IAsyncDisposable
     {

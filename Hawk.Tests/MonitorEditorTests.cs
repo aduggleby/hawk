@@ -17,7 +17,8 @@ using Monitor = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Tests;
 
-public sealed class MonitorEditorTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+[Collection(PostgresCollection.Name)]
+public sealed class MonitorEditorTests(PostgresFixture fixture)
 {
     private async Task<ServiceProvider> CreateAsync()
     {

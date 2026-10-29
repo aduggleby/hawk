@@ -15,7 +15,8 @@ using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Tests;
 
-public sealed class MonitorGroupsHttpTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+[Collection(PostgresCollection.Name)]
+public sealed class MonitorGroupsHttpTests(PostgresFixture fixture)
 {
     private async Task<SecurityTestApplication> CreatePostgresAppAsync()
     {
