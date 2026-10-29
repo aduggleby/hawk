@@ -1,0 +1,21 @@
+@* 24 h strip (96 cells). Model built by StatusStrip.Build; cell tooltips use UTC, the strip label is the text alternative. *@
+@using Hawk.Web.Services.Monitoring
+@model StatusStripModel
+
+<div class="hawk-strip" role="img" aria-label="@Model.AriaLabel" data-testid="status-strip">
+    @foreach (var c in Model.Cells)
+    {
+        var css = c.State switch
+        {
+            StripCellState.Fail => "fail",
+            StripCellState.Ok => "ok",
+            _ => "",
+        };
+        var title = c.State == StripCellState.Empty
+            ? $"{c.Start.UtcDateTime:HH:mm} UTC: no data"
+            : Model.Heartbeat
+                ? $"{c.Start.UtcDateTime:HH:mm} UTC: {c.Runs - c.Failures} {(c.Runs - c.Failures == 1 ? "ping" : "pings")}, {c.Failures} missed"
+                : $"{c.Start.UtcDateTime:HH:mm} UTC: {c.Runs} {(c.Runs == 1 ? "run" : "runs")}, {c.Failures} failed, avg {c.AverageMs} ms";
+        <i class="@css" style="@(c.HeightPercent > 0 ? $"height:{c.HeightPercent}%" : null)" title="@title" aria-hidden="true"></i>
+    }
+</div>

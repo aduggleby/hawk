@@ -1,0 +1,27 @@
+/* 24 h status strip (Pages/Shared/_StatusStrip.cshtml): bars grow from the bottom, failures are full height. */
+.hawk-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 16px;
+  min-width: 0;
+}
+
+.hawk-strip > i {
+  flex: 1 1 0;
+  min-width: 1px;
+  height: 3px;
+  background: var(--faint);
+}
+
+.hawk-strip > i.ok {
+  background: var(--up);
+}
+
+.hawk-strip > i.fail {
+  background: var(--down);
+}
+
+.hawk-strip > i:hover {
+  outline: 1px solid var(--text);
+}

@@ -179,6 +179,7 @@
 @import "./components/hawk-badge.css";
 @import "./components/hawk-loading.css";
 @import "./components/hawk-alert.css";
+@import "./components/hawk-strip.css";
 
 /* App utilities */
 @import "./utilities/animations.css";
