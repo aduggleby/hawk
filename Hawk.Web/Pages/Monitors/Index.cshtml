@@ -72,7 +72,7 @@ else
                         {
                             <tr class="hover:bg-zinc-50/70">
                                 <td class="px-4 py-3 whitespace-nowrap">
-                                    <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" />
+                                    <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" data-group="@Hawk.Web.Services.Monitoring.MonitorGroups.Anchor(m.GroupName)" />
                                 </td>
                                 <td class="px-4 py-3 font-medium whitespace-nowrap">
                                     <a asp-page="/Monitors/Details"
@@ -126,80 +126,115 @@ else
             </div>
         }
 
-        <div class="hawk-card p-0 overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead class="bg-zinc-50 text-zinc-600">
-                    <tr>
-                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Select</th>
-                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Name</th>
-                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Status</th>
-                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Last run</th>
-                        <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Next run</th>
-                    </tr>
-                    </thead>
-                    <tbody class="divide-y divide-zinc-100">
-                    @foreach (var m in Model.OtherMonitors)
+        @foreach (var grp in Model.GroupSections)
+        {
+            <div class="hawk-card p-0 overflow-hidden mb-4" id="@grp.Anchor">
+                <div class="px-4 py-3 bg-zinc-50 border-b border-zinc-100 flex flex-wrap items-center gap-3">
+                    <input class="h-4 w-4" type="checkbox" data-group-select="@grp.Anchor" aria-label="Select all in @(grp.Name ?? "Ungrouped")" />
+                    <h2 class="text-sm font-semibold tracking-tight">@(grp.Name ?? "Ungrouped")</h2>
+                    <div class="text-xs text-zinc-500">
+                        @grp.Monitors.Count monitor(s)@if (grp.FailingCount > 0)
+                        {
+                            <span class="text-red-700"> &middot; @grp.FailingCount failing</span>
+                        }
+                    </div>
+                    @if (grp.Name is not null)
                     {
-                        var failing = IsFailing(m);
-                        <tr class="hover:bg-zinc-50/70">
-                            <td class="px-4 py-3 whitespace-nowrap">
-                                <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" />
-                            </td>
-                            <td class="px-4 py-3 font-medium whitespace-nowrap">
-                                <a asp-page="/Monitors/Details"
-                                   asp-route-id="@m.Id"
-                                   class="no-underline @(failing ? "text-red-700 hover:text-red-800" : "")">@m.Name</a>
-                                @if (m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat)
-                                {
-                                    <span class="hawk-badge ml-2">Heartbeat</span>
-                                }
-                            </td>
-                            <td class="px-4 py-3 whitespace-nowrap">
-                                @if (!m.Enabled)
-                                {
-                                    <span class="hawk-badge hawk-badge-danger">Disabled</span>
-                                }
-                                else if (m.IsPaused)
-                                {
-                                    <span class="hawk-badge hawk-badge-warning">Paused</span>
-                                }
-                                else
-                                {
-                                    <span class="hawk-badge hawk-badge-success">Enabled</span>
-                                }
-                            </td>
-                            <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
-                                @if (m.LastRunAt is { } lastRunAt)
-                                {
-                                    <time data-utc="@lastRunAt.ToString("O")" data-utc-format="short">@UtcFallback(lastRunAt)</time>
-                                }
-                                else
-                                {
-                                    @:-
-                                }
-                                @if (failing)
-                                {
-                                    <span class="hawk-badge hawk-badge-danger ml-2">FAIL</span>
-                                }
-                            </td>
-                            <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
-                                @if (m.NextRunAt is { } nextRunAt)
-                                {
-                                    <time data-utc="@nextRunAt.ToString("O")" data-utc-format="short">@UtcFallback(nextRunAt)</time>
-                                }
-                                else
-                                {
-                                    @:-
-                                }
-                            </td>
-                        </tr>
+                        <div class="ml-auto flex items-center gap-2">
+                            <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupRun" name="Group" value="@grp.Name">Run</button>
+                            <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupPause" name="Group" value="@grp.Name">Pause</button>
+                            <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupResume" name="Group" value="@grp.Name">Resume</button>
+                            <button class="hawk-btn hawk-btn-ghost" type="button" data-rename-group="@grp.Name">Rename</button>
+                        </div>
                     }
-                    </tbody>
-                </table>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-zinc-50 text-zinc-600">
+                        <tr>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Select</th>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Name</th>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Status</th>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Last run</th>
+                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Next run</th>
+                        </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-100">
+                        @foreach (var m in grp.Monitors)
+                        {
+                            var failing = IsFailing(m);
+                            <tr class="hover:bg-zinc-50/70">
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" data-group="@grp.Anchor" />
+                                </td>
+                                <td class="px-4 py-3 font-medium whitespace-nowrap">
+                                    <a asp-page="/Monitors/Details"
+                                       asp-route-id="@m.Id"
+                                       class="no-underline @(failing ? "text-red-700 hover:text-red-800" : "")">@m.Name</a>
+                                    @if (m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat)
+                                    {
+                                        <span class="hawk-badge ml-2">Heartbeat</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    @if (!m.Enabled)
+                                    {
+                                        <span class="hawk-badge hawk-badge-danger">Disabled</span>
+                                    }
+                                    else if (m.IsPaused)
+                                    {
+                                        <span class="hawk-badge hawk-badge-warning">Paused</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="hawk-badge hawk-badge-success">Enabled</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
+                                    @if (m.LastRunAt is { } lastRunAt)
+                                    {
+                                        <time data-utc="@lastRunAt.ToString("O")" data-utc-format="short">@UtcFallback(lastRunAt)</time>
+                                    }
+                                    else
+                                    {
+                                        @:-
+                                    }
+                                    @if (failing)
+                                    {
+                                        <span class="hawk-badge hawk-badge-danger ml-2">FAIL</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
+                                    @if (m.NextRunAt is { } nextRunAt)
+                                    {
+                                        <time data-utc="@nextRunAt.ToString("O")" data-utc-format="short">@UtcFallback(nextRunAt)</time>
+                                    }
+                                    else
+                                    {
+                                        @:-
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
+        }
     </form>
+
+    @* Rename lives outside batch-form: nested forms are not allowed. *@
+    <dialog id="group-rename-dialog" class="hawk-card" data-groups="@System.Text.Json.JsonSerializer.Serialize(Model.GroupSections.Where(g => g.Name is not null).Select(g => new { name = g.Name, count = g.Monitors.Count }))">
+        <form method="post" asp-page-handler="GroupRename" id="group-rename-form" class="space-y-3">
+            <input type="hidden" name="Group" id="group-rename-old" />
+            <label class="hawk-label" for="group-rename-new">New group name</label>
+            <input class="hawk-input" id="group-rename-new" name="NewGroupName" maxlength="100" autocomplete="off" />
+            <div class="flex items-center gap-2">
+                <button class="hawk-btn hawk-btn-primary" type="submit">Rename</button>
+                <button class="hawk-btn hawk-btn-ghost" type="button" id="group-rename-cancel">Cancel</button>
+            </div>
+        </form>
+    </dialog>
 }
 
 @section Scripts {
@@ -212,19 +247,63 @@ else
 
             const boxes = Array.from(document.querySelectorAll('input[name="SelectedMonitorIds"]'));
             if (!defaultActions || !selectedActions || boxes.length === 0) return;
+            const headers = Array.from(document.querySelectorAll("input[data-group-select]"));
 
             const sync = () => {
-                const checked = boxes.filter(b => b.checked).length;
+                // A failing monitor has a checkbox in two sections; count each monitor once.
+                const checked = new Set(boxes.filter(b => b.checked).map(b => b.value)).size;
                 defaultActions.hidden = checked > 0;
                 selectedActions.hidden = checked === 0;
                 if (selectedCount) selectedCount.textContent = String(checked);
+                for (const h of headers) {
+                    const own = boxes.filter(b => b.dataset.group === h.dataset.groupSelect);
+                    h.checked = own.length > 0 && own.every(b => b.checked);
+                }
             };
 
-            for (const b of boxes) b.addEventListener("change", sync);
+            for (const b of boxes) {
+                b.addEventListener("change", () => {
+                    for (const twin of boxes) if (twin.value === b.value) twin.checked = b.checked;
+                    sync();
+                });
+            }
+            for (const h of headers) {
+                h.addEventListener("change", () => {
+                    for (const b of boxes) {
+                        if (b.dataset.group !== h.dataset.groupSelect) continue;
+                        for (const twin of boxes) if (twin.value === b.value) twin.checked = h.checked;
+                    }
+                    sync();
+                });
+            }
             if (uncheckAll) {
                 uncheckAll.addEventListener("click", () => {
                     for (const b of boxes) b.checked = false;
                     sync();
+                });
+            }
+
+            const dialog = document.getElementById("group-rename-dialog");
+            if (dialog) {
+                const form = document.getElementById("group-rename-form");
+                const oldInput = document.getElementById("group-rename-old");
+                const newInput = document.getElementById("group-rename-new");
+                let groups = [];
+                try { groups = JSON.parse(dialog.dataset.groups || "[]"); } catch { groups = []; }
+                for (const btn of document.querySelectorAll("[data-rename-group]")) {
+                    btn.addEventListener("click", () => {
+                        oldInput.value = btn.dataset.renameGroup;
+                        newInput.value = btn.dataset.renameGroup;
+                        dialog.showModal();
+                        newInput.select();
+                    });
+                }
+                document.getElementById("group-rename-cancel").addEventListener("click", () => dialog.close());
+                form.addEventListener("submit", e => {
+                    const from = oldInput.value.toLowerCase();
+                    const to = newInput.value.trim().toLowerCase();
+                    const target = groups.find(g => g.name.toLowerCase() === to && to !== from);
+                    if (target && !confirm("Merge into " + target.name + " (" + target.count + " monitors)?")) e.preventDefault();
                 });
             }
 

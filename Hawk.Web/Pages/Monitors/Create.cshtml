@@ -52,6 +52,19 @@
         <div class="hawk-error-message" asp-validation-for="Form.Name"></div>
     </div>
 
+    <div class="hawk-card">
+        <label class="hawk-label" asp-for="Form.Group"></label>
+        <input class="hawk-input mt-2" asp-for="Form.Group" list="group-names" autocomplete="off" maxlength="100" />
+        <datalist id="group-names">
+            @foreach (var g in Model.GroupNames)
+            {
+                <option value="@g"></option>
+            }
+        </datalist>
+        <div class="text-xs text-zinc-500 mt-1">Optional. Monitors with the same group are listed together.</div>
+        <div class="hawk-error-message" asp-validation-for="Form.Group"></div>
+    </div>
+
     <div class="hawk-card" data-http-only hidden="@isHeartbeat">
         <label class="hawk-label" asp-for="Form.Url"></label>
         <input class="hawk-input mt-2 font-mono" asp-for="Form.Url" placeholder="https://example.com/health" />

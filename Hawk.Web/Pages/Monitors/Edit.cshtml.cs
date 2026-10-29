@@ -7,6 +7,7 @@
 // </file>
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
@@ -32,6 +33,18 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env, MonitorEdi
     /// </summary>
     [BindProperty]
     public MonitorForm Form { get; set; } = new();
+
+    /// <summary>
+    /// Existing group names for the group field's suggestions.
+    /// </summary>
+    public IReadOnlyList<string> GroupNames { get; private set; } = [];
+
+    /// <inheritdoc />
+    public override async Task OnPageHandlerExecutionAsync(PageHandlerExecutingContext context, PageHandlerExecutionDelegate next)
+    {
+        GroupNames = await MonitorGroups.ListAsync(db, context.HttpContext.RequestAborted);
+        await next();
+    }
 
     /// <summary>
     /// Allowed interval seconds.

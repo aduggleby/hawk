@@ -32,7 +32,7 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
     internal TestEmailSender Emails => App.Services.GetRequiredService<TestEmailSender>();
     internal TestExecutor Executor => App.Services.GetRequiredService<TestExecutor>();
 
-    internal static async Task<SecurityTestApplication> CreateAsync()
+    internal static async Task<SecurityTestApplication> CreateAsync(string? postgresConnectionString = null)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Hawk.sln")))
@@ -53,7 +53,10 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
             ["Hawk:Security:EmailRequestsPer15Minutes"] = "100"
         });
         var databaseName = Guid.NewGuid().ToString();
-        builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        if (postgresConnectionString is null)
+            builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        else
+            builder.Services.AddHawkDbContext(DatabaseProvider.Postgres, postgresConnectionString);
         builder.Services.AddHawkIdentity(builder.Configuration);
         builder.Services.AddScoped<Hawk.Web.Services.ApiKeys.ApiKeyService>();
         builder.Services.AddHawkApplicationCookie(builder.Configuration);
@@ -117,6 +120,8 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
 
         await using (var scope = application.Services.CreateAsyncScope())
         {
+            if (postgresConnectionString is not null)
+                await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.MigrateAsync();
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
             Assert.True((await roles.CreateAsync(new IdentityRole("Admin"))).Succeeded);
             var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();

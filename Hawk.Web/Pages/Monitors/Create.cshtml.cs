@@ -7,7 +7,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Identity;
+using Hawk.Web.Data;
 using Hawk.Web.Data.Monitoring;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Hawk.Web.Services;
 using Hawk.Web.Services.Monitoring;
 
@@ -16,7 +18,7 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Create monitor page model.
 /// </summary>
-public class CreateModel(IHostEnvironment env, UserManager<IdentityUser> userManager, MonitorEditor editor) : PageModel
+public class CreateModel(ApplicationDbContext db, IHostEnvironment env, UserManager<IdentityUser> userManager, MonitorEditor editor) : PageModel
 {
     /// <summary>
     /// Bound form data.
@@ -26,6 +28,18 @@ public class CreateModel(IHostEnvironment env, UserManager<IdentityUser> userMan
 
     [BindProperty]
     public IFormFile? ImportFile { get; set; }
+
+    /// <summary>
+    /// Existing group names for the group field's suggestions.
+    /// </summary>
+    public IReadOnlyList<string> GroupNames { get; private set; } = [];
+
+    /// <inheritdoc />
+    public override async Task OnPageHandlerExecutionAsync(PageHandlerExecutingContext context, PageHandlerExecutionDelegate next)
+    {
+        GroupNames = await MonitorGroups.ListAsync(db, context.HttpContext.RequestAborted);
+        await next();
+    }
 
     /// <summary>
     /// Allowed interval seconds.
@@ -93,6 +107,7 @@ public class CreateModel(IHostEnvironment env, UserManager<IdentityUser> userMan
         Form = new MonitorForm
         {
             Name = model.Name ?? string.Empty,
+            Group = MonitorGroups.Normalize(model.Group),
             Type = model.Type,
             GraceSeconds = model.HeartbeatGraceSeconds,
             Url = model.Url ?? string.Empty,

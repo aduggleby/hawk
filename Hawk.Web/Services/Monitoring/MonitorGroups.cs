@@ -71,4 +71,30 @@ public static class MonitorGroups
         var lower = group.ToLower();
         return monitors.Where(m => m.GroupName != null && m.GroupName.ToLower() == lower);
     }
+
+    /// <summary>
+    /// Page anchor for a group section: <c>group-</c> + slug of the lowercased name + "-" + the first 6 hex characters of its
+    /// SHA-256, so distinct names never share an anchor. Ungrouped (blank) is <c>group-none</c>.
+    /// </summary>
+    public static string Anchor(string? name)
+    {
+        var normalized = Normalize(name);
+        if (normalized is null)
+            return "group-none";
+        var lower = normalized.ToLowerInvariant();
+        var slug = System.Text.RegularExpressions.Regex.Replace(lower, "[^a-z0-9]+", "-").Trim('-');
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(lower)))[..6].ToLowerInvariant();
+        return slug.Length == 0 ? $"group-{hash}" : $"group-{slug}-{hash}";
+    }
+
+    /// <summary>Distinct existing group names (ignoring case), sorted with OrdinalIgnoreCase; the ordinal-first spelling wins.</summary>
+    public static async Task<List<string>> ListAsync(ApplicationDbContext db, CancellationToken cancellationToken = default)
+    {
+        var names = await db.Monitors.Where(m => m.GroupName != null).Select(m => m.GroupName!).Distinct().ToListAsync(cancellationToken);
+        return names
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .DistinctBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
 }
