@@ -6,6 +6,19 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-29
+
+### Changed
+
+- New "Tower" design across the app: dark and light ("day shift") palettes following the OS (the theme toggle still overrides), self-hosted Archivo font (no external font requests), Tower status colors.
+- Monitors overview: a headline sentence (how many monitors are down, longest outage), a red Attention section with one card per failing monitor (replaces the Failing section; each monitor now appears once in its group), a group rail, and dense rows with a 24-hour strip of 96 15-minute cells (red = a failure, height = average response time).
+- Monitor details lead with the status and since when (DOWN since, UP since, PAUSED, DISABLED, PENDING, WAITING), show 24h/7d/30d uptime, a 24-hour response-time chart (heartbeats: a 24-hour ping strip) and a 90-day uptime row. Run diagnostics use the same layout.
+
+### Added
+
+- 15-minute run rollup (`MonitorRunBuckets`) kept for 95 days independent of run retention, filled every minute by the Hangfire job `hawk-run-buckets` and backfilled from retained runs on startup and after a StatusCake import. Adds an additive schema migration (`AddMonitorRunBuckets`; back up before upgrading). When rolling back to 0.13.x, delete the `hawk-run-buckets` recurring job in the Hangfire dashboard.
+- Agent API: the monitor detail has `uptime` (`last24h`, `last7d`, `last30d`, percent or null).
+
 ## [0.13.0] - 2026-10-29
 
 ### Added

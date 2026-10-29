@@ -10,10 +10,10 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs; SQL Server and PostgreSQL stacks)
 - Monitor types: HTTP checks and heartbeat (push) monitors (see "Heartbeat Monitors")
 - Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture + `/flaky` alternating endpoint)
-- UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
+- UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), "Tower" design (0.14.0, see "Tower Design"), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.13.0`
+- Version: `0.14.0`
 
 ## Ports
 
@@ -337,9 +337,13 @@ Alert recipient resolution (in order):
   - The StatusCake alert import saves runs and then advances `LastRunAt` set-based in one transaction (`StatusCakeImporter.SaveAlertImportAsync`); the InMemory provider (unit tests) falls back to a tracked update.
 - `MonitorForm.ConcurrencyStamp` carries the token through the Edit form as a hidden field; `Edit.cshtml.cs` sets it as the original value, renews it, and catches `DbUpdateConcurrencyException` with a "changed by someone else" flash message.
 
-## Monitors Index — Failing Group
+## Monitors Index (Tower Board)
 
-- The monitors index page shows a **Failing** section (most recent completed run failed, `MonitorStatusService.IsInFailingGroup`) at the top, then every monitor by group (see "Monitor Groups"). A failing monitor appears in both places, so its link and checkbox exist twice on the page (e2e locators must be scoped; the batch handler de-duplicates IDs and the JS keeps the twin checkboxes in sync).
+- `Services/Monitoring/MonitorBoardService.cs` builds the index view model (`BoardModel`: groups, attention list, headline, per-row 24h strip); the page stays thin and its POST handlers (batch, group actions, rename) are unchanged.
+- Headline: pure `BoardHeadline.For(...)` ("2 of 31 monitors are down. Longest outage: ..." / "All 31 monitors are up.").
+- **Attention** section (`data-testid="attention"`): one card per monitor whose most recent completed run failed (`MonitorStatusService.IsInFailingGroup`), longest outage first, no checkboxes. The monitor itself appears once, as a row in its group (selectable there).
+- Group rail (desktop column, mobile chips) links to the group anchors; rows show status word, name, kind, the 24h strip (`_StatusStrip`), the newest bucket's average response time and the last run. Below 640 px rows wrap to two lines; touch layouts get 44 px targets.
+- CSS: `Assets/components/hawk-board.css`.
 
 ## Monitor Groups
 
@@ -360,6 +364,7 @@ Alert recipient resolution (in order):
 ## Monitor Detail Page
 
 - `Hawk.Web/Pages/Monitors/Details.cshtml(.cs)` shows monitor configuration, headers, match rules, and the 25 most recent runs.
+- Tower layout: a status lead (DOWN since / UP since / PAUSED / DISABLED / PENDING / heartbeat WAITING), 24h/7d/30d uptime figures, an inline SVG 24h response-time chart (heartbeats: the 24h ping strip), and a 90-day uptime row (one cell per UTC day; 100% up, 99-<100 up dimmed, 95-<99 down tint, <95 down, grey without runs). Data comes from `Services/Monitoring/MonitorHistoryService.cs` (one query of the last 90 days of buckets); "UP since" reads the newest failing bucket and refines it from retained runs with a bounded query. Empty states read "No data yet" / an em dash. CSS: `Assets/components/hawk-details.css`.
 - **Run now** button enqueues an immediate Hangfire job for the monitor (reason `"manual"`), creates a `MonitorRun` record up front (state `"queued"`), and redirects to the run diagnostics page which auto-refreshes until the run completes.
 - Each run in the history table links to the run diagnostics page.
 - Runs that are not yet completed show `QUEUED` or `RUNNING` badges instead of OK/FAIL.
@@ -425,6 +430,23 @@ A versioned JSON API under `/api/v1` for agents (e.g. Claude Code) using per-use
 - Invariants: PATCH is a merge patch (property presence, not nullable DTOs); pause/resume/PATCH are set-based and renew `ConcurrencyStamp`, so an open Edit form detects them; heartbeat resume sets the deadline via the same path as the UI (invariant 1 of "Heartbeat Monitors" holds); run-now returns the in-flight manual run (started within timeout + 60 s) instead of queuing a duplicate, rejects disabled monitors and heartbeats with 409; the ping token is never returned. Write handlers log `user id, key id, monitor id, action` at Information (logger `Hawk.Api`). Key writes (touch, revoke) branch on `db.Database.IsRelational()` for EF InMemory tests.
 - Monitor create/edit/delete (0.12.0): `Services/Monitoring/MonitorEditor.cs` (`CreateAsync`, `UpdateAsync(id, form, expectedStamp?, replaceHeaders, replaceMatchRules)`, `DeleteAsync(id, expectedStamp?)`) is the one implementation of entity mapping, heartbeat deadline rules and stamp handling for the Create/Edit/Delete pages and the API. It takes an already validated `MonitorForm` and is set-based for deletes (relational providers only). `UpdateAsync` forces the persisted type, renews the stamp, checks `expectedStamp` through the EF original value (conflict = `Conflict` outcome, no retry) and replaces children only when asked, so a merge patch that omits `headers` keeps more than the form's 5 slots. The API maps JSON to a `MonitorForm` in `Infrastructure/ApiMonitorBody.cs` (errors keyed by JSON field name; HTTP-only fields on a heartbeat, `heartbeatGraceSeconds` on HTTP, `heartbeatToken`/`ownerEmail`/`isPaused`, unknown fields and a type change are 400) and validates with `MonitorValidation` (attributes + child limits, shared with `MonitorJsonPort.TryCreateMonitor`) plus `MonitorForm.Validate`. PATCH builds the form from the persisted monitor first (merge patch) and passes `ifMatch ?? snapshot.ConcurrencyStamp` as the expected stamp, so a user change made since the snapshot is a conflict (409 `conflict` without If-Match, 412 with it) instead of being reverted by the stale form; scheduler/executor bookkeeping never renews the stamp. At most `MonitorForm.MaxHeaders`/`MaxMatchRules` (5, the form's slots, also used by the pages) headers and match rules are accepted, because the Edit page would silently drop more; a blank `alertEmailOverride` clears it. `followRedirects` is a bool (HTTP only). matchRules take `mode` (alias `type`, because the detail response reports `type`). `ApiMonitorDetail` has `concurrencyStamp` (also the quoted `ETag`) and `pingUrl`, which is set only in the create response of a heartbeat (the only place the token is returned). `If-Match` (quoted or bare GUID; malformed = 400) on PATCH/DELETE: mismatch = 412 `precondition_failed`; DELETE without it is unconditional like the Delete page. Write handlers log at Information (`monitor.create`, `monitor.update`); delete logs at Warning with the name.
 - Tests: `MonitorEditorTests` (Postgres), `ApiKeyServiceTests`, `ApiAuthHttpTests`, `ApiKeysPageHttpTests`, `ApiHttpTests` (InMemory host: auth, scope, errors, reads), `ApiPostgresHttpTests` (pause/resume/PATCH/run over HTTP on Postgres), `MonitorStatusTests`, `e2e/tests/api.spec.ts`.
+
+## Run Buckets (Rollup)
+
+- Table `MonitorRunBuckets` (`Data/Monitoring/MonitorRunBucket.cs`; migration `AddMonitorRunBuckets` in both sets): `MonitorId`, `BucketStart` (UTC, 15-minute aligned), `RunCount`, `FailureCount`, `TotalDurationMs`; PK (`MonitorId`, `BucketStart`), cascade FK, index on `BucketStart`. It survives run pruning and feeds the 24h strips, the 90-day row and API `uptime`.
+- Only `Services/Monitoring/RunBucketRollup.cs` writes it, always under the Hangfire distributed lock `hawk:run-buckets` (10 s; busy = skip), jobs `[AutomaticRetry(Attempts = 0)]`:
+  - Recurring `hawk-run-buckets` (`RefreshAsync`, every minute): recomputes from min(now - 30 min, newest bucket), at most 7 days back, then deletes buckets older than 95 days.
+  - `BackfillAsync` (last 90 days) is enqueued on every startup; StatusCake alert import enqueues `RecomputeAsync` over the imported days.
+  - Merge rule (`RunBucketRollup.Merge`): buckets younger than 23 h are overwritten; older ones only when missing or when the computed `RunCount` is higher, so pruning never shrinks history.
+  - Scheduler disabled (`Hawk:Scheduler:Enabled=false`): the recurring job is removed and the jobs return early.
+- Strip: `Services/Monitoring/StatusStrip.cs` builds 96 cells (grey empty, green ok, red failed and full height; others scale with average response time, minimum 25%; heartbeats full height) rendered by `Pages/Shared/_StatusStrip.cshtml` with an `aria-label` summary.
+- Rollback to 0.13.x: delete the `hawk-run-buckets` recurring job in the Hangfire dashboard (the old image cannot load its type).
+
+## Tower Design
+
+- Tokens are CSS variables on `:root` (light, "day shift") and `.dark` in `Assets/tailwind.css` (`--bg --panel --line --text --muted --up --down --paused --chart --down-tint --hover --faint --warn`), exposed to Tailwind via `@theme inline`; the `hawk-*` component classes are restyled on them. Theme follows the OS unless `hawk.theme` (localStorage) says otherwise; the toggle is unchanged.
+- Font: Archivo variable (wght 100-900, wdth 62-125), self-hosted at `wwwroot/fonts/Archivo-latin-variable.woff2` (OFL in `wwwroot/fonts/OFL.txt`, latin subset only); no external font requests. `.condensed` (`font-stretch: 68%`) and `.num` (tabular numerals) utilities. Monospace is a system stack.
+- Charts are server-rendered inline SVG/CSS, no chart library.
 
 ## Run Diagnostics Page
 
