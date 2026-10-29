@@ -2,6 +2,19 @@
 
 ASP.NET Razor Pages uptime checker and URL verifier with Hangfire scheduling, SQL Server or PostgreSQL storage, and Docker-first deployment. Styled with Tailwind CSS v4 and supports dark mode.
 
+## Features
+
+- **HTTP monitors** — GET/POST/PUT/PATCH with custom headers and body, content checks (contains / regex), allowed extra status codes, optional redirect following, fixed check intervals.
+- **Heartbeat monitors** — a dead man's switch: your job calls a secret ping URL, Hawk alerts when it stops.
+- **Email alerts** via a Resend-compatible API — failure threshold, reminders, recovery emails, and **grouped alert emails** so an outage across many monitors arrives as one summary instead of a burst.
+- **Monitor groups** with group-wide pause, resume, run and rename.
+- **Status board** — headline, attention list, 24-hour strips, 24h/7d/30d uptime and a 90-day history per monitor.
+- **Run diagnostics** — full request/response details for every check.
+- **Agent API** (`/api/v1`) with per-user API keys, for scripts and AI agents.
+- **Import/export** — JSON export/import (single monitor or everything), StatusCake import.
+- **Multi-user** with ASP.NET Core Identity, roles, rate limiting and account lockout.
+- **Runs anywhere Docker runs** — non-root image, read-only root filesystem, health endpoints, SQL Server or PostgreSQL.
+
 ## Screenshots
 
 - [All screenshots](screenshots/)
@@ -249,7 +262,7 @@ services:
 
     # Pin a version tag: with `:latest` and `pull_policy: always`, every app restart
     # silently upgrades Hawk (including one-way database migrations).
-    image: ghcr.io/aduggleby/hawk:0.9.27
+    image: ghcr.io/aduggleby/hawk:<version>
     ports:
       - '17800:8080'
     pull_policy: always
@@ -292,7 +305,7 @@ docker build -t ghcr.io/aduggleby/hawk:latest -f Hawk.Web/Dockerfile .
 docker push ghcr.io/aduggleby/hawk:latest
 ```
 
-Then set `image: ghcr.io/aduggleby/hawk:<version>` (a pinned tag such as `0.9.27`) in the YAML (or your own org if you publish a fork). Tag each pushed image with its version as well as `latest`.
+Then set `image: ghcr.io/aduggleby/hawk:<version>` (a pinned version tag) in the YAML (or your own org if you publish a fork). Tag each pushed image with its version as well as `latest`.
 
 ## Admin User Management
 
@@ -331,6 +344,10 @@ By default, Hawk treats any 2xx response as success and everything else as failu
 - Codes must be in the range 100–599.
 - Useful for monitoring endpoints that intentionally return non-2xx responses (health checks behind auth returning 401, soft 404 pages, rate-limited APIs, etc.).
 
+## Redirects
+
+HTTP monitors follow redirects by default. Untick **Follow redirects** on the Create/Edit form to check the redirect response itself: a 3xx response then passes only when its code is listed in **Allowed Status Codes** (for example `301`), its `Location` header shows in the run diagnostics, and content rules run against the 3xx body.
+
 ## Alert Policy
 
 Each monitor has an `AlertAfterConsecutiveFailures` setting (1–20, default 1).
@@ -342,8 +359,22 @@ Each monitor has an `AlertAfterConsecutiveFailures` setting (1–20, default 1).
 
 - **Failure alert** — sent when consecutive failures reach the configured threshold.
 - **Failure reminder** — re-sent periodically while the monitor remains failing (default every 24 hours). Configure via `Hawk__Alerting__RepeatFailureAlertEveryHours` (min 1h, max 720h).
-- **Grouping** — alerts are held until no new alert for the same recipients arrived for 30 seconds (at most 2 minutes), then sent as one email: a single alert as its normal email, several as one `[ALERT SUMMARY]`. Configure via `Hawk__Alerting__DigestWindowSeconds` (default 30, 0-600; `0` sends every alert immediately) and `Hawk__Alerting__DigestMaxDelaySeconds` (default 120, up to 3600).
-- **Recovery alert** — sent when a monitor returns to success after an alerted failure incident. If the recovery email fails to deliver, Hawk retries on subsequent successful runs.
+- **Recovery alert** — sent when a monitor returns to success after an alerted failure incident.
+
+### Grouped Alert Emails
+
+When a shared dependency fails, many monitors alert at once. Hawk therefore holds alert emails briefly and sends what has collected as one email per recipient:
+
+- Alerts are sent once no new alert for the same recipients arrived for **30 seconds**, and never later than **2 minutes** after the first one.
+- A single alert is sent as its normal email. Two or more arrive as one `[ALERT SUMMARY] 3 failed, 2 recovered` email: a table of every event in time order (a monitor that failed and recovered within the window shows both), followed by each alert's full details.
+- Queued alerts survive restarts. A failed send is retried every minute and given up after 24 hours; the run diagnostics show whether an alert is queued, sent (alone or in a summary) or failed.
+
+| Setting | Default | |
+|---------|---------|---|
+| `Hawk__Alerting__DigestWindowSeconds` | 30 | Quiet time before sending (0-600). `0` sends every alert immediately, without grouping. |
+| `Hawk__Alerting__DigestMaxDelaySeconds` | 120 | Longest an alert waits (window-3600). |
+
+With grouping off (`0`), a failed send is retried on the monitor's next run instead.
 
 ### Alert Recipient Resolution
 
@@ -367,12 +398,16 @@ curl -fsS -m 10 --retry 3 https://hawk.example.com/ping/<token>
 - New, imported and resumed heartbeats get a full period plus grace before they can fail. Pings to a paused or disabled heartbeat return `200` and are ignored.
 - Pings are rate limited per token (`Hawk__Security__PingRequestsPerMinute`, default 30) and per client IP (`Hawk__Security__PingRequestsPerMinutePerIp`, default 300). Ping tokens are redacted from Hawk's request log; configure your reverse proxy to skip access logging for `/ping/*` (Caddy: `log_skip /ping/*`).
 
+## Monitor Groups
+
+Give monitors an optional **Group** on the Create/Edit form (names match ignoring case and reuse an existing group's spelling). The monitors list shows one section per group with select-all, **Pause**, **Resume**, **Run** and **Rename** (renaming into an existing group merges them after a confirmation). Groups are also available in the API and in JSON export/import.
+
 ## Monitor Pause
 
 Monitors can be temporarily paused without disabling them. A paused monitor:
 
 - Skips scheduled checks (the scheduler ignores it).
-- Can still be tested manually via the **Test** button on the details page.
+- Can still be run manually with **Run now** on the details page.
 - Shows a **Paused** badge in the monitors list (vs. **Enabled** or **Disabled**).
 
 Pause, resume, and run from the monitors list:
@@ -411,24 +446,30 @@ Run history is automatically pruned after each check. Retention is resolved in t
 2. **Account-wide default** — set in **Settings** → **Alerts & Crawler** by the monitor owner.
 3. **Server default** — `Hawk__Monitoring__RunRetentionDaysDefault` (default 90 days).
 
-## Test A Monitor
+## Run A Monitor Now
 
-From a monitor's detail page, click **Test** to run it immediately and see full diagnostics:
-
-- Request details (method, URL, timeout, headers, body).
-- Response headers, status code, and timing.
-- Match rule results (pass/fail per rule).
-- Response body snippet (up to 256KB).
-
-Alternatively, click **Run now** on the detail page to enqueue an immediate Hangfire job. You'll be redirected to the run diagnostics page, which auto-refreshes until the run completes (showing Queued → Running → Completed status).
+Click **Run now** on a monitor's detail page (or **Run again** on a run's diagnostics page) to queue an immediate check. You'll be redirected to the run diagnostics page, which auto-refreshes until the run completes (Queued → Running → Completed) and then shows the request, response headers, status code, timing, match rule results and the response body snippet (up to 256KB). Heartbeat monitors cannot be run manually; they wait for pings.
 
 ## Run Diagnostics
 
 Click any run in the monitor's run history table to view full diagnostics:
 
-- **Run metadata** — result (OK/FAIL), reason, timestamps, duration, HTTP status, alert status, error message.
+- **Run metadata** — result (OK/FAIL), reason, timestamps, duration, HTTP status, alert status (sent, queued for a grouped email, sent in a summary of N alerts, or failed), error message.
 - **Request** — URL, method, content-type, timeout, headers (JSON), body snippet.
 - **Response** — content-type, content-length, headers (JSON), response body snippet, match results (JSON).
+
+## Agent API
+
+Hawk has a versioned JSON API under `/api/v1` for scripts and AI agents (for example Claude Code): list monitors and failures with diagnostics, pause/resume, queue checks, manage groups, change alert settings, and create, edit or delete monitors.
+
+- Create a key under **Account** -> **API keys** with scope `read` or `write`. The key is shown once; Hawk stores only its hash.
+- Send it as `Authorization: Bearer hawk_...`.
+
+```bash
+curl -fsS -H "Authorization: Bearer $KEY" https://hawk.example.com/api/v1/monitors
+```
+
+Full reference: [docs/agent-api.md](docs/agent-api.md).
 
 ## Import From StatusCake
 
