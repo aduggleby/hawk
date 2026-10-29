@@ -67,9 +67,9 @@ public static class ApiEndpoints
         api.MapMethods("/monitors/{id:guid}/alerting", [HttpMethods.Patch], PatchAlertingAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
         api.MapPut("/account/alerting", PutAccountAlertingAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
         api.MapPost("/monitors/{id:guid}/pause", (Guid id, HttpContext http, MonitorCommands commands, ILoggerFactory logs, CancellationToken ct) =>
-            PauseResumeAsync(id, "pause", http, commands.PauseMonitorAsync, commands, logs, ct)).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
+            PauseResumeAsync(id, "pause", http, commands.PauseMonitorAsync, logs, ct)).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
         api.MapPost("/monitors/{id:guid}/resume", (Guid id, HttpContext http, MonitorCommands commands, ILoggerFactory logs, CancellationToken ct) =>
-            PauseResumeAsync(id, "resume", http, commands.ResumeMonitorAsync, commands, logs, ct)).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
+            PauseResumeAsync(id, "resume", http, commands.ResumeMonitorAsync, logs, ct)).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
         api.MapPost("/monitors/{id:guid}/run", RunAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
 
         // No catch-all route: UseHawkApiErrors already turns unknown /api paths into JSON 404 and wrong methods into JSON 405,
@@ -115,7 +115,9 @@ public static class ApiEndpoints
     private static async Task<IResult> GetMonitorAsync(
         Guid id, HttpContext http, ApplicationDbContext db, MonitorStatusService statuses, AlertRecipientResolver resolver, CancellationToken ct)
     {
-        var m = await db.Monitors.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        var m = await db.Monitors.AsNoTracking()
+            .Include(x => x.Headers).Include(x => x.MatchRules).AsSplitQuery()
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (m is null) return MonitorNotFound();
 
         var status = (await statuses.GetStatusesAsync([m], ct))[id];
@@ -131,7 +133,12 @@ public static class ApiEndpoints
                 state?.ConsecutiveFailures ?? 0, state?.FailureIncidentOpenedAt, state?.LastFailureAlertSentAt,
                 state?.LastFailureAlertError, state?.PendingRecoveryAlert ?? false, state?.LastRecoveryAlertSentAt,
                 state?.LastRecoveryAlertError),
-            await RecipientsAsync(resolver, m, ct)));
+            await RecipientsAsync(resolver, m, ct),
+            // Heartbeats show neither on the Details page; same deterministic order as MonitorJsonPort.
+            heartbeat ? [] : m.Headers.OrderBy(h => h.Name, StringComparer.Ordinal).ThenBy(h => h.Value, StringComparer.Ordinal)
+                .Select(h => new ApiHeader(h.Name, h.Value)).ToList(),
+            heartbeat ? [] : m.MatchRules.OrderBy(r => r.Mode).ThenBy(r => r.Pattern, StringComparer.Ordinal)
+                .Select(r => new ApiMatchRule(r.Mode, r.Pattern)).ToList()));
     }
 
     private static async Task<IResult> GetRunsAsync(Guid id, HttpContext http, ApplicationDbContext db, CancellationToken ct)
@@ -205,17 +212,7 @@ public static class ApiEndpoints
                     }
                     break;
                 case "alertEmailOverride":
-                    if (property.Value.ValueKind is JsonValueKind.Null or JsonValueKind.String)
-                    {
-                        email = property.Value.GetString();
-                        emailPresent = true;
-                        if (AlertSettingsValidator.ValidateEmail(email) is { } emailError)
-                            errors[property.Name] = [emailError];
-                    }
-                    else
-                    {
-                        errors[property.Name] = ["Must be an email address string, or null to clear it."];
-                    }
+                    (email, emailPresent) = ParseEmail(property, errors);
                     break;
                 default:
                     errors[property.Name] = ["Unknown property."];
@@ -225,8 +222,6 @@ public static class ApiEndpoints
 
         if (errors.Count > 0)
             return Problem(StatusCodes.Status400BadRequest, "validation_failed", "The request is not valid", errors: errors);
-        if (!await db.Monitors.AnyAsync(m => m.Id == id, ct)) return MonitorNotFound();
-
         if (threshold is not null || emailPresent)
         {
             var clearEmail = emailPresent && string.IsNullOrWhiteSpace(email);
@@ -254,16 +249,9 @@ public static class ApiEndpoints
             {
                 errors[property.Name] = ["Unknown property."];
             }
-            else if (property.Value.ValueKind is JsonValueKind.Null or JsonValueKind.String)
-            {
-                email = property.Value.GetString();
-                present = true;
-                if (AlertSettingsValidator.ValidateEmail(email) is { } emailError)
-                    errors[property.Name] = [emailError];
-            }
             else
             {
-                errors[property.Name] = ["Must be an email address string, or null to clear it."];
+                (email, present) = ParseEmail(property, errors);
             }
         }
 
@@ -278,9 +266,24 @@ public static class ApiEndpoints
         return Json(new ApiAccountAlerting(await settings.GetEmailAsync(userId, ct), AccountNote));
     }
 
+    /// <summary>Reads a nullable email property, recording validation errors; Present is false when the value has the wrong type.</summary>
+    private static (string? Email, bool Present) ParseEmail(JsonProperty property, Dictionary<string, string[]> errors)
+    {
+        if (property.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.String))
+        {
+            errors[property.Name] = ["Must be an email address string, or null to clear it."];
+            return (null, false);
+        }
+
+        var email = property.Value.GetString();
+        if (AlertSettingsValidator.ValidateEmail(email) is { } emailError)
+            errors[property.Name] = [emailError];
+        return (email, true);
+    }
+
     private static async Task<IResult> PauseResumeAsync(
         Guid id, string action, HttpContext http, Func<Guid, CancellationToken, Task<PauseResumeOutcome>> command,
-        MonitorCommands _, ILoggerFactory logs, CancellationToken ct)
+        ILoggerFactory logs, CancellationToken ct)
     {
         var outcome = await command(id, ct);
         switch (outcome)

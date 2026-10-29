@@ -7,6 +7,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Hawk.Web.Data.Monitoring;
+using Hawk.Web.Services;
 using Hawk.Web.Services.Monitoring;
 
 namespace Hawk.Web.Infrastructure;
@@ -83,7 +84,13 @@ public sealed record ApiMonitorDetail(
     DateTimeOffset? LastPingAt,
     DateTimeOffset CreatedAt,
     ApiAlertState AlertState,
-    ApiAlertRecipients AlertRecipients);
+    ApiAlertRecipients AlertRecipients,
+    IReadOnlyList<ApiHeader> Headers,
+    IReadOnlyList<ApiMatchRule> MatchRules);
+
+public sealed record ApiHeader(string Name, string Value);
+
+public sealed record ApiMatchRule(ContentMatchMode Type, string Pattern);
 
 public sealed record ApiRunSummary(
     Guid Id,

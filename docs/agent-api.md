@@ -58,6 +58,7 @@ Fixed one-minute windows. Per key: `Hawk__Security__ApiRequestsPerMinute` (defau
   3. `ok`: the last completed run succeeded.
   4. `unknown`: no completed run (a queued or running run does not count).
   A paused monitor whose last run failed is `state: paused, health: failing`.
+- Right after resuming (or re-enabling) an HTTP monitor that was paused longer than the overdue window, `health` may briefly read `overdue` until its next scheduled run.
 - `failure` (null unless the last completed run failed): `{ lastRunAt, statusCode, error, consecutiveFailures, failingSince }`.
 
 ## Endpoints
@@ -87,7 +88,7 @@ All monitors, sorted by name (case-insensitive), in one call.
 
 ### GET /api/v1/monitors/{id} (read)
 
-The list entry plus configuration, alert state and effective alert recipients. The heartbeat ping token is never returned. Extra fields: `method`, `intervalSeconds`, `timeoutSeconds`, `allowedStatusCodes`, `alertAfterConsecutiveFailures`, `alertEmailOverride`, `runRetentionDays`, `heartbeatGraceSeconds` (heartbeats only), `lastPingAt`, `createdAt`, `alertState` (`consecutiveFailures`, `failureIncidentOpenedAt`, `lastFailureAlertSentAt`, `lastFailureAlertError`, `pendingRecoveryAlert`, `lastRecoveryAlertSentAt`, `lastRecoveryAlertError`) and `alertRecipients` (`{ "source": "monitor|account|owner|admins", "addresses": [...] }`).
+The list entry plus configuration, alert state and effective alert recipients. The heartbeat ping token is never returned. Extra fields: `method`, `intervalSeconds`, `timeoutSeconds`, `allowedStatusCodes`, `alertAfterConsecutiveFailures`, `alertEmailOverride`, `runRetentionDays`, `heartbeatGraceSeconds` (heartbeats only), `lastPingAt`, `createdAt`, `alertState` (`consecutiveFailures`, `failureIncidentOpenedAt`, `lastFailureAlertSentAt`, `lastFailureAlertError`, `pendingRecoveryAlert`, `lastRecoveryAlertSentAt`, `lastRecoveryAlertError`) and `alertRecipients` (`{ "source": "monitor|account|owner|admins", "addresses": [...] }`), `headers` (`[{ "name", "value" }]`) and `matchRules` (`[{ "type": "contains|regex", "pattern" }]`), both as the Details page shows them, sorted deterministically and empty for heartbeats.
 
 Errors: 404 `not_found`.
 

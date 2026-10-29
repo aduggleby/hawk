@@ -13,6 +13,7 @@ using Hawk.Web.Data;
 using Hawk.Web.Data.Alerting;
 using Hawk.Web.Data.ApiKeys;
 using Hawk.Web.Data.Monitoring;
+using Hawk.Web.Services;
 using Hawk.Web.Services.ApiKeys;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -166,6 +167,10 @@ public class ApiHttpTests
         var (httpId, hbId) = await SeedAsync(app, db =>
         {
             var http = Http("web", userId);
+            http.Headers.Add(new MonitorHeader { Name = "X-B", Value = "2" });
+            http.Headers.Add(new MonitorHeader { Name = "X-A", Value = "1" });
+            http.MatchRules.Add(new MonitorMatchRule { Mode = ContentMatchMode.Regex, Pattern = "ok.*" });
+            http.MatchRules.Add(new MonitorMatchRule { Mode = ContentMatchMode.Contains, Pattern = "hello" });
             var hb = new MonitorEntity
             {
                 Name = "hb", Type = MonitorType.Heartbeat, Url = "", Method = "GET", IntervalSeconds = 3600,
@@ -184,6 +189,10 @@ public class ApiHttpTests
         Assert.Equal("ops@example.com", json.GetProperty("alertRecipients").GetProperty("addresses")[0].GetString());
         Assert.Equal("ops@example.com", json.GetProperty("alertEmailOverride").GetString());
         Assert.Equal(60, json.GetProperty("intervalSeconds").GetInt32());
+        var headers = json.GetProperty("headers").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("value").GetString())).ToList();
+        Assert.Equal([("X-A", "1"), ("X-B", "2")], headers);
+        var rules = json.GetProperty("matchRules").EnumerateArray().Select(x => (x.GetProperty("type").GetString(), x.GetProperty("pattern").GetString())).ToList();
+        Assert.Equal([("contains", "hello"), ("regex", "ok.*")], rules);
 
         using var hbResponse = await SendAsync(app, key, HttpMethod.Get, $"/api/v1/monitors/{hbId}");
         var hbText = await hbResponse.Content.ReadAsStringAsync();
@@ -193,6 +202,8 @@ public class ApiHttpTests
         using var hbJson = JsonDocument.Parse(hbText);
         Assert.Equal(300, hbJson.RootElement.GetProperty("heartbeatGraceSeconds").GetInt32());
         Assert.Equal("owner", hbJson.RootElement.GetProperty("alertRecipients").GetProperty("source").GetString());
+        Assert.Empty(hbJson.RootElement.GetProperty("headers").EnumerateArray());
+        Assert.Empty(hbJson.RootElement.GetProperty("matchRules").EnumerateArray());
 
         using var missing = await SendAsync(app, key, HttpMethod.Get, $"/api/v1/monitors/{Guid.NewGuid()}");
         await AssertProblemAsync(missing, HttpStatusCode.NotFound, "not_found");
