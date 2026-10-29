@@ -17,6 +17,12 @@ namespace Hawk.Web.Pages.Monitors;
 /// </summary>
 public sealed class MonitorForm
 {
+    /// <summary>Header rows the Create/Edit forms offer; the API refuses more so nothing is silently lost on the next Edit save.</summary>
+    public const int MaxHeaders = 5;
+
+    /// <summary>Match-rule rows the Create/Edit forms offer.</summary>
+    public const int MaxMatchRules = 5;
+
     /// <summary>
     /// Optimistic concurrency token (the monitor's <c>ConcurrencyStamp</c> Guid as loaded by the Edit page).
     /// Used by the Edit page to detect conflicting user edits.
@@ -98,6 +104,12 @@ public sealed class MonitorForm
     public string? AllowedStatusCodes { get; set; }
 
     /// <summary>
+    /// Follow HTTP redirects (default). When off, the 3xx response itself is checked.
+    /// </summary>
+    [Display(Name = "Follow redirects")]
+    public bool FollowRedirects { get; set; } = true;
+
+    /// <summary>
     /// Optional run history retention override in days.
     /// </summary>
     [Display(Name = "Run retention (days) override")]
@@ -120,22 +132,22 @@ public sealed class MonitorForm
     /// <summary>
     /// Header names (parallel arrays for simple Razor binding).
     /// </summary>
-    public string[] HeaderNames { get; set; } = new string[5];
+    public string[] HeaderNames { get; set; } = new string[MaxHeaders];
 
     /// <summary>
     /// Header values (parallel arrays for simple Razor binding).
     /// </summary>
-    public string[] HeaderValues { get; set; } = new string[5];
+    public string[] HeaderValues { get; set; } = new string[MaxHeaders];
 
     /// <summary>
     /// Match rule modes.
     /// </summary>
-    public ContentMatchMode[] MatchModes { get; set; } = new ContentMatchMode[5];
+    public ContentMatchMode[] MatchModes { get; set; } = new ContentMatchMode[MaxMatchRules];
 
     /// <summary>
     /// Match rule patterns.
     /// </summary>
-    public string[] MatchPatterns { get; set; } = new string[5];
+    public string[] MatchPatterns { get; set; } = new string[MaxMatchRules];
 
     /// <summary>
     /// Validates the form for its <see cref="Type"/>: URL/method/match rules for HTTP monitors, period and grace for heartbeats.

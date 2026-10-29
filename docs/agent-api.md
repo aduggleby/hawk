@@ -41,7 +41,7 @@ Every `/api/*` error is `application/problem+json` with a stable `code`:
 | 405 | `method_not_allowed` | Wrong method for the path. |
 | 409 | `monitor_disabled` | The monitor is disabled (enable it in the UI). |
 | 409 | `heartbeat_not_runnable` | Run requested for a heartbeat monitor. |
-| 409 | `conflict` | A `PATCH` without `If-Match` lost a race with another write three times in a row. Retry. |
+| 409 | `conflict` | A `PATCH` without `If-Match`: the monitor changed while you were editing (someone saved, paused or resumed it since the request read it). Nothing was changed; read the monitor again and retry. |
 | 412 | `precondition_failed` | `If-Match` does not match the monitor's current `concurrencyStamp`. Nothing was changed. |
 | 429 | `rate_limited` | Over a rate limit. Honour `Retry-After` (seconds). |
 | 500 | `internal_error` | Unexpected failure. |
@@ -90,7 +90,7 @@ All monitors, sorted by name (case-insensitive), in one call.
 
 ### GET /api/v1/monitors/{id} (read)
 
-The list entry plus configuration, alert state and effective alert recipients. The heartbeat ping token is never returned. Extra fields: `concurrencyStamp` (also the `ETag` response header, quoted), `pingUrl` (always null here), `method`, `intervalSeconds`, `timeoutSeconds`, `allowedStatusCodes`, `alertAfterConsecutiveFailures`, `alertEmailOverride`, `runRetentionDays`, `heartbeatGraceSeconds` (heartbeats only), `lastPingAt`, `createdAt`, `alertState` (`consecutiveFailures`, `failureIncidentOpenedAt`, `lastFailureAlertSentAt`, `lastFailureAlertError`, `pendingRecoveryAlert`, `lastRecoveryAlertSentAt`, `lastRecoveryAlertError`) and `alertRecipients` (`{ "source": "monitor|account|owner|admins", "addresses": [...] }`), `headers` (`[{ "name", "value" }]`) and `matchRules` (`[{ "type": "contains|regex", "pattern" }]`), both as the Details page shows them, sorted deterministically and empty for heartbeats. A rule's mode is reported as `type`; write requests call it `mode` (and also accept `type`, so a value read from here can be sent back unchanged).
+The list entry plus configuration, alert state and effective alert recipients. The heartbeat ping token is never returned. Extra fields: `concurrencyStamp` (also the `ETag` response header, quoted), `pingUrl` (always null here), `method`, `intervalSeconds`, `timeoutSeconds`, `allowedStatusCodes`, `followRedirects` (HTTP only, null for heartbeats), `alertAfterConsecutiveFailures`, `alertEmailOverride`, `runRetentionDays`, `heartbeatGraceSeconds` (heartbeats only), `lastPingAt`, `createdAt`, `alertState` (`consecutiveFailures`, `failureIncidentOpenedAt`, `lastFailureAlertSentAt`, `lastFailureAlertError`, `pendingRecoveryAlert`, `lastRecoveryAlertSentAt`, `lastRecoveryAlertError`) and `alertRecipients` (`{ "source": "monitor|account|owner|admins", "addresses": [...] }`), `headers` (`[{ "name", "value" }]`) and `matchRules` (`[{ "type": "contains|regex", "pattern" }]`), both as the Details page shows them, sorted deterministically and empty for heartbeats. A rule's mode is reported as `type`; write requests call it `mode` (and also accept `type`, so a value read from here can be sent back unchanged).
 
 Errors: 404 `not_found`.
 
@@ -113,7 +113,7 @@ One run with diagnostics: the summary fields plus `requestUrl`, `requestMethod`,
 
 Creates an HTTP or heartbeat monitor owned by the key's user (enabled by default, not paused). Returns 201 with a `Location` header, an `ETag` header and the monitor detail. The body is validated exactly like the Create form: field rules, environment-dependent intervals, regular expressions, NUL characters, and the header and pattern length limits of bulk import. Errors are 400 `validation_failed` with `errors` keyed by the field names below (`headers[0].name`, `matchRules[1].pattern`; `request` for a problem with the whole body).
 
-Fields (names as in the monitor JSON export): `name` (required), `type` (`http` default, or `heartbeat`), `url` (HTTP, required), `method` (`GET` default, or `POST`), `enabled` (default true), `timeoutSeconds` (default 15), `intervalSeconds` (default 60; the allowed values are the UI's: 1 min, 5 min, 15 min or 1 h for HTTP, 1 min to 7 days for a heartbeat period, grace 1 min to 1 day), `heartbeatGraceSeconds` (heartbeat, default 300), `alertAfterConsecutiveFailures` (default 1), `alertEmailOverride`, `allowedStatusCodes` (for example `"404,429"`), `runRetentionDays`, `contentType` (default `application/json`, required for POST), `body` (required for POST, may be empty), `headers` (`[{ "name", "value" }]`) and `matchRules` (`[{ "mode": "contains|regex", "pattern" }]`). The defaults are the Create form's. HTTP-only fields on a heartbeat, and `heartbeatGraceSeconds` on an HTTP monitor, return 400. `heartbeatToken`, `ownerEmail` and `isPaused` are always rejected: the server issues tokens, the caller is the owner, and pause and resume have their own endpoints. Unknown properties return 400.
+Fields (names as in the monitor JSON export): `name` (required), `type` (`http` default, or `heartbeat`), `url` (HTTP, required), `method` (`GET` default, or `POST`), `enabled` (default true), `timeoutSeconds` (default 15), `intervalSeconds` (default 60; the allowed values are the UI's: 1 min, 5 min, 15 min or 1 h for HTTP, 1 min to 7 days for a heartbeat period, grace 1 min to 1 day), `heartbeatGraceSeconds` (heartbeat, default 300), `alertAfterConsecutiveFailures` (default 1), `alertEmailOverride`, `allowedStatusCodes` (for example `"404,429"`), `followRedirects` (default true), `runRetentionDays`, `contentType` (default `application/json`, required for POST), `body` (required for POST, may be empty), `headers` (`[{ "name", "value" }]`, at most 5) and `matchRules` (`[{ "mode": "contains|regex", "pattern" }]`, at most 5; the Create and Edit forms have 5 slots of each and would silently drop more, so more return 400). A blank `alertEmailOverride` clears it. The defaults are the Create form's. HTTP-only fields on a heartbeat, and `heartbeatGraceSeconds` on an HTTP monitor, return 400. `heartbeatToken`, `ownerEmail` and `isPaused` are always rejected: the server issues tokens, the caller is the owner, and pause and resume have their own endpoints. Unknown properties return 400.
 
 ```bash
 curl -fsS -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
@@ -144,7 +144,17 @@ curl -fsS -X PATCH -H "Authorization: Bearer $KEY" -H "Content-Type: application
 
 ### Optimistic concurrency: ETag and If-Match
 
-`GET /monitors/{id}`, `POST /monitors` and `PATCH /monitors/{id}` return `ETag: "<concurrencyStamp>"` and the same value as `concurrencyStamp` in the body. `PATCH` and `DELETE` accept an optional `If-Match` header with that value, quoted or bare. If it no longer matches, the call returns 412 `precondition_failed` and changes nothing; read the monitor again and retry. A malformed `If-Match` (`*`, a weak `W/` tag, a list, a non-GUID) returns 400. Without `If-Match` the last write wins, like saving the Edit form with fresh values. Pause, resume and alert changes also renew the stamp; run results and scheduler bookkeeping do not.
+`GET /monitors/{id}`, `POST /monitors` and `PATCH /monitors/{id}` return `ETag: "<concurrencyStamp>"` and the same value as `concurrencyStamp` in the body. `PATCH` and `DELETE` accept an optional `If-Match` header with that value, quoted or bare. If it no longer matches, the call returns 412 `precondition_failed` and changes nothing; read the monitor again and retry. A malformed `If-Match` (`*`, a weak `W/` tag, a list, a non-GUID) returns 400. Without `If-Match` the request still conflicts if the monitor was changed by someone else after the request read it: you get 409 `conflict` (the monitor changed while you were editing; read it again and retry) and the other change is kept, rather than it being overwritten with stale values. Only writes that are not racing are unconditional. Pause, resume and alert changes also renew the stamp; run results and scheduler bookkeeping do not.
+
+### Checking a redirect
+
+By default a check follows redirects and judges the final response. Set `followRedirects: false` to judge the redirect itself, for example to assert that an old URL permanently redirects. A 3xx counts as success only when its code is in `allowedStatusCodes` (2xx always succeeds). The `Location` header is in the run's response headers (`GET /monitors/{id}/runs/{runId}` diagnostics). `contains` and `regex` match rules are evaluated against the body of the 3xx response itself when not following.
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"old-url redirects","url":"https://example.com/old","followRedirects":false,"allowedStatusCodes":"301","matchRules":[{"mode":"contains","pattern":"moved"}]}' \
+  $HAWK/api/v1/monitors
+```
 
 ### DELETE /api/v1/monitors/{id} (write)
 

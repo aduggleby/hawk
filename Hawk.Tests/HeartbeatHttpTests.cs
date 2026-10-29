@@ -17,6 +17,36 @@ namespace Hawk.Tests;
 public class HeartbeatHttpTests
 {
     [Fact]
+    public async Task Create_page_stores_follow_redirects_and_details_shows_it()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        await app.LoginAsync();
+
+        using (var form = await app.Client.GetAsync("/Monitors/Create"))
+            Assert.Contains("Form.FollowRedirects", await form.Content.ReadAsStringAsync());
+
+        using var created = await PostAsync(app, "/Monitors/Create", "/Monitors/Create", new()
+        {
+            ["Form.Type"] = "Http",
+            ["Form.Name"] = "Moved",
+            ["Form.Url"] = "https://example.com/old",
+            ["Form.Method"] = "GET",
+            ["Form.IntervalSeconds"] = "60",
+            ["Form.TimeoutSeconds"] = "15",
+            ["Form.AlertAfterConsecutiveFailures"] = "1",
+            ["Form.AllowedStatusCodes"] = "301",
+            ["Form.FollowRedirects"] = "false",
+            ["Form.Enabled"] = "true",
+        });
+        Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
+
+        var m = await LoadSingleAsync(app);
+        Assert.False(m.FollowRedirects);
+        using var details = await app.Client.GetAsync($"/Monitors/Details/{m.Id}");
+        Assert.Contains("Follow redirects", await details.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Create_page_accepts_a_heartbeat_without_url_and_details_shows_the_ping_url()
     {
         await using var app = await SecurityTestApplication.CreateAsync();

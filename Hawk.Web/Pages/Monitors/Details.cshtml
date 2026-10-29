@@ -141,6 +141,8 @@
                     <dd class="col-span-8 font-medium py-1">@Model.Monitor.TimeoutSeconds s</dd>
                     <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Allowed status</dt>
                     <dd class="col-span-8 font-mono text-xs break-words py-1">@(string.IsNullOrWhiteSpace(Model.Monitor.AllowedStatusCodes) ? "2xx only" : $"2xx + {Model.Monitor.AllowedStatusCodes}")</dd>
+                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Follow redirects</dt>
+                    <dd class="col-span-8 font-medium py-1">@(Model.Monitor.FollowRedirects ? "Yes" : "No")</dd>
                 }
                 <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Last run</dt>
                 <dd class="col-span-8 py-1">

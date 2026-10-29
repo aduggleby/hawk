@@ -149,7 +149,8 @@ public sealed class MonitorExecutor(
             ContentType: monitor.ContentType,
             Body: monitor.Body,
             Timeout: TimeSpan.FromSeconds(Math.Clamp(monitor.TimeoutSeconds, 1, 300)),
-            MatchRules: matchRules
+            MatchRules: matchRules,
+            FollowRedirects: monitor.FollowRedirects
         );
 
         var started = DateTimeOffset.UtcNow;

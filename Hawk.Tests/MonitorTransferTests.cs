@@ -15,6 +15,7 @@ using Hawk.Web.Data.Monitoring;
 using Hawk.Web.Pages.Monitors;
 using Hawk.Web.Services;
 using Hawk.Web.Services.Import;
+using Hawk.Web.Services.Monitoring;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Tests;
@@ -24,6 +25,29 @@ namespace Hawk.Tests;
 /// </summary>
 public sealed class MonitorTransferTests
 {
+    [Fact]
+    public void Follow_redirects_is_exported_for_http_and_a_missing_field_imports_as_true()
+    {
+        var off = SampleMonitor("No follow", "https://example.com/r");
+        off.FollowRedirects = false;
+        var json = JsonSerializer.Serialize(new MonitorExportEnvelope { Monitors = [MonitorJsonPort.ToModel(off)] }, MonitorJsonPort.JsonOptions);
+        Assert.Contains("\"followRedirects\": false", json);
+        Assert.Equal(3, MonitorJsonPort.CurrentVersion);
+
+        Assert.True(MonitorJsonPort.TryParse(json, out var parsed, out var error), error);
+        Assert.True(MonitorJsonPort.TryCreateMonitor(parsed!.Monitors.Single(), null, new FakeEnv("Production"), out var imported, out error), error);
+        Assert.False(imported.FollowRedirects);
+
+        // An older file (no field) and a heartbeat (field omitted) both import as true.
+        const string old = "{\"version\":3,\"monitors\":[{\"name\":\"old\",\"url\":\"https://example.com\",\"intervalSeconds\":60,\"brandNewField\":1}]}";
+        Assert.True(MonitorJsonPort.TryParse(old, out parsed, out error), error);
+        Assert.True(MonitorJsonPort.TryCreateMonitor(parsed!.Monitors.Single(), null, new FakeEnv("Production"), out imported, out error), error);
+        Assert.True(imported.FollowRedirects);
+
+        var heartbeat = new MonitorEntity { Name = "hb", Url = "", Method = "GET", Type = MonitorType.Heartbeat, IntervalSeconds = 3600, HeartbeatGraceSeconds = 300, HeartbeatToken = HeartbeatTokens.Generate() };
+        Assert.DoesNotContain("followRedirects", JsonSerializer.Serialize(MonitorJsonPort.ToModel(heartbeat), MonitorJsonPort.JsonOptions));
+    }
+
     /// <summary>
     /// Entity to model to JSON to parse keeps every exported field.
     /// </summary>

@@ -21,7 +21,7 @@ internal static partial class ApiMonitorBody
 {
     private static readonly HashSet<string> HttpOnly = new(StringComparer.Ordinal)
     {
-        "url", "method", "timeoutSeconds", "allowedStatusCodes", "contentType", "body", "headers", "matchRules",
+        "url", "method", "timeoutSeconds", "allowedStatusCodes", "followRedirects", "contentType", "body", "headers", "matchRules",
     };
 
     private static readonly Dictionary<string, string> Rejected = new(StringComparer.Ordinal)
@@ -45,6 +45,7 @@ internal static partial class ApiMonitorBody
         AlertAfterConsecutiveFailures = m.AlertAfterConsecutiveFailures,
         AlertEmailOverride = m.AlertEmailOverride,
         AllowedStatusCodes = m.AllowedStatusCodes,
+        FollowRedirects = m.FollowRedirects,
         RunRetentionDays = m.RunRetentionDays,
         ContentType = m.ContentType,
         Body = m.Body,
@@ -117,10 +118,17 @@ internal static partial class ApiMonitorBody
                 case "name": form.Name = String(errors, name, value, out s) ? s ?? string.Empty : form.Name; break;
                 case "url": form.Url = String(errors, name, value, out s) ? s : form.Url; break;
                 case "method": form.Method = String(errors, name, value, out s) ? s ?? string.Empty : form.Method; break;
-                case "alertEmailOverride": form.AlertEmailOverride = String(errors, name, value, out s) ? s : form.AlertEmailOverride; break;
+                case "alertEmailOverride":
+                    // Blank clears the override, like null.
+                    form.AlertEmailOverride = String(errors, name, value, out s) ? (string.IsNullOrWhiteSpace(s) ? null : s) : form.AlertEmailOverride;
+                    break;
                 case "allowedStatusCodes": form.AllowedStatusCodes = String(errors, name, value, out s) ? s : form.AllowedStatusCodes; break;
                 case "contentType": form.ContentType = String(errors, name, value, out s) ? s : form.ContentType; break;
                 case "body": form.Body = String(errors, name, value, out s) ? s : form.Body; break;
+                case "followRedirects":
+                    if (value.ValueKind is JsonValueKind.True or JsonValueKind.False) form.FollowRedirects = value.GetBoolean();
+                    else Add(errors, name, "Must be true or false.");
+                    break;
                 case "enabled":
                     if (value.ValueKind is JsonValueKind.True or JsonValueKind.False) form.Enabled = value.GetBoolean();
                     else Add(errors, name, "Must be true or false.");
@@ -186,6 +194,12 @@ internal static partial class ApiMonitorBody
             return;
         }
 
+        if (value.GetArrayLength() > MonitorForm.MaxHeaders)
+        {
+            Add(errors, "headers", $"At most {MonitorForm.MaxHeaders} headers are supported.");
+            return;
+        }
+
         var names = new List<string>();
         var values = new List<string>();
         var index = 0;
@@ -224,6 +238,12 @@ internal static partial class ApiMonitorBody
         if (value.ValueKind != JsonValueKind.Array)
         {
             Add(errors, "matchRules", "Must be an array of { \"mode\", \"pattern\" } objects.");
+            return;
+        }
+
+        if (value.GetArrayLength() > MonitorForm.MaxMatchRules)
+        {
+            Add(errors, "matchRules", $"At most {MonitorForm.MaxMatchRules} match rules are supported.");
             return;
         }
 

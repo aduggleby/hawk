@@ -123,6 +123,12 @@ public sealed class Monitor
     public string? AllowedStatusCodes { get; set; }
 
     /// <summary>
+    /// When false the check does not follow redirects and evaluates the 3xx response itself (it succeeds only if its code is allowed).
+    /// HTTP monitors only; heartbeats store true.
+    /// </summary>
+    public bool FollowRedirects { get; set; } = true;
+
+    /// <summary>
     /// Optional run history retention override in days for this monitor.
     /// If not set, falls back to the owner's account-wide setting, then the server default.
     /// </summary>

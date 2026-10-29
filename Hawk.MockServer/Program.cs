@@ -21,6 +21,15 @@ app.MapGet("/nomatch", () => Results.Text("OK: but does not contain the expected
 
 app.MapGet("/error", () => Results.StatusCode(500));
 
+// Redirect to /ok. ?code=302 (any 301/302/303/307/308) picks the status; 301 by default.
+app.MapGet("/redirect", async (HttpContext ctx, int? code) =>
+{
+    ctx.Response.StatusCode = code is 301 or 302 or 303 or 307 or 308 ? code.Value : 301;
+    ctx.Response.Headers.Location = "/ok";
+    ctx.Response.ContentType = "text/plain";
+    await ctx.Response.WriteAsync("Moved: see /ok");
+});
+
 app.MapGet("/flaky", () =>
 {
     // Intermittent endpoint: alternates between success and failure.

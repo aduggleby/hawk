@@ -84,18 +84,19 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env, MonitorEdi
             AlertAfterConsecutiveFailures = Math.Clamp(m.AlertAfterConsecutiveFailures, 1, 20),
             AlertEmailOverride = m.AlertEmailOverride,
             AllowedStatusCodes = m.AllowedStatusCodes,
+            FollowRedirects = m.FollowRedirects,
             RunRetentionDays = m.RunRetentionDays,
             ContentType = m.ContentType,
             Body = m.Body,
         };
 
-        for (var i = 0; i < Math.Min(5, m.Headers.Count); i++)
+        for (var i = 0; i < Math.Min(MonitorForm.MaxHeaders, m.Headers.Count); i++)
         {
             Form.HeaderNames[i] = m.Headers[i].Name;
             Form.HeaderValues[i] = m.Headers[i].Value;
         }
 
-        for (var i = 0; i < Math.Min(5, m.MatchRules.Count); i++)
+        for (var i = 0; i < Math.Min(MonitorForm.MaxMatchRules, m.MatchRules.Count); i++)
         {
             Form.MatchModes[i] = m.MatchRules[i].Mode;
             Form.MatchPatterns[i] = m.MatchRules[i].Pattern;

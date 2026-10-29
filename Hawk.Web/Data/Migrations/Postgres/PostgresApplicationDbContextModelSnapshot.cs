@@ -170,6 +170,9 @@ namespace Hawk.Web.Data.Migrations.Postgres
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("FollowRedirects")
+                        .HasColumnType("boolean");
+
                     b.Property<int>("HeartbeatGraceSeconds")
                         .HasColumnType("integer");
 

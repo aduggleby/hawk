@@ -75,8 +75,19 @@ builder.Services.AddHttpClient("urlchecks", c =>
     // Use TryAddWithoutValidation so odd-but-real UA strings don't throw.
     c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", ua);
 });
+// Same configuration, but redirects are returned instead of followed (monitors with FollowRedirects = false).
+builder.Services.AddHttpClient("urlchecks-noredirect", c =>
+    {
+        c.Timeout = Timeout.InfiniteTimeSpan;
+        var ua = UserAgentResolver.Resolve(builder.Configuration, builder.Configuration["Hawk:UrlChecks:UserAgent"]);
+        c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", ua);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<IUrlChecker>(sp =>
-    new UrlChecker(sp.GetRequiredService<IHttpClientFactory>().CreateClient("urlchecks")));
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    return new UrlChecker(factory.CreateClient("urlchecks"), factory.CreateClient("urlchecks-noredirect"));
+});
 
 builder.Services.AddHawkEmail(builder.Configuration);
 

@@ -10,7 +10,12 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ### Added
 
-- Agent API (version 0.12.0): `POST /api/v1/monitors` creates HTTP or heartbeat monitors (a heartbeat response contains the `pingUrl`), `PATCH /api/v1/monitors/{id}` edits any monitor setting with merge-patch semantics, and `DELETE /api/v1/monitors/{id}` deletes a monitor with its runs and alert state (irreversible). Validation matches the UI. The monitor detail now has `concurrencyStamp` and an `ETag`; `PATCH` and `DELETE` accept `If-Match` and answer 412 `precondition_failed` for a stale value. No schema change. See `docs/agent-api.md`.
+- Agent API (version 0.12.0): `POST /api/v1/monitors` creates HTTP or heartbeat monitors (a heartbeat response contains the `pingUrl`), `PATCH /api/v1/monitors/{id}` edits any monitor setting with merge-patch semantics, and `DELETE /api/v1/monitors/{id}` deletes a monitor with its runs and alert state (irreversible). Validation matches the UI. The monitor detail now has `concurrencyStamp` and an `ETag`; `PATCH` and `DELETE` accept `If-Match` and answer 412 `precondition_failed` for a stale value. See `docs/agent-api.md`.
+- Per-monitor **Follow redirects** setting (default on, unchanged behavior). When off, the check judges the 3xx response itself and it passes only if its code is in the allowed status codes, for example `301` to assert a permanent redirect. Available on the Create/Edit/Details pages, in the API (`followRedirects`) and in the JSON export/import (`followRedirects`, still format version 3; a missing field means true). Adds an additive schema migration (`AddMonitorFollowRedirects`, existing monitors get true; back up before upgrading). The mock server has `GET /redirect`.
+
+### Fixed
+
+- API monitor create/edit accepts at most 5 headers and 5 match rules (the UI forms' slots) instead of losing the extras on the next Edit save. A `PATCH` without `If-Match` now returns 409 `conflict` when the monitor was changed after it was read, instead of reverting that change. A blank `alertEmailOverride` clears the override.
 
 ### Changed
 

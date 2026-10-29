@@ -24,6 +24,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
@@ -32,7 +33,7 @@ namespace Hawk.Tests;
 
 public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
-    private sealed class Host(WebApplication app, HttpClient client, string writeKey, string readKey, string userId, Jobs jobs) : IAsyncDisposable
+    private sealed class Host(WebApplication app, HttpClient client, string writeKey, string readKey, string userId, Jobs jobs, RaceInterceptor race) : IAsyncDisposable
     {
         public WebApplication App { get; } = app;
         public HttpClient Client { get; } = client;
@@ -40,11 +41,30 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         public string ReadKey { get; } = readKey;
         public string UserId { get; } = userId;
         public Jobs Jobs { get; } = jobs;
+    public RaceInterceptor Race { get; } = race;
 
         public async ValueTask DisposeAsync()
         {
             Client.Dispose();
             await App.DisposeAsync();
+        }
+    }
+
+    /// <summary>Runs a hook right before the next save that updates a monitor, to simulate a concurrent write between snapshot and save.</summary>
+    private sealed class RaceInterceptor : SaveChangesInterceptor
+    {
+        public Func<Task>? Hook { get; set; }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Hook is { } hook && eventData.Context!.ChangeTracker.Entries<MonitorEntity>().Any(e => e.State == EntityState.Modified))
+            {
+                Hook = null;
+                await hook();
+            }
+
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
 
@@ -67,7 +87,8 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Production });
         builder.WebHost.UseTestServer();
-        builder.Services.AddHawkDbContext(DatabaseProvider.Postgres, fixture.NewDatabaseConnectionString());
+        var connectionString = fixture.NewDatabaseConnectionString();
+        builder.Services.AddHawkDbContext(DatabaseProvider.Postgres, connectionString);
         builder.Services.AddHawkIdentity();
         builder.Services.AddHawkApiAuthentication();
         builder.Services.AddScoped<ApiKeyService>();
@@ -78,6 +99,9 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         builder.Services.AddScoped<AccountAlertSettings>();
         var jobs = new Jobs();
         builder.Services.AddSingleton<IBackgroundJobClient>(jobs);
+        var race = new RaceInterceptor();
+        // Registered after AddHawkDbContext so its options (and the interceptor) apply on top of the production setup.
+        builder.Services.AddDbContext<ApplicationDbContext, PostgresApplicationDbContext>(o => o.UseNpgsql(connectionString).AddInterceptors(race));
 
         var app = builder.Build();
         app.UseHawkApiErrors();
@@ -97,7 +121,7 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         var read = await keys.CreateAsync(user.Id, "reader", ApiKeyScope.Read);
 
         var client = app.GetTestClient();
-        return new Host(app, client, write.Plaintext, read.Plaintext, user.Id, jobs);
+        return new Host(app, client, write.Plaintext, read.Plaintext, user.Id, jobs, race);
     }
 
     private static async Task<(HttpStatusCode Status, JsonElement Json)> SendAsync(Host host, string key, HttpMethod method, string path, string? body = null)
@@ -195,10 +219,10 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
     }
 
     [SkippableFact]
-    public async Task Create_stores_headers_and_match_rules_accepting_mode_or_type_and_more_than_five_headers()
+    public async Task Create_stores_headers_and_match_rules_accepting_mode_or_type_and_five_headers()
     {
         await using var host = await CreateHostAsync();
-        var headers = string.Join(",", Enumerable.Range(0, 7).Select(i => $"{{\"name\":\"X-H{i}\",\"value\":\" v{i} \"}}"));
+        var headers = string.Join(",", Enumerable.Range(0, 5).Select(i => $"{{\"name\":\"X-H{i}\",\"value\":\" v{i} \"}}"));
 
         var (status, json, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors",
             "{\"name\":\"rich\",\"url\":\"https://example.com/\",\"method\":\"post\",\"body\":\"{}\",\"allowedStatusCodes\":\"404, 429\"," +
@@ -211,11 +235,11 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         Assert.False(saved.Enabled);
         Assert.Equal("404,429", saved.AllowedStatusCodes);
         Assert.Equal(30, saved.RunRetentionDays);
-        Assert.Equal(7, saved.Headers.Count);
+        Assert.Equal(5, saved.Headers.Count);
         Assert.Contains(saved.Headers, h => h.Name == "X-H3" && h.Value == "v3");
         Assert.Equal([ContentMatchMode.Contains, ContentMatchMode.Regex], saved.MatchRules.Select(r => r.Mode).Order());
         Assert.Equal("disabled", json.GetProperty("state").GetString());
-        Assert.Equal(7, json.GetProperty("headers").GetArrayLength());
+        Assert.Equal(5, json.GetProperty("headers").GetArrayLength());
     }
 
     [SkippableFact]
@@ -287,7 +311,7 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         await using var host = await CreateHostAsync();
         var seeded = Http(host.UserId);
         seeded.ContentType = "application/json";
-        for (var i = 0; i < 7; i++)
+        for (var i = 0; i < 5; i++)
             seeded.Headers.Add(new MonitorHeader { Name = $"X-H{i}", Value = "v" });
         seeded.MatchRules.Add(new MonitorMatchRule { Mode = ContentMatchMode.Contains, Pattern = "ok" });
         var m = await AddAsync(host, seeded);
@@ -300,9 +324,9 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         Assert.Equal(30, renamed.TimeoutSeconds);
         Assert.Equal("https://example.com/", renamed.Url);
         Assert.Equal("ops@x.com", renamed.AlertEmailOverride);
-        Assert.Equal(7, renamed.Headers.Count);
+        Assert.Equal(5, renamed.Headers.Count);
         Assert.Single(renamed.MatchRules);
-        Assert.Equal(7, json.GetProperty("headers").GetArrayLength());
+        Assert.Equal(5, json.GetProperty("headers").GetArrayLength());
 
         (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path,
             "{\"headers\":[{\"name\":\"Authorization\",\"value\":\"Bearer t\"}],\"alertEmailOverride\":null,\"runRetentionDays\":10}");
@@ -360,6 +384,105 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         // PATCH {"type":"heartbeat"} on an HTTP monitor is a 400.
         (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"type\":\"heartbeat\"}");
         Assert.Equal(HttpStatusCode.BadRequest, status);
+    }
+
+    [SkippableFact]
+    public async Task Patch_without_if_match_conflicts_when_the_monitor_changed_after_the_snapshot_and_keeps_the_concurrent_change()
+    {
+        await using var host = await CreateHostAsync();
+        var m = await AddAsync(host, Http(host.UserId));
+        var path = $"/api/v1/monitors/{m.Id}";
+        host.Race.Hook = async () =>
+        {
+            // A concurrent intentional change (like a pause or an Edit save) that renews the stamp.
+            await using var scope = host.App.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Monitors.Where(x => x.Id == m.Id)
+                .ExecuteUpdateAsync(u => u.SetProperty(x => x.TimeoutSeconds, 99).SetProperty(x => x.ConcurrencyStamp, Guid.NewGuid()));
+        };
+
+        var (status, json, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"name\":\"mine\"}");
+
+        Assert.Equal(HttpStatusCode.Conflict, status);
+        Assert.Equal("conflict", json.GetProperty("code").GetString());
+        var saved = await GetFullAsync(host, m.Id);
+        Assert.Equal("web", saved.Name);
+        Assert.Equal(99, saved.TimeoutSeconds);
+    }
+
+    [SkippableFact]
+    public async Task Patch_with_if_match_that_changed_after_the_snapshot_returns_412()
+    {
+        await using var host = await CreateHostAsync();
+        var m = await AddAsync(host, Http(host.UserId));
+        host.Race.Hook = async () =>
+        {
+            await using var scope = host.App.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Monitors.Where(x => x.Id == m.Id).ExecuteUpdateAsync(u => u.SetProperty(x => x.ConcurrencyStamp, Guid.NewGuid()));
+        };
+
+        var (status, json, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{m.Id}", "{\"name\":\"mine\"}", ifMatch: m.ConcurrencyStamp.ToString("D"));
+
+        Assert.Equal(HttpStatusCode.PreconditionFailed, status);
+        Assert.Equal("precondition_failed", json.GetProperty("code").GetString());
+        Assert.Equal("web", (await GetFullAsync(host, m.Id)).Name);
+    }
+
+    [SkippableFact]
+    public async Task Blank_alert_email_override_clears_it_on_create_and_patch()
+    {
+        await using var host = await CreateHostAsync();
+        var (status, created, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors",
+            "{\"name\":\"a\",\"url\":\"https://example.com/\",\"alertEmailOverride\":\"  \"}");
+        Assert.Equal(HttpStatusCode.Created, status);
+        Assert.Null((await GetFullAsync(host, created.GetProperty("id").GetGuid())).AlertEmailOverride);
+
+        var m = await AddAsync(host, Http(host.UserId));
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{m.Id}", "{\"alertEmailOverride\":\"\"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Null((await GetFullAsync(host, m.Id)).AlertEmailOverride);
+    }
+
+    [SkippableFact]
+    public async Task Follow_redirects_defaults_to_true_round_trips_through_create_and_patch_and_the_column_defaults_to_true()
+    {
+        await using var host = await CreateHostAsync();
+
+        // Existing rows get true from the migration's column default.
+        await using (var scope = host.App.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var columnDefault = await db.Database
+                .SqlQueryRaw<string>("select column_default as \"Value\" from information_schema.columns where table_name = 'Monitors' and column_name = 'FollowRedirects'")
+                .SingleAsync();
+            Assert.Equal("true", columnDefault);
+        }
+
+        var (status, created, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors", "{\"name\":\"a\",\"url\":\"https://example.com/\"}");
+        Assert.Equal(HttpStatusCode.Created, status);
+        Assert.True(created.GetProperty("followRedirects").GetBoolean());
+        Assert.True((await GetFullAsync(host, created.GetProperty("id").GetGuid())).FollowRedirects);
+
+        (status, created, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors",
+            "{\"name\":\"b\",\"url\":\"https://example.com/\",\"followRedirects\":false,\"allowedStatusCodes\":\"301\"}");
+        Assert.Equal(HttpStatusCode.Created, status);
+        Assert.False(created.GetProperty("followRedirects").GetBoolean());
+        var id = created.GetProperty("id").GetGuid();
+        Assert.False((await GetFullAsync(host, id)).FollowRedirects);
+
+        // Other patches keep it; an explicit patch changes it.
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"name\":\"renamed\"}");
+        Assert.False((await GetFullAsync(host, id)).FollowRedirects);
+        (status, var patched, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"followRedirects\":true}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.True(patched.GetProperty("followRedirects").GetBoolean());
+        Assert.True((await GetFullAsync(host, id)).FollowRedirects);
+
+        // Heartbeats store true and report no value.
+        (_, var hb, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors", "{\"name\":\"hb\",\"type\":\"heartbeat\",\"intervalSeconds\":3600}");
+        Assert.Equal(JsonValueKind.Null, hb.GetProperty("followRedirects").ValueKind);
+        Assert.True((await GetFullAsync(host, hb.GetProperty("id").GetGuid())).FollowRedirects);
     }
 
     [SkippableFact]

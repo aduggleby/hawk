@@ -103,19 +103,20 @@ public class CreateModel(IHostEnvironment env, UserManager<IdentityUser> userMan
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,
             AlertEmailOverride = model.AlertEmailOverride,
             AllowedStatusCodes = model.AllowedStatusCodes,
+            FollowRedirects = model.FollowRedirects ?? true,
             RunRetentionDays = model.RunRetentionDays,
             ContentType = model.ContentType,
             Body = model.Body,
         };
 
         // Flatten headers/match rules into the form arrays (max 5).
-        for (var i = 0; i < Math.Min(5, model.Headers.Count); i++)
+        for (var i = 0; i < Math.Min(MonitorForm.MaxHeaders, model.Headers.Count); i++)
         {
             Form.HeaderNames[i] = model.Headers[i].Name ?? string.Empty;
             Form.HeaderValues[i] = model.Headers[i].Value ?? string.Empty;
         }
 
-        for (var i = 0; i < Math.Min(5, model.MatchRules.Count); i++)
+        for (var i = 0; i < Math.Min(MonitorForm.MaxMatchRules, model.MatchRules.Count); i++)
         {
             Form.MatchModes[i] = model.MatchRules[i].Mode;
             Form.MatchPatterns[i] = model.MatchRules[i].Pattern ?? string.Empty;

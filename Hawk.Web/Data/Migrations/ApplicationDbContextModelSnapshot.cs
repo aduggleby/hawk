@@ -170,6 +170,9 @@ namespace Hawk.Web.Data.Migrations
                     b.Property<bool>("Enabled")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("FollowRedirects")
+                        .HasColumnType("bit");
+
                     b.Property<int>("HeartbeatGraceSeconds")
                         .HasColumnType("int");
 

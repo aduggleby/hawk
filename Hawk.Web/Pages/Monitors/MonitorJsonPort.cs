@@ -38,6 +38,9 @@ public sealed record MonitorExportModel
     public int AlertAfterConsecutiveFailures { get; init; } = 1;
     public string? AlertEmailOverride { get; init; }
     public string? AllowedStatusCodes { get; init; }
+
+    /// <summary>Written for HTTP monitors only; a missing value means true (older files and Hawk versions).</summary>
+    public bool? FollowRedirects { get; init; }
     public int? RunRetentionDays { get; init; }
     public string? ContentType { get; init; }
     public string? Body { get; init; }
@@ -102,6 +105,7 @@ public static class MonitorJsonPort
             AlertAfterConsecutiveFailures = monitor.AlertAfterConsecutiveFailures,
             AlertEmailOverride = monitor.AlertEmailOverride,
             AllowedStatusCodes = monitor.AllowedStatusCodes,
+            FollowRedirects = monitor.Type == MonitorType.Http ? monitor.FollowRedirects : null,
             RunRetentionDays = monitor.RunRetentionDays,
             ContentType = monitor.ContentType,
             Body = monitor.Body,
@@ -229,6 +233,7 @@ public static class MonitorJsonPort
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,
             AlertEmailOverride = model.AlertEmailOverride,
             AllowedStatusCodes = model.AllowedStatusCodes,
+            FollowRedirects = model.FollowRedirects ?? true,
             RunRetentionDays = model.RunRetentionDays,
             ContentType = model.ContentType,
             Body = model.Body,
@@ -261,6 +266,7 @@ public static class MonitorJsonPort
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,
             AlertEmailOverride = string.IsNullOrWhiteSpace(model.AlertEmailOverride) ? null : model.AlertEmailOverride.Trim(),
             AllowedStatusCodes = heartbeat ? null : AllowedStatusCodesParser.Normalize(model.AllowedStatusCodes),
+            FollowRedirects = heartbeat || (model.FollowRedirects ?? true),
             RunRetentionDays = model.RunRetentionDays,
             ContentType = heartbeat || string.IsNullOrWhiteSpace(model.ContentType) ? null : model.ContentType.Trim(),
             Body = heartbeat ? null : model.Body,

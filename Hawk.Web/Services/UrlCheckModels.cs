@@ -48,7 +48,8 @@ public sealed record UrlCheckRequest(
     string? ContentType,
     string? Body,
     TimeSpan Timeout,
-    IReadOnlyList<ContentMatchRule> MatchRules
+    IReadOnlyList<ContentMatchRule> MatchRules,
+    bool FollowRedirects = true
 );
 
 /// <summary>
@@ -85,9 +86,10 @@ public interface IUrlChecker
 }
 
 /// <summary>
-/// Default <see cref="IUrlChecker"/> implementation using <see cref="HttpClient"/>.
+/// Default <see cref="IUrlChecker"/> implementation using <see cref="HttpClient"/>. <paramref name="noRedirectClient"/> must be a client whose
+/// handler has <c>AllowAutoRedirect = false</c>; it serves monitors that do not follow redirects.
 /// </summary>
-public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
+public sealed class UrlChecker(HttpClient httpClient, HttpClient? noRedirectClient = null) : IUrlChecker
 {
     // Limit how much we buffer for matching/snippets. Keep it small to avoid storing huge bodies.
     private const int MaxBodyBytes = 256 * 1024;
@@ -128,7 +130,10 @@ public sealed class UrlChecker(HttpClient httpClient) : IUrlChecker
                 httpRequest.Content = new StringContent(body, Encoding.UTF8, contentType);
             }
 
-            using var response = await httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
+            var client = request.FollowRedirects
+                ? httpClient
+                : noRedirectClient ?? throw new InvalidOperationException("No client is configured for checks that do not follow redirects.");
+            using var response = await client.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
             var bodyText = await ReadBodyAsStringAsync(response, timeoutCts.Token);
 
             var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

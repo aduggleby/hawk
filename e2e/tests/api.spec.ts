@@ -2,6 +2,7 @@
  * @file E2E coverage for the agent API: create a key on the API keys page, use /api/v1 with it (whoami, list, pause/resume,
  * PATCH alerting, run now + poll), revoke it in the UI and expect 401. A read-only key gets 403 on writes.
  * A second test creates, edits and deletes an HTTP and a heartbeat monitor through the API (If-Match, ETag, pingUrl).
+ * The CRUD test also checks a redirect with followRedirects false/true against the mock /redirect endpoint.
  * Uses the paused seed monitor "[Seed] Mock GET Contains" (mock server) and leaves it paused with its alert settings restored.
  */
 
@@ -190,6 +191,34 @@ test('api: create, edit and delete an HTTP monitor and a heartbeat monitor with 
       .poll(async () => (await (await request.get(queued.runUrl, { headers: auth })).json()).state, { timeout: 60_000 })
       .toBe('completed');
     expect(await (await request.get(queued.runUrl, { headers: auth })).json()).toMatchObject({ success: true, statusCode: 200 });
+
+    // Checking a redirect (AE6): without following, a 301 listed in allowedStatusCodes passes; following lands on /ok (200).
+    const redirectUrl = (seed.url as string).replace(/\/[^/]*$/, '/redirect');
+    const redirName = `e2e api redirect ${Date.now()}`;
+    const redir = await request.post('/api/v1/monitors', {
+      headers: json,
+      data: { name: redirName, url: redirectUrl, intervalSeconds: 300, followRedirects: false, allowedStatusCodes: '301' },
+    });
+    expect(redir.status()).toBe(201);
+    const redirDetail = await redir.json();
+    created.push(redirDetail.id);
+    expect(redirDetail).toMatchObject({ followRedirects: false, allowedStatusCodes: '301' });
+    const redirBase = `/api/v1/monitors/${redirDetail.id}`;
+    const runRedirect = async () => {
+      const queuedRun = await (await request.post(`${redirBase}/run`, { headers: auth })).json();
+      await expect
+        .poll(async () => (await (await request.get(queuedRun.runUrl, { headers: auth })).json()).state, { timeout: 60_000 })
+        .toBe('completed');
+      return await (await request.get(queuedRun.runUrl, { headers: auth })).json();
+    };
+    expect(await runRedirect()).toMatchObject({ success: true, statusCode: 301 });
+    const followed = await request.patch(redirBase, { headers: json, data: { followRedirects: true } });
+    expect(followed.status()).toBe(200);
+    expect(await followed.json()).toMatchObject({ followRedirects: true });
+    expect(await runRedirect()).toMatchObject({ success: true, statusCode: 200 });
+    await page.goto(`/Monitors/Details/${redirDetail.id}`);
+    await expect(page.getByText('Follow redirects').first()).toBeVisible();
+    await snap(page, '63-monitor-follow-redirects');
 
     // Validation errors use JSON field names.
     const bad = await request.post('/api/v1/monitors', { headers: json, data: { name: 'x', url: 'ftp://nope', intervalSeconds: 7 } });

@@ -21,9 +21,6 @@ public enum MonitorDeleteOutcome { Deleted, NotFound, Conflict }
 
 public sealed class MonitorEditor(ApplicationDbContext db)
 {
-    /// <summary>Attempts at an update without an expected stamp when a concurrent write wins the race (last write wins).</summary>
-    private const int MaxUnconditionalAttempts = 3;
-
     /// <summary>
     /// Creates a monitor owned by <paramref name="ownerUserId"/>. A heartbeat gets a new token and a deadline of now + period + grace
     /// (the scheduler never writes a heartbeat's NextRunAt).
@@ -43,6 +40,7 @@ public sealed class MonitorEditor(ApplicationDbContext db)
             AlertAfterConsecutiveFailures = form.AlertAfterConsecutiveFailures,
             AlertEmailOverride = string.IsNullOrWhiteSpace(form.AlertEmailOverride) ? null : form.AlertEmailOverride.Trim(),
             AllowedStatusCodes = heartbeat ? null : AllowedStatusCodesParser.Normalize(form.AllowedStatusCodes),
+            FollowRedirects = heartbeat || form.FollowRedirects,
             RunRetentionDays = form.RunRetentionDays,
             ContentType = heartbeat || string.IsNullOrWhiteSpace(form.ContentType) ? null : form.ContentType.Trim(),
             Body = heartbeat ? null : form.Body,
@@ -77,79 +75,75 @@ public sealed class MonitorEditor(ApplicationDbContext db)
     public async Task<MonitorUpdateOutcome> UpdateAsync(
         Guid id, MonitorForm form, Guid? expectedStamp, bool replaceHeaders, bool replaceMatchRules, CancellationToken cancellationToken)
     {
-        for (var attempt = 1; ; attempt++)
+        var m = await db.Monitors.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (m is null)
+            return MonitorUpdateOutcome.NotFound;
+
+        // EF checks the stamp the caller saw, not the one just fetched; renewing it makes other open forms conflict.
+        if (expectedStamp is { } expected)
+            db.Entry(m).Property(x => x.ConcurrencyStamp).OriginalValue = expected;
+        m.ConcurrencyStamp = Guid.NewGuid();
+
+        var heartbeat = m.Type == MonitorType.Heartbeat;
+        var wasEnabled = m.Enabled;
+        var oldPeriod = m.IntervalSeconds;
+        var oldGrace = m.HeartbeatGraceSeconds;
+
+        m.Name = form.Name.Trim();
+        m.Enabled = form.Enabled;
+        m.IntervalSeconds = form.IntervalSeconds;
+        m.AlertAfterConsecutiveFailures = form.AlertAfterConsecutiveFailures;
+        m.AlertEmailOverride = string.IsNullOrWhiteSpace(form.AlertEmailOverride) ? null : form.AlertEmailOverride.Trim();
+        m.RunRetentionDays = form.RunRetentionDays;
+
+        if (heartbeat)
         {
-            var m = await db.Monitors.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-            if (m is null)
-                return MonitorUpdateOutcome.NotFound;
+            m.HeartbeatGraceSeconds = form.GraceSeconds;
 
-            // EF checks the stamp the caller saw, not the one just fetched; renewing it makes other open forms conflict.
-            if (expectedStamp is { } expected)
-                db.Entry(m).Property(x => x.ConcurrencyStamp).OriginalValue = expected;
-            m.ConcurrencyStamp = Guid.NewGuid();
+            // NextRunAt is the ping deadline: only an intentional change (period, grace, re-enable) gives a fresh
+            // period plus grace. Saving other fields must not move it.
+            if (m.IntervalSeconds != oldPeriod || m.HeartbeatGraceSeconds != oldGrace || (!wasEnabled && m.Enabled) || m.NextRunAt is null)
+                m.NextRunAt = HeartbeatTokens.InitialDeadline(DateTimeOffset.UtcNow, m.IntervalSeconds, m.HeartbeatGraceSeconds);
+        }
+        else
+        {
+            m.Url = (form.Url ?? string.Empty).Trim();
+            m.Method = form.Method.Trim().ToUpperInvariant();
+            m.TimeoutSeconds = form.TimeoutSeconds;
+            m.AllowedStatusCodes = AllowedStatusCodesParser.Normalize(form.AllowedStatusCodes);
+            m.FollowRedirects = form.FollowRedirects;
+            m.ContentType = string.IsNullOrWhiteSpace(form.ContentType) ? null : form.ContentType.Trim();
+            m.Body = form.Body;
 
-            var heartbeat = m.Type == MonitorType.Heartbeat;
-            var wasEnabled = m.Enabled;
-            var oldPeriod = m.IntervalSeconds;
-            var oldGrace = m.HeartbeatGraceSeconds;
+            // Reset scheduling to "run soon" when config changes.
+            m.NextRunAt = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60));
+        }
 
-            m.Name = form.Name.Trim();
-            m.Enabled = form.Enabled;
-            m.IntervalSeconds = form.IntervalSeconds;
-            m.AlertAfterConsecutiveFailures = form.AlertAfterConsecutiveFailures;
-            m.AlertEmailOverride = string.IsNullOrWhiteSpace(form.AlertEmailOverride) ? null : form.AlertEmailOverride.Trim();
-            m.RunRetentionDays = form.RunRetentionDays;
-
-            if (heartbeat)
+        var replaceChildren = !heartbeat;
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            // Replace children with set-based deletes to avoid per-row optimistic concurrency exceptions.
+            if (replaceChildren && replaceHeaders)
             {
-                m.HeartbeatGraceSeconds = form.GraceSeconds;
-
-                // NextRunAt is the ping deadline: only an intentional change (period, grace, re-enable) gives a fresh
-                // period plus grace. Saving other fields must not move it.
-                if (m.IntervalSeconds != oldPeriod || m.HeartbeatGraceSeconds != oldGrace || (!wasEnabled && m.Enabled) || m.NextRunAt is null)
-                    m.NextRunAt = HeartbeatTokens.InitialDeadline(DateTimeOffset.UtcNow, m.IntervalSeconds, m.HeartbeatGraceSeconds);
-            }
-            else
-            {
-                m.Url = (form.Url ?? string.Empty).Trim();
-                m.Method = form.Method.Trim().ToUpperInvariant();
-                m.TimeoutSeconds = form.TimeoutSeconds;
-                m.AllowedStatusCodes = AllowedStatusCodesParser.Normalize(form.AllowedStatusCodes);
-                m.ContentType = string.IsNullOrWhiteSpace(form.ContentType) ? null : form.ContentType.Trim();
-                m.Body = form.Body;
-
-                // Reset scheduling to "run soon" when config changes.
-                m.NextRunAt = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(m.IntervalSeconds, 5, 24 * 60 * 60));
+                await db.MonitorHeaders.Where(h => h.MonitorId == m.Id).ExecuteDeleteAsync(cancellationToken);
+                db.MonitorHeaders.AddRange(HeaderRows(form, m.Id));
             }
 
-            var replaceChildren = !heartbeat;
-            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
-            try
+            if (replaceChildren && replaceMatchRules)
             {
-                // Replace children with set-based deletes to avoid per-row optimistic concurrency exceptions.
-                if (replaceChildren && replaceHeaders)
-                {
-                    await db.MonitorHeaders.Where(h => h.MonitorId == m.Id).ExecuteDeleteAsync(cancellationToken);
-                    db.MonitorHeaders.AddRange(HeaderRows(form, m.Id));
-                }
-
-                if (replaceChildren && replaceMatchRules)
-                {
-                    await db.MonitorMatchRules.Where(r => r.MonitorId == m.Id).ExecuteDeleteAsync(cancellationToken);
-                    db.MonitorMatchRules.AddRange(RuleRows(form, m.Id));
-                }
-
-                await db.SaveChangesAsync(cancellationToken);
-                await tx.CommitAsync(cancellationToken);
-                return MonitorUpdateOutcome.Updated;
+                await db.MonitorMatchRules.Where(r => r.MonitorId == m.Id).ExecuteDeleteAsync(cancellationToken);
+                db.MonitorMatchRules.AddRange(RuleRows(form, m.Id));
             }
-            catch (DbUpdateConcurrencyException)
-            {
-                // Another request updated or deleted this monitor since the caller loaded it.
-                if (expectedStamp is not null || attempt >= MaxUnconditionalAttempts)
-                    return MonitorUpdateOutcome.Conflict;
-                db.ChangeTracker.Clear();
-            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            return MonitorUpdateOutcome.Updated;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another request updated or deleted this monitor since the caller loaded it.
+            return MonitorUpdateOutcome.Conflict;
         }
     }
 

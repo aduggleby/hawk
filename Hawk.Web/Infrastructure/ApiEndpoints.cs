@@ -141,6 +141,7 @@ public static class ApiEndpoints
         return Json(new ApiMonitorDetail(
             m.Id, m.Name, m.Type, UrlOf(m), status.State, status.Health, m.CreatedByUserId == UserId(http), FailureOf(status),
             m.LastRunAt, m.NextRunAt, m.Method, m.IntervalSeconds, m.TimeoutSeconds, m.AllowedStatusCodes,
+            heartbeat ? null : m.FollowRedirects,
             m.AlertAfterConsecutiveFailures, m.AlertEmailOverride, m.RunRetentionDays,
             heartbeat ? m.HeartbeatGraceSeconds : null, m.LastPingAt, m.CreatedAt,
             new ApiAlertState(
@@ -343,14 +344,15 @@ public static class ApiEndpoints
         if (errors.Count > 0)
             return ValidationProblem(errors);
 
-        switch (await editor.UpdateAsync(id, form, ifMatch, replaceHeaders: headersPresent, replaceMatchRules: rulesPresent, ct))
+        // Without If-Match the form still came from the snapshot above, so a change made since then must conflict instead of being reverted.
+        switch (await editor.UpdateAsync(id, form, ifMatch ?? m.ConcurrencyStamp, replaceHeaders: headersPresent, replaceMatchRules: rulesPresent, ct))
         {
             case MonitorUpdateOutcome.NotFound:
                 return MonitorNotFound();
             case MonitorUpdateOutcome.Conflict:
                 return ifMatch is not null
                     ? PreconditionFailed()
-                    : Problem(StatusCodes.Status409Conflict, "conflict", "The monitor was changed concurrently", "Retry the request.");
+                    : Problem(StatusCodes.Status409Conflict, "conflict", "The monitor changed while you were editing", "GET the monitor again and retry the request.");
         }
 
         LogWrite(http, logs, id, "monitor.update");

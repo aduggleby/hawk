@@ -80,6 +80,7 @@ public sealed record ApiMonitorDetail(
     int IntervalSeconds,
     int TimeoutSeconds,
     string? AllowedStatusCodes,
+    bool? FollowRedirects,
     int AlertAfterConsecutiveFailures,
     string? AlertEmailOverride,
     int? RunRetentionDays,
