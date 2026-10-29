@@ -25,7 +25,7 @@ public sealed record ManualRunResult(ManualRunOutcome Outcome, Guid? RunId = nul
 /// <summary>
 /// Shared monitor commands.
 /// </summary>
-public sealed class MonitorCommands(ApplicationDbContext db, IBackgroundJobClient jobs)
+public sealed class MonitorCommands(ApplicationDbContext db, IBackgroundJobClient jobs, ILogger<MonitorCommands>? logger = null)
 {
     /// <summary>Slack added to the monitor timeout before an unfinished manual run counts as lost.</summary>
     private static readonly TimeSpan InFlightSlack = TimeSpan.FromSeconds(60);
@@ -172,7 +172,25 @@ public sealed class MonitorCommands(ApplicationDbContext db, IBackgroundJobClien
         db.MonitorRuns.Add(run);
         await db.SaveChangesAsync(cancellationToken);
 
-        jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(id, "manual", CancellationToken.None, run.Id));
+        try
+        {
+            jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(id, "manual", CancellationToken.None, run.Id));
+        }
+        catch
+        {
+            // No job will ever run this record; remove it so it is not mistaken for an in-flight run.
+            try
+            {
+                db.MonitorRuns.Remove(run);
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception cleanupError)
+            {
+                logger?.LogError(cleanupError, "Could not remove queued run {RunId} after a failed enqueue", run.Id);
+            }
+            throw;
+        }
+
         return new ManualRunResult(ManualRunOutcome.Queued, run.Id);
     }
 
