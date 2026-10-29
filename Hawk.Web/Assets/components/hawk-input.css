@@ -2,9 +2,9 @@
   width: 100%;
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
   font-size: 0.875rem;
   line-height: 1.25rem;
   transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
@@ -12,24 +12,24 @@
 
 .hawk-input:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--text);
+  box-shadow: 0 0 0 1px var(--text);
 }
 
 .hawk-input:disabled {
   opacity: 0.65;
   cursor: not-allowed;
-  background: var(--bg-secondary);
+  background: var(--hover);
 }
 
 .hawk-input::placeholder {
-  color: color-mix(in srgb, var(--text-muted) 68%, var(--bg-secondary));
+  color: color-mix(in srgb, var(--muted) 75%, var(--bg));
 }
 
 @utility hawk-select {
   @apply hawk-input;
   padding-right: 2.5rem;
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%238a96a3' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
   background-position: right 0.5rem center;
   background-repeat: no-repeat;
   background-size: 1.5em 1.5em;
@@ -42,21 +42,20 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-secondary);
+  color: var(--muted);
   margin-bottom: 0.5rem;
 }
 
 @utility hawk-input-error {
-  border-color: var(--accent);
-  border-style: dashed;
+  border-color: var(--down);
 }
 
 @utility hawk-input-success {
-  border-color: var(--border-primary);
+  border-color: var(--line);
 }
 
 @utility hawk-error-message {
-  color: var(--text-primary);
+  color: var(--down);
   font-weight: 600;
   font-size: 0.75rem;
   line-height: 1rem;
@@ -64,7 +63,7 @@
 }
 
 @utility hawk-help-text {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.75rem;
   line-height: 1rem;
   margin-top: 0.25rem;

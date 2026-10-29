@@ -1,13 +1,11 @@
 @utility hawk-card {
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow-soft);
-  padding: 1.5rem;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 1rem 1.25rem;
+  transition: border-color 150ms ease;
 }
 
 .hawk-card:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-medium);
+  border-color: var(--muted);
 }

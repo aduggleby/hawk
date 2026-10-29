@@ -2,33 +2,27 @@
   display: flex;
   align-items: start;
   gap: 0.75rem;
-  padding: 1rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  background: var(--panel);
+  color: var(--text);
 }
 
 @utility hawk-alert-error {
-  border-color: var(--text-primary);
-  border-left-width: 4px;
-  border-left-style: solid;
+  border-left-color: var(--down);
+  background: var(--down-tint);
 }
 
 @utility hawk-alert-warning {
-  border-color: var(--text-primary);
-  border-left-width: 4px;
-  border-left-style: dotted;
+  border-left-color: var(--warn);
 }
 
 @utility hawk-alert-info {
-  border-color: var(--text-primary);
-  border-left-width: 4px;
-  border-left-style: solid;
+  border-left-color: var(--chart);
 }
 
 @utility hawk-alert-success {
-  border-color: var(--text-primary);
-  border-left-width: 4px;
-  border-left-style: solid;
+  border-left-color: var(--up);
 }

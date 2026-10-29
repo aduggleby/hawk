@@ -8,111 +8,108 @@
 
 @import "tailwindcss";
 
-/* Theme tokens (Tailwind v4 @theme). */
-@theme {
-  /* Typography */
-  --font-sans: "Monaspace Krypton", "Mona Sans", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
-  --font-mono: "Monaspace Krypton", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("../fonts/Archivo-latin-variable.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
-  /* Brand (monochrome; keep names to avoid chasing class renames). */
-  --color-brand-50: oklch(0.99 0 0);
-  --color-brand-100: oklch(0.97 0 0);
-  --color-brand-200: oklch(0.93 0 0);
-  --color-brand-300: oklch(0.86 0 0);
-  --color-brand-400: oklch(0.74 0 0);
-  --color-brand-500: oklch(0.12 0 0);
-  --color-brand-600: oklch(0.18 0 0);
-  --color-brand-700: oklch(0.26 0 0);
-  --color-brand-800: oklch(0.34 0 0);
-  --color-brand-900: oklch(0.42 0 0);
+/* Tower tokens (dark is the design reference; light is the "day shift"). */
+:root {
+  color-scheme: light;
+  --bg: #e9ecef;
+  --panel: #ffffff;
+  --line: #d3d8de;
+  --text: #141a21;
+  --muted: #5c6773;
+  --up: #1c8a68;
+  --down: #d03a2a;
+  --paused: #6b7682;
+  --warn: #9a6700;
+  --chart: #24598f;
+  --down-tint: rgba(208, 58, 42, 0.09);
+  --hover: rgba(20, 26, 33, 0.04);
+  --faint: rgba(20, 26, 33, 0.1);
+}
 
-  /* Ink / Paper */
-  --color-ink-50: oklch(0.95 0 0);
-  --color-ink-100: oklch(0.90 0 0);
-  --color-ink-200: oklch(0.75 0 0);
-  --color-ink-300: oklch(0.60 0 0);
-  --color-ink-400: oklch(0.45 0 0);
-  --color-ink-500: oklch(0.30 0 0);
-  --color-ink-600: oklch(0.20 0 0);
-  --color-ink-700: oklch(0.15 0 0);
-  --color-ink-800: oklch(0.10 0 0);
-  --color-ink-900: oklch(0.06 0 0); /* #0b0b0d */
+.dark {
+  color-scheme: dark;
+  --bg: #10151b;
+  --panel: #161c24;
+  --line: #273039;
+  --text: #e9edf1;
+  --muted: #8a96a3;
+  --up: #39ad8c;
+  --down: #f0533f;
+  --paused: #6b7682;
+  --warn: #e0a83a;
+  --chart: #8fb4d9;
+  --down-tint: rgba(240, 83, 63, 0.12);
+  --hover: rgba(233, 237, 241, 0.045);
+  --faint: rgba(233, 237, 241, 0.1);
+}
 
-  /* Paper (true neutral; remove the warm/yellow tint). */
-  --color-paper-50: oklch(1 0 0);
-  --color-paper-100: oklch(0.98 0 0);
+/* Utilities (bg-panel, text-muted, border-line, ...) read the live variables, so they follow the theme. */
+@theme inline {
+  --font-sans: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
-  /* Semantic (monochrome; keep names for API stability). */
-  --color-success-100: oklch(0.98 0 0);
-  --color-success-500: oklch(0.20 0 0);
-  --color-success-900: oklch(0.06 0 0);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-line: var(--line);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-paused: var(--paused);
+  --color-warn: var(--warn);
+  --color-chart: var(--chart);
+  --color-down-tint: var(--down-tint);
+  --color-hover: var(--hover);
+  --color-faint: var(--faint);
 
-  --color-danger-100: oklch(0.98 0 0);
-  --color-danger-500: oklch(0.20 0 0);
-  --color-danger-900: oklch(0.06 0 0);
-
-  --color-warning-100: oklch(0.98 0 0);
-  --color-warning-500: oklch(0.20 0 0);
-  --color-warning-900: oklch(0.06 0 0);
-
-  --color-info-100: oklch(0.98 0 0);
-  --color-info-500: oklch(0.20 0 0);
-  --color-info-900: oklch(0.06 0 0);
-
-  /* Spacing */
   --spacing-18: 4.5rem;
   --spacing-22: 5.5rem;
 
-  /* Radius (technical; tighter corners) */
-  --radius-sm: 0;
-  --radius-md: 0;
-  --radius-lg: 0;
-  --radius-xl: 0;
-  --radius-2xl: 0;
-  --radius-full: 0;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+  --radius-2xl: 2px;
 
-  /* Shadows (minimal; rely on borders). */
   --shadow-soft: 0 0 0 0 transparent;
   --shadow-medium: 0 0 0 0 transparent;
   --shadow-hard: 0 0 0 0 transparent;
 }
 
 @layer base {
-  :root {
-    color-scheme: light;
-
-    --bg-primary: var(--color-paper-100);
-    --bg-secondary: var(--color-paper-50);
-    --text-primary: var(--color-ink-900);
-    --text-secondary: var(--color-ink-600);
-    --text-muted: var(--color-ink-400);
-    --border-primary: var(--color-ink-200);
-    --accent: var(--color-ink-900);
-  }
-
+  /* Legacy names used by existing pages (arbitrary values like text-[color:var(--text-secondary)]); aliases only. */
+  :root,
   .dark {
-    color-scheme: dark;
-
-    --bg-primary: var(--color-ink-900);
-    --bg-secondary: var(--color-ink-800);
-    --text-primary: var(--color-paper-100);
-    --text-secondary: var(--color-ink-200);
-    --text-muted: var(--color-ink-300);
-    /* Brighter so 1px borders have visible contrast on dark surfaces. */
-    --border-primary: var(--color-ink-500);
-    --accent: var(--color-paper-100);
+    --bg-primary: var(--bg);
+    --bg-secondary: var(--panel);
+    --text-primary: var(--text);
+    --text-secondary: var(--muted);
+    --text-muted: var(--muted);
+    --border-primary: var(--line);
+    --accent: var(--text);
   }
 
   html {
     font-family: var(--font-sans);
-    font-feature-settings: "ss01" 1, "ss02" 1;
   }
 
   body {
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.4;
+    overflow-x: hidden;
   }
 
   code,
@@ -122,28 +119,42 @@
 
   a {
     text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
+    text-decoration-color: color-mix(in srgb, var(--text) 18%, transparent);
     text-underline-offset: 4px;
     transition: text-decoration-color 150ms ease;
   }
 
   a:hover {
-    text-decoration-color: color-mix(in srgb, var(--text-primary) 42%, transparent);
+    text-decoration-color: color-mix(in srgb, var(--text) 42%, transparent);
+  }
+
+  table {
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
   }
 }
 
 @layer utilities {
-  .dark .text-zinc-400 { color: var(--text-muted); }
-  .dark .text-zinc-500 { color: var(--text-secondary); }
-  .dark .text-zinc-600 { color: var(--text-secondary); }
-  .dark .text-zinc-700 { color: var(--text-primary); }
+  .condensed { font-stretch: 68%; }
+  .num { font-variant-numeric: tabular-nums; }
 
-  .dark .bg-zinc-50 { background-color: color-mix(in srgb, var(--bg-secondary) 92%, var(--bg-primary) 8%); }
-  .dark .bg-white { background-color: var(--bg-secondary); }
+  /* Map the Tailwind palette classes still used by pages onto Tower tokens (both themes). */
+  :root .text-zinc-400,
+  :root .text-zinc-500,
+  :root .text-zinc-600 { color: var(--muted); }
+  :root .text-zinc-700 { color: var(--text); }
+  :root .text-red-600,
+  :root .text-red-700,
+  :root .text-red-800 { color: var(--down); }
 
-  .dark .border-zinc-100 { border-color: var(--border-primary); }
-  .dark .border-zinc-200 { border-color: var(--border-primary); }
-  .dark .divide-zinc-100 > :not(:last-child) { border-color: var(--border-primary); }
+  :root .bg-zinc-50,
+  :root .bg-zinc-50\/70 { background-color: var(--hover); }
+  :root .hover\:bg-zinc-50\/70:hover { background-color: var(--hover); }
+  :root .bg-white { background-color: var(--panel); }
+
+  :root .border-zinc-100,
+  :root .border-zinc-200 { border-color: var(--line); }
+  :root .divide-zinc-100 > :not(:last-child) { border-color: var(--line); }
 
   /* Recent runs table: only show strong separators while hovering a row. */
   .hawk-runs-tbody > tr > td {
@@ -154,8 +165,8 @@
 
   .hawk-runs-tbody > tr:hover > td,
   .hawk-runs-tbody > tr:focus-within > td {
-    border-top-color: var(--border-primary);
-    border-bottom-color: var(--border-primary);
+    border-top-color: var(--line);
+    border-bottom-color: var(--line);
   }
 }
 

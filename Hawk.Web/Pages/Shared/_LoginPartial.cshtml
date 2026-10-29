@@ -7,10 +7,10 @@
 @if (SignInManager.IsSignedIn(User))
 {
     <details class="relative">
-        <summary class="hawk-btn hawk-btn-ghost hawk-topbar-item font-mono cursor-pointer select-none list-none">Account</summary>
+        <summary class="hawk-btn hawk-btn-ghost hawk-topbar-item cursor-pointer select-none list-none">Account</summary>
         <div class="absolute z-50 mt-2 right-0 w-72 max-w-[85vw]">
             <div class="border border-[color:var(--border-primary)] bg-[color:var(--bg-secondary)] p-0">
-                <div class="px-3 py-2 text-xs font-mono uppercase tracking-tight text-zinc-500 border-b border-[color:var(--border-primary)]">@((User.Identity?.Name ?? "Account"))</div>
+                <div class="px-3 py-2 text-xs uppercase tracking-wide text-zinc-500 border-b border-[color:var(--border-primary)]">@((User.Identity?.Name ?? "Account"))</div>
                 <div class="py-1">
                     <a class="hawk-btn hawk-menu-item" asp-area="Identity" asp-page="/Account/Manage/Index">Profile</a>
                     <a class="hawk-btn hawk-menu-item" asp-area="Identity" asp-page="/Account/Manage/ChangePassword">Security</a>
