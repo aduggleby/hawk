@@ -60,6 +60,11 @@ public class ApplicationDbContext : IdentityDbContext
     public DbSet<MonitorRun> MonitorRuns => Set<MonitorRun>();
 
     /// <summary>
+    /// 15-minute rollup of completed runs (see RunBucketRollup).
+    /// </summary>
+    public DbSet<MonitorRunBucket> MonitorRunBuckets => Set<MonitorRunBucket>();
+
+    /// <summary>
     /// Per-user alerting settings (alert recipient email override).
     /// </summary>
     public DbSet<UserAlertSettings> UserAlertSettings => Set<UserAlertSettings>();
@@ -102,6 +107,14 @@ public class ApplicationDbContext : IdentityDbContext
         builder.Entity<MonitorRun>(b =>
         {
             b.HasIndex(x => new { x.MonitorId, x.StartedAt });
+        });
+
+        builder.Entity<MonitorRunBucket>(b =>
+        {
+            b.HasKey(x => new { x.MonitorId, x.BucketStart });
+            b.HasOne<MonitorEntity>().WithMany().HasForeignKey(x => x.MonitorId).OnDelete(DeleteBehavior.Cascade);
+            // Cleanup and "newest bucket" lookups filter on BucketStart alone.
+            b.HasIndex(x => x.BucketStart);
         });
 
         builder.Entity<UserAlertSettings>(b =>

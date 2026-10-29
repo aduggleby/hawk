@@ -14,6 +14,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Monitoring;
@@ -34,7 +35,11 @@ public sealed record StatusCakeImportResult(int MonitorsCreated, int RunsCreated
 /// <summary>
 /// Imports StatusCake exports into Hawk.
 /// </summary>
-public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment env, ILogger<StatusCakeImporter> logger)
+public sealed class StatusCakeImporter(
+    ApplicationDbContext db,
+    IHostEnvironment env,
+    ILogger<StatusCakeImporter> logger,
+    IBackgroundJobClient? jobs = null)
 {
     /// <summary>
     /// Imports uptime tests from a StatusCake JSON export.
@@ -236,6 +241,24 @@ public sealed class StatusCakeImporter(ApplicationDbContext db, IHostEnvironment
     /// never checks or renews the concurrency stamp and a concurrent edit/pause cannot fail the import.
     /// </summary>
     private async Task SaveAlertImportAsync(Dictionary<Guid, DateTimeOffset> latestByMonitor, CancellationToken cancellationToken)
+    {
+        // Imported history can be old: its run buckets are filled by a recompute job over the covered UTC days.
+        var imported = db.ChangeTracker.Entries<MonitorRun>()
+            .Where(e => e.State == EntityState.Added)
+            .Select(e => e.Entity.StartedAt.ToUniversalTime())
+            .ToList();
+
+        await SaveAlertImportCoreAsync(latestByMonitor, cancellationToken);
+
+        if (jobs is not null && imported.Count != 0)
+        {
+            var from = new DateTimeOffset(imported.Min().Date, TimeSpan.Zero);
+            var to = new DateTimeOffset(imported.Max().Date.AddDays(1), TimeSpan.Zero);
+            jobs.Enqueue<IRunBucketRollup>(r => r.RecomputeAsync(from, to, CancellationToken.None));
+        }
+    }
+
+    private async Task SaveAlertImportCoreAsync(Dictionary<Guid, DateTimeOffset> latestByMonitor, CancellationToken cancellationToken)
     {
         if (!db.Database.IsRelational())
         {

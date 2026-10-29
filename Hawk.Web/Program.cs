@@ -163,6 +163,7 @@ builder.Services.AddRazorPages(options =>
 builder.Services.AddScoped<IMonitorRunner, MonitorRunner>();
 builder.Services.AddScoped<IMonitorExecutor, MonitorExecutor>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
+builder.Services.AddScoped<IRunBucketRollup, RunBucketRollup>();
 builder.Services.AddScoped<MonitorStatusService>();
 builder.Services.AddScoped<MonitorCommands>();
 builder.Services.AddScoped<MonitorEditor>();
@@ -205,6 +206,12 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     // Start the scheduler loop.
     await scope.ServiceProvider.GetRequiredService<IMonitorScheduler>().EnsureStartedAsync(CancellationToken.None);
+
+    // Run-bucket rollup: recurring refresh plus a startup backfill, or removal when scheduling is off.
+    RunBucketRollup.EnsureStarted(
+        scope.ServiceProvider.GetRequiredService<IRecurringJobManager>(),
+        scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>(),
+        app.Configuration.GetValue("Hawk:Scheduler:Enabled", true));
 }
 
 // Configure the HTTP request pipeline.

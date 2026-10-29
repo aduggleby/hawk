@@ -378,6 +378,30 @@ namespace Hawk.Web.Data.Migrations.Postgres
                     b.ToTable("MonitorRuns");
                 });
 
+            modelBuilder.Entity("Hawk.Web.Data.Monitoring.MonitorRunBucket", b =>
+                {
+                    b.Property<Guid>("MonitorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("BucketStart")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FailureCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RunCount")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("TotalDurationMs")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("MonitorId", "BucketStart");
+
+                    b.HasIndex("BucketStart");
+
+                    b.ToTable("MonitorRunBuckets");
+                });
+
             modelBuilder.Entity("Hawk.Web.Data.Monitoring.UserMonitorSettings", b =>
                 {
                     b.Property<string>("UserId")
@@ -665,6 +689,15 @@ namespace Hawk.Web.Data.Migrations.Postgres
                         .IsRequired();
 
                     b.Navigation("Monitor");
+                });
+
+            modelBuilder.Entity("Hawk.Web.Data.Monitoring.MonitorRunBucket", b =>
+                {
+                    b.HasOne("Hawk.Web.Data.Monitoring.Monitor", null)
+                        .WithMany()
+                        .HasForeignKey("MonitorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
