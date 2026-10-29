@@ -44,6 +44,10 @@ public sealed class ApiKeysModel(ApiKeyService keys, UserManager<IdentityUser> u
         if (string.IsNullOrWhiteSpace(userId))
             return Challenge();
 
+        // PostgreSQL text columns reject NUL characters (SQL Server accepts them); refuse them on every provider.
+        if (Name is not null && Name.Contains('\0'))
+            ModelState.AddModelError(nameof(Name), "Fields must not contain NUL characters.");
+
         if (ModelState.IsValid)
         {
             var created = await keys.CreateAsync(userId, Name!.Trim(), Scope, cancellationToken);

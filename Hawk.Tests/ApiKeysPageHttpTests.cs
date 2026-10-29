@@ -152,6 +152,46 @@ public class ApiKeysPageHttpTests
     }
 
     [Fact]
+    public async Task Revoke_confirm_is_a_well_formed_call_inside_the_encoded_onsubmit_attribute()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        await app.LoginAsync();
+        const string name = "a\"b'<c>";
+        using var created = await PostAsync(app, PagePath, new() { ["Name"] = name });
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+
+        var html = await app.Client.GetStringAsync(PagePath);
+        var raw = Regex.Matches(html, "onsubmit=\"([^\"]*)\"").Select(m => m.Groups[1].Value).Single(v => v.Contains("Revoke the API key", StringComparison.Ordinal) || v.Contains("Revoke&#x20;the", StringComparison.Ordinal) || !v.Contains("Revoke all", StringComparison.Ordinal));
+        var decoded = WebUtility.HtmlDecode(raw);
+        var match = Regex.Match(decoded, "^return confirm\\((\".*\")\\);$", RegexOptions.Singleline);
+        Assert.True(match.Success, $"onsubmit was: {raw}");
+        Assert.Equal($"Revoke the API key \"{name}\"? It stops working immediately.", System.Text.Json.JsonSerializer.Deserialize<string>(match.Groups[1].Value));
+    }
+
+    [Fact]
+    public async Task Name_with_a_NUL_character_is_rejected_by_the_page_model()
+    {
+        // The host already answers 400 to form values containing NUL; the page model guards on its own (PostgreSQL text rejects NUL).
+        await using var app = await SecurityTestApplication.CreateAsync();
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Microsoft.AspNetCore.Identity.IdentityUser>>();
+        var keys = scope.ServiceProvider.GetRequiredService<ApiKeyService>();
+        var page = new Hawk.Web.Areas.Identity.Pages.Account.Manage.ApiKeysModel(keys, users) { Name = "bad\0name" };
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "u-nul")], "test")),
+        };
+        page.PageContext = new Microsoft.AspNetCore.Mvc.RazorPages.PageContext { HttpContext = http };
+
+        await page.OnPostAsync(CancellationToken.None);
+
+        Assert.Null(page.NewKey);
+        Assert.Contains(page.ModelState.Values.SelectMany(v => v.Errors), e => e.ErrorMessage == "Fields must not contain NUL characters.");
+        Assert.Empty(await AllAsync(app));
+    }
+
+    [Fact]
     public async Task Page_requires_login_and_is_linked_from_the_account_nav()
     {
         await using var app = await SecurityTestApplication.CreateAsync();

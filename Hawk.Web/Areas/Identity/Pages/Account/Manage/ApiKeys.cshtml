@@ -102,7 +102,7 @@
                         </div>
                     </div>
                     <form method="post" asp-page-handler="Revoke"
-                          onsubmit="return confirm(@Html.Raw(System.Text.Json.JsonSerializer.Serialize($"Revoke the API key \"{key.Name}\"? It stops working immediately.", new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default })));">
+                          onsubmit="return confirm(@(System.Text.Json.JsonSerializer.Serialize($"Revoke the API key \"{key.Name}\"? It stops working immediately.", new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default })));">
                         <input type="hidden" name="keyId" value="@key.Id" />
                         <button class="hawk-btn hawk-btn-ghost" type="submit">Revoke</button>
                     </form>
