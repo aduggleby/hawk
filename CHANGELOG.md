@@ -6,6 +6,16 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-29
+
+### Added
+
+- Agent API (version 0.12.0): `POST /api/v1/monitors` creates HTTP or heartbeat monitors (a heartbeat response contains the `pingUrl`), `PATCH /api/v1/monitors/{id}` edits any monitor setting with merge-patch semantics, and `DELETE /api/v1/monitors/{id}` deletes a monitor with its runs and alert state (irreversible). Validation matches the UI. The monitor detail now has `concurrencyStamp` and an `ETag`; `PATCH` and `DELETE` accept `If-Match` and answer 412 `precondition_failed` for a stale value. No schema change. See `docs/agent-api.md`.
+
+### Changed
+
+- Creating, editing and deleting monitors now goes through one shared `MonitorEditor` service used by the pages and the API (no behavior change in the UI).
+
 ## [0.11.0] - 2026-10-29
 
 ### Added
