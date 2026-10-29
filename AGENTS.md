@@ -443,7 +443,7 @@ A versioned JSON API under `/api/v1` for agents (e.g. Claude Code) using per-use
   - Merge rule (`RunBucketRollup.Merge`): buckets younger than 23 h are overwritten; older ones only when missing or when the computed `RunCount` is higher, so pruning never shrinks history.
   - Scheduler disabled (`Hawk:Scheduler:Enabled=false`): the recurring job is removed and the jobs return early.
 - Strip: `Services/Monitoring/StatusStrip.cs` builds 96 cells (grey empty, green ok, red failed and full height; others scale with average response time, minimum 25%; heartbeats full height) rendered by `Pages/Shared/_StatusStrip.cshtml` with an `aria-label` summary.
-- Rollback to 0.13.x: delete the `hawk-run-buckets` recurring job in the Hangfire dashboard (the old image cannot load its type).
+- Rollback to 0.13.x: delete the `hawk-run-buckets` recurring job and any enqueued, scheduled (retry) or failed `IRunBucketRollup` jobs in the Hangfire dashboard (the old image cannot load the type).
 
 ## Tower Design
 

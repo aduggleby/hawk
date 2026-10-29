@@ -16,7 +16,7 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ### Added
 
-- 15-minute run rollup (`MonitorRunBuckets`) kept for 95 days independent of run retention, filled every minute by the Hangfire job `hawk-run-buckets` and backfilled from retained runs on startup and after a StatusCake import. Adds an additive schema migration (`AddMonitorRunBuckets`; back up before upgrading). When rolling back to 0.13.x, delete the `hawk-run-buckets` recurring job in the Hangfire dashboard.
+- 15-minute run rollup (`MonitorRunBuckets`) kept for 95 days independent of run retention, filled every minute by the Hangfire job `hawk-run-buckets` and backfilled from retained runs on startup and after a StatusCake import. Adds an additive schema migration (`AddMonitorRunBuckets`; back up before upgrading). When rolling back to 0.13.x, delete the `hawk-run-buckets` recurring job and any enqueued, scheduled or failed `IRunBucketRollup` jobs in the Hangfire dashboard.
 - Agent API: the monitor detail has `uptime` (`last24h`, `last7d`, `last30d`, percent or null).
 
 ## [0.13.0] - 2026-10-29
