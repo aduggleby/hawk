@@ -59,16 +59,22 @@ public static class MonitorGroups
             query = query.Where(m => m.Id != id);
         var existing = await query.Select(m => m.GroupName!).Distinct().ToListAsync(cancellationToken);
 
-        return existing
-            .Where(g => excludeGroup is null || !string.Equals(g, excludeGroup, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(g => g, StringComparer.Ordinal)
-            .FirstOrDefault(g => string.Equals(g, name, StringComparison.OrdinalIgnoreCase)) ?? name;
+        var matches = existing.Where(g =>
+            string.Equals(g, name, StringComparison.OrdinalIgnoreCase) &&
+            (excludeGroup is null || !string.Equals(g, excludeGroup, StringComparison.OrdinalIgnoreCase)));
+        return DisplayName(matches) ?? name;
     }
+
+    /// <summary>
+    /// The display spelling of a group among spellings that are equal ignoring case: the ordinal-first one (so it does not depend on
+    /// database collation or row order). Null when there are no spellings.
+    /// </summary>
+    public static string? DisplayName(IEnumerable<string> spellings) => spellings.Order(StringComparer.Ordinal).FirstOrDefault();
 
     /// <summary>Monitors in <paramref name="group"/>, compared case-insensitively (translates on SQL Server and PostgreSQL).</summary>
     public static IQueryable<MonitorEntity> InGroup(IQueryable<MonitorEntity> monitors, string group)
     {
-        var lower = group.ToLower();
+        var lower = group.ToLowerInvariant();
         return monitors.Where(m => m.GroupName != null && m.GroupName.ToLower() == lower);
     }
 
@@ -92,9 +98,10 @@ public static class MonitorGroups
     {
         var names = await db.Monitors.Where(m => m.GroupName != null).Select(m => m.GroupName!).Distinct().ToListAsync(cancellationToken);
         return names
-            .OrderBy(n => n, StringComparer.Ordinal)
-            .DistinctBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .Select(g => DisplayName(g)!)
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(n => n, StringComparer.Ordinal)
             .ToList();
     }
 }

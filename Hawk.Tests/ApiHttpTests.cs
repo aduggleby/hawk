@@ -731,6 +731,36 @@ public class ApiHttpTests
     }
 
     [Fact]
+    public async Task Group_lookups_reject_nul_and_overlong_names_with_400_keyed_group()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (writeKey, _) = await CreateKeyAsync(app, ApiKeyScope.Write);
+        await SeedAsync(app, db =>
+        {
+            db.Monitors.Add(Grouped("web", "Prod"));
+            return Task.FromResult(0);
+        });
+
+        foreach (var bad in new[] { "a%00b", new string('x', 101) })
+        {
+            using var list = await SendAsync(app, writeKey, HttpMethod.Get, "/api/v1/monitors?group=" + bad);
+            await AssertProblemAsync(list, HttpStatusCode.BadRequest, "validation_failed");
+            Assert.True((await JsonAsync(list)).GetProperty("errors").TryGetProperty("group", out _));
+        }
+
+        foreach (var action in new[] { "pause", "resume", "run", "rename" })
+        {
+            var extra = action == "rename" ? ",\"newName\":\"New\"" : string.Empty;
+            foreach (var group in new[] { "a\\u0000b", new string('x', 101) })
+            {
+                using var response = await SendAsync(app, writeKey, HttpMethod.Post, $"/api/v1/groups/{action}", $"{{\"group\":\"{group}\"{extra}}}");
+                await AssertProblemAsync(response, HttpStatusCode.BadRequest, "validation_failed");
+                Assert.True((await JsonAsync(response)).GetProperty("errors").TryGetProperty("group", out _), action);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Rename_validates_new_name_and_only_rename_accepts_it()
     {
         await using var app = await SecurityTestApplication.CreateAsync();

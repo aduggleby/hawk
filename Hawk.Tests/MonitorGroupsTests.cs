@@ -54,6 +54,49 @@ public sealed class MonitorGroupsTests
         Assert.DoesNotContain(form.Validate(env), r => r.MemberNames.Contains("Group"));
     }
 
+    [Theory]
+    [InlineData("GroupPause")]
+    [InlineData("GroupResume")]
+    [InlineData("GroupRun")]
+    [InlineData("GroupRename")]
+    public async Task Index_group_handlers_reject_a_nul_group_before_any_query(string handler)
+    {
+        // Null services: any query or command would throw, so a flash error proves nothing ran.
+        var opts = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString("n")).Options;
+        await using var db = new ApplicationDbContext(opts);
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        var page = new IndexModel(db, null!, null!, null!)
+        {
+            PageContext = new Microsoft.AspNetCore.Mvc.RazorPages.PageContext { HttpContext = http },
+            TempData = new Microsoft.AspNetCore.Mvc.ViewFeatures.TempDataDictionary(http, new NullTempData()),
+        };
+
+        var result = handler switch
+        {
+            "GroupPause" => await page.OnPostGroupPauseAsync("a\0b", default),
+            "GroupResume" => await page.OnPostGroupResumeAsync("a\0b", default),
+            "GroupRun" => await page.OnPostGroupRunAsync("a\0b", default),
+            _ => await page.OnPostGroupRenameAsync("a\0b", "x", default),
+        };
+
+        Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
+        Assert.Contains("NUL", (string)page.TempData["FlashError"]!);
+    }
+
+    private sealed class NullTempData : Microsoft.AspNetCore.Mvc.ViewFeatures.ITempDataProvider
+    {
+        public IDictionary<string, object> LoadTempData(Microsoft.AspNetCore.Http.HttpContext context) => new Dictionary<string, object>();
+        public void SaveTempData(Microsoft.AspNetCore.Http.HttpContext context, IDictionary<string, object> values) { }
+    }
+
+    [Fact]
+    public void DisplayName_is_the_ordinal_first_spelling()
+    {
+        Assert.Null(MonitorGroups.DisplayName([]));
+        Assert.Equal("SHOP", MonitorGroups.DisplayName(["shop", "SHOP", "Shop"]));
+        Assert.Equal("only", MonitorGroups.DisplayName(["only"]));
+    }
+
     [Fact]
     public async Task Canonicalize_adopts_existing_spelling_and_honours_the_exclusions()
     {
@@ -176,6 +219,26 @@ public sealed class MonitorGroupsPostgresTests(PostgresFixture fixture) : IClass
         var names = await InScopeAsync(p, async (db, _, _) =>
             await MonitorGroups.InGroup(db.Monitors, "sHOP").Select(m => m.Name).ToListAsync());
         Assert.Equal(["a"], names);
+    }
+
+    [SkippableFact]
+    public async Task Rename_to_the_identical_name_changes_nothing_and_keeps_stamps()
+    {
+        var (p, _) = await CreateAsync();
+        await using var _ = p;
+        await AddAsync(p, Form("a", "Shop"));
+        await AddAsync(p, Form("b", "shop"));
+        await AddAsync(p, Form("c", "Shop"));
+        var before = await LoadAsync(p);
+
+        var result = await InScopeAsync(p, (_, _, c) => c.RenameGroupAsync("Shop", " Shop ", CancellationToken.None));
+
+        Assert.Null(result.Error);
+        Assert.Equal(3, result.Renamed);
+        Assert.Equal("Shop", result.NewName);
+        var after = await LoadAsync(p);
+        foreach (var name in new[] { "a", "b", "c" })
+            Assert.Equal(before[name], after[name]);
     }
 
     [SkippableFact]

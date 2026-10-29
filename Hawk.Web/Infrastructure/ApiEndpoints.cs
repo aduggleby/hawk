@@ -125,6 +125,8 @@ public static class ApiEndpoints
         {
             // group= (empty) lists the ungrouped monitors; a name matches case-insensitively.
             var group = MonitorGroups.Normalize(groupFilter.ToString());
+            if (MonitorGroups.Validate(group) is { } groupError)
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", "The request is not valid", errors: Errors("group", groupError));
             query = group is null ? query.Where(m => m.GroupName == null) : MonitorGroups.InGroup(query, group);
         }
 
@@ -148,7 +150,7 @@ public static class ApiEndpoints
         var groups = monitors
             .GroupBy(m => m.GroupName!, StringComparer.OrdinalIgnoreCase)
             .Select(g => new ApiGroupSummary(
-                g.Select(m => m.GroupName!).Min(StringComparer.Ordinal)!,
+                MonitorGroups.DisplayName(g.Select(m => m.GroupName!))!,
                 g.Count(),
                 // The Index rule: the last completed run failed, even when the monitor is also overdue.
                 g.Count(m => status[m.Id].Failure is not null),
@@ -517,6 +519,8 @@ public static class ApiEndpoints
         if (!body.TryGetProperty("group", out var value) || value.ValueKind != JsonValueKind.String ||
             MonitorGroups.Normalize(group = value.GetString()) is null)
             errors["group"] = ["Required: the name of an existing group, as a non-empty string."];
+        else if (MonitorGroups.Validate(group) is { } groupError)
+            errors["group"] = [groupError];
         else
             group = MonitorGroups.Normalize(group);
 

@@ -58,6 +58,11 @@ test('groups: sections, group pause, and batch resume across two groups', async 
   await expect(section(page, groupA).locator('.hawk-badge-warning')).toHaveCount(2);
   await expect(section(page, groupB).locator('.hawk-badge-warning')).toHaveCount(0);
 
+  // Resume only counts paused monitors, so pause group B as well before the cross-group batch resume.
+  await cardB.getByRole('button', { name: /^pause$/i }).click();
+  await expect(page.getByText(new RegExp(`Paused 1 monitor\\(s\\) in ${groupB}`))).toBeVisible();
+  await expect(section(page, groupB).locator('.hawk-badge-warning')).toHaveCount(1);
+
   // Select one monitor in each group: the batch bar appears and Resume posts to the batch handler.
   await section(page, groupA).getByRole('row', { name: new RegExp(a1) }).locator('input[type=checkbox]').check();
   await section(page, groupB).getByRole('row', { name: new RegExp(b1) }).locator('input[type=checkbox]').check();

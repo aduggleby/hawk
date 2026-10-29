@@ -106,6 +106,8 @@ public sealed class MonitorCommands(ApplicationDbContext db, IBackgroundJobClien
             return new GroupRenameResult(0, Error: error);
 
         target = await MonitorGroups.CanonicalizeAsync(db, target, excludeGroup: source, cancellationToken: cancellationToken) ?? target;
+        if (target == source)
+            return new GroupRenameResult(await MonitorGroups.InGroup(db.Monitors, source).CountAsync(cancellationToken), target);
         var stamp = Guid.NewGuid();
         var renamed = await MonitorGroups.InGroup(db.Monitors, source)
             .ExecuteUpdateAsync(s => s

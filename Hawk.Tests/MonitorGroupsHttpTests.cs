@@ -122,6 +122,39 @@ public sealed class MonitorGroupsHttpTests(PostgresFixture fixture) : IClassFixt
     }
 
     [Fact]
+    public async Task Index_batch_controls_live_in_the_batch_form_and_selection_buttons_post_BatchAction()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        await app.LoginAsync();
+        await SeedAsync(app, Mon("one", "Shop"), Mon("two", null));
+
+        var html = await app.Client.GetStringAsync("/Monitors");
+        var formStart = html.IndexOf("id=\"batch-form\"", StringComparison.Ordinal);
+        var formEnd = html.IndexOf("</form>", formStart, StringComparison.Ordinal);
+        Assert.True(formStart >= 0 && formEnd > formStart);
+        var form = html[formStart..formEnd];
+
+        // Every monitor checkbox and the group select-all and group buttons are inside the batch form.
+        Assert.Equal(CountOf(html, "<input class=\"h-4 w-4\" type=\"checkbox\" name=\"SelectedMonitorIds\""), CountOf(form, "<input class=\"h-4 w-4\" type=\"checkbox\" name=\"SelectedMonitorIds\""));
+        Assert.Equal(2, CountOf(form, "<input class=\"h-4 w-4\" type=\"checkbox\" name=\"SelectedMonitorIds\""));
+        Assert.Contains("data-group-select=", form);
+        Assert.Contains("handler=GroupPause", form);
+
+        // The selection bar sits outside the form and its buttons submit it via the form attribute with BatchAction.
+        var bar = html[html.IndexOf("id=\"monitors-actions-selected\"", StringComparison.Ordinal)..];
+        bar = bar[..bar.IndexOf("id=\"monitors-uncheck-all\"", StringComparison.Ordinal)];
+        var buttons = System.Text.RegularExpressions.Regex.Matches(bar, "<button[^>]*>").Select(m => m.Value).ToList();
+        Assert.True(buttons.Count == 3, string.Join("\n", buttons) + "\n---\n" + bar);
+        Assert.All(buttons, b =>
+        {
+            Assert.Contains("form=\"batch-form\"", b);
+            Assert.Contains("name=\"BatchAction\"", b);
+            Assert.DoesNotContain("formaction", b);
+        });
+        Assert.Matches("<form[^>]*handler=Batch[^>]*id=\"batch-form\"|<form[^>]*id=\"batch-form\"[^>]*handler=Batch", html);
+    }
+
+    [Fact]
     public async Task Index_keeps_the_header_of_a_group_whose_members_all_fail()
     {
         await using var app = await SecurityTestApplication.CreateAsync();

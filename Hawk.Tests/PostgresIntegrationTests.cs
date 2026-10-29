@@ -961,7 +961,10 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
             await index.OnGetAsync(CancellationToken.None);
 
             Assert.Equal([failing], index.FailingMonitors.Select(m => m.Id));
-            Assert.Equal(2, index.OtherMonitors.Count);
+            var section = Assert.Single(index.GroupSections);
+            Assert.Null(section.Name);
+            Assert.Equal(3, section.Monitors.Count);
+            Assert.Equal(1, section.FailingCount);
         }
     }
 

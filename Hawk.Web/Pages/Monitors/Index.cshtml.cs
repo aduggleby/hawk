@@ -35,11 +35,6 @@ public class IndexModel(
     public List<MonitorEntity> FailingMonitors { get; private set; } = [];
 
     /// <summary>
-    /// Remaining monitors.
-    /// </summary>
-    public List<MonitorEntity> OtherMonitors { get; private set; } = [];
-
-    /// <summary>
     /// Latest completed run by monitor id.
     /// </summary>
     public Dictionary<Guid, LastCompletedRun> LastRunByMonitor { get; private set; } = [];
@@ -75,14 +70,13 @@ public class IndexModel(
             .ToList();
 
         var failingIds = FailingMonitors.Select(m => m.Id).ToHashSet();
-        OtherMonitors = Monitors.Where(m => !failingIds.Contains(m.Id)).ToList();
 
         // Group case-insensitively; the section is named after the ordinal-first spelling (the canonical one, see MonitorGroups).
         GroupSections = Monitors
             .GroupBy(m => MonitorGroups.Normalize(m.GroupName), StringComparer.OrdinalIgnoreCase)
             .Select(g =>
             {
-                var name = g.Key is null ? null : g.Select(m => m.GroupName!).Order(StringComparer.Ordinal).First();
+                var name = g.Key is null ? null : MonitorGroups.DisplayName(g.Select(m => m.GroupName!));
                 return new GroupSection(name, MonitorGroups.Anchor(name), g.ToList(), g.Count(m => failingIds.Contains(m.Id)));
             })
             .OrderBy(s => s.Name is null ? 1 : 0)
@@ -95,8 +89,8 @@ public class IndexModel(
 
     public async Task<IActionResult> OnPostGroupPauseAsync(string? group, CancellationToken cancellationToken)
     {
-        if (MonitorGroups.Normalize(group) is not { } name)
-            return GroupMissing();
+        if (!TryGroup(group, out var name))
+            return RedirectToPage();
         var updated = await commands.PauseAsync(MonitorGroups.InGroup(db.Monitors, name), cancellationToken);
         TempData["FlashInfo"] = $"Paused {updated} monitor(s) in {name}.";
         return RedirectToPage();
@@ -104,8 +98,8 @@ public class IndexModel(
 
     public async Task<IActionResult> OnPostGroupResumeAsync(string? group, CancellationToken cancellationToken)
     {
-        if (MonitorGroups.Normalize(group) is not { } name)
-            return GroupMissing();
+        if (!TryGroup(group, out var name))
+            return RedirectToPage();
         var updated = await commands.ResumeAsync(MonitorGroups.InGroup(db.Monitors, name), cancellationToken);
         TempData["FlashInfo"] = $"Resumed {updated} monitor(s) in {name}.";
         return RedirectToPage();
@@ -113,8 +107,8 @@ public class IndexModel(
 
     public async Task<IActionResult> OnPostGroupRunAsync(string? group, CancellationToken cancellationToken)
     {
-        if (MonitorGroups.Normalize(group) is not { } name)
-            return GroupMissing();
+        if (!TryGroup(group, out var name))
+            return RedirectToPage();
         var result = await commands.QueueGroupRunAsync(name, cancellationToken);
         TempData["FlashInfo"] = $"Queued {result.Queued} monitor run(s)." +
             (result.AlreadyInFlight > 0 ? $" {result.AlreadyInFlight} already running." : "") +
@@ -124,8 +118,8 @@ public class IndexModel(
 
     public async Task<IActionResult> OnPostGroupRenameAsync(string? group, string? newGroupName, CancellationToken cancellationToken)
     {
-        if (MonitorGroups.Normalize(group) is not { } name)
-            return GroupMissing();
+        if (!TryGroup(group, out var name))
+            return RedirectToPage();
         var result = await commands.RenameGroupAsync(name, newGroupName ?? string.Empty, cancellationToken);
         if (result.Error is not null)
             TempData["FlashError"] = result.Error;
@@ -134,10 +128,14 @@ public class IndexModel(
         return RedirectToPage();
     }
 
-    private IActionResult GroupMissing()
+    /// <summary>Normalizes and validates the posted group; sets a flash error and returns false when it is blank or invalid (no query runs).</summary>
+    private bool TryGroup(string? group, out string name)
     {
-        TempData["FlashError"] = "Group is required.";
-        return RedirectToPage();
+        name = MonitorGroups.Normalize(group) ?? string.Empty;
+        var error = name.Length == 0 ? "Group is required." : MonitorGroups.Validate(name);
+        if (error is not null)
+            TempData["FlashError"] = error;
+        return error is null;
     }
 
     public async Task<IActionResult> OnPostPauseAllAsync(CancellationToken cancellationToken)

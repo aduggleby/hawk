@@ -255,8 +255,11 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
 
         // Group spellings by lower-cased name: existing groups first (ordinal-first spelling wins), then the first valid file entry.
         var groupSpellings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var g in (existingGroups ?? []).OrderBy(g => g, StringComparer.Ordinal))
-            groupSpellings.TryAdd(g, g);
+        foreach (var spellings in (existingGroups ?? []).GroupBy(g => g, StringComparer.OrdinalIgnoreCase))
+        {
+            var display = MonitorGroups.DisplayName(spellings)!;
+            groupSpellings[display] = display;
+        }
 
         foreach (var model in envelope.Monitors)
         {

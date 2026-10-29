@@ -103,7 +103,7 @@ test('heartbeat: ping records OK, a missed ping alerts, the next ping recovers; 
 
   // Clean up so the 5s heartbeat does not keep alerting during later tests.
   await page.goto('/Monitors');
-  await page.getByRole('link', { name }).click();
+  await page.getByRole('link', { name }).first().click();
   await page.getByRole('link', { name: /^edit$/i }).click();
   await page.getByRole('link', { name: /^delete$/i }).click();
   await page.getByRole('button', { name: /^delete$/i }).click();

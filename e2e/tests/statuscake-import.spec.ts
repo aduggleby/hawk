@@ -48,8 +48,8 @@ test('import StatusCake tests and alerts', async ({ page }) => {
   await snap(page, '30-statuscake-import-tests');
 
   await page.goto('/Monitors');
-  await expect(page.getByText('SC OK (sc:2001)')).toBeVisible();
-  await expect(page.getByText('SC Match (sc:2002)')).toBeVisible();
+  await expect(page.getByText('SC OK (sc:2001)').first()).toBeVisible();
+  await expect(page.getByText('SC Match (sc:2002)').first()).toBeVisible();
 
   const alertsExport = JSON.stringify(
     [
@@ -82,6 +82,6 @@ test('import StatusCake tests and alerts', async ({ page }) => {
 
   // Verify imported run appears in monitor details.
   await page.goto('/Monitors');
-  await page.getByRole('link', { name: 'SC OK (sc:2001)' }).click();
+  await page.getByRole('link', { name: 'SC OK (sc:2001)' }).first().click();
   await expect(page.getByText('Imported StatusCake alert')).toBeVisible();
 });
