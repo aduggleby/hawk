@@ -32,3 +32,8 @@
   color: var(--text);
   background: var(--hover);
 }
+
+/* The logo PNG is black; invert it on the dark palette (class-based, follows the theme toggle). */
+.dark .hawk-logo {
+  filter: invert(1);
+}

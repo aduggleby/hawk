@@ -31,12 +31,12 @@
             <div class="flex items-center justify-between gap-4">
                 <div class="flex items-center gap-3">
                     <a class="inline-flex items-center justify-center gap-2 no-underline hawk-topbar-item pr-3 mr-1 border-r border-[color:var(--line)]" asp-area="" asp-page="/Index">
-                        <img src="~/hawk-logo.png" alt="" class="h-4 w-4 shrink-0 align-middle" />
+                        <img src="~/hawk-logo.png" alt="" class="h-4 w-4 shrink-0 align-middle hawk-logo" />
                         <span class="hawk-wordmark">HAWK</span>
                     </a>
-                    <a class="hawk-nav-link" asp-area="" asp-page="/Index">Monitors</a>
+                    <a class="hawk-nav-link hidden sm:inline-flex" asp-area="" asp-page="/Index">Monitors</a>
                 </div>
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2 sm:gap-3">
                     <button id="theme-toggle" type="button" class="hawk-btn hawk-btn-ghost hawk-topbar-item px-2" aria-label="Theme: system" aria-pressed="false" title="Theme: system">
                         <svg data-theme-icon="system" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                             <rect x="4" y="5" width="16" height="11" rx="1.5" stroke-width="1.8" />
@@ -49,7 +49,7 @@
                         <svg data-theme-icon="dark" class="h-4 w-4 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                             <path d="M20.5 14.8A8.6 8.6 0 1 1 9.2 3.5 7 7 0 1 0 20.5 14.8Z" stroke-width="1.8" stroke-linejoin="round" />
                         </svg>
-                        <span data-theme-label class="text-[11px] font-medium tracking-[0.06em] uppercase">Sys</span>
+                        <span data-theme-label class="hidden sm:inline text-[11px] font-medium tracking-[0.06em] uppercase">Sys</span>
                     </button>
                     <button id="mobile-menu-toggle" type="button" class="hawk-btn hawk-btn-ghost hawk-topbar-item sm:hidden" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false">
                         <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -72,7 +72,7 @@
             <div class="flex items-center justify-between px-4 py-4 border-b border-[color:var(--border-primary)]">
                 <a class="no-underline" asp-area="" asp-page="/Index">
                     <span class="inline-flex items-center justify-center gap-2 hawk-topbar-item px-2.5">
-                        <img src="~/hawk-logo.png" alt="" class="h-4 w-4 shrink-0 align-middle" />
+                        <img src="~/hawk-logo.png" alt="" class="h-4 w-4 shrink-0 align-middle hawk-logo" />
                         <span class="hawk-wordmark">HAWK</span>
                     </span>
                 </a>
