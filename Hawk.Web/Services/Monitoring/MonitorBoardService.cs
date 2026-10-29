@@ -79,7 +79,9 @@ public static class BoardHeadline
         if (overdue + pending > 0)
         {
             var ok = active - overdue - pending;
-            var scope = inactive == 0 ? $"{total} monitors" : $"{active} active monitors";
+            var scope = inactive == 0
+                ? $"{total} {(total == 1 ? "monitor" : "monitors")}"
+                : $"{active} active {(active == 1 ? "monitor" : "monitors")}";
             var parts = new List<string>();
             if (overdue > 0)
                 parts.Add($"{overdue} overdue");

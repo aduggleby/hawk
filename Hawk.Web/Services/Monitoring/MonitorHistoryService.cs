@@ -77,7 +77,7 @@ public sealed record MonitorHistory(
     DateTimeOffset? UpSince, bool UpForMoreThanHistory, DateTimeOffset? NewestFailingBucket);
 
 /// <summary>Kind of the details lead.</summary>
-public enum LeadKind { Down, Up, Paused, Disabled, Pending, Waiting }
+public enum LeadKind { Down, Overdue, Up, Paused, Disabled, Pending, Waiting }
 
 /// <summary>
 /// Big status word plus its caption ("since", "first check at"); <see cref="Time"/> follows the caption when set.
@@ -337,12 +337,13 @@ public sealed class MonitorHistoryService(ApplicationDbContext db)
 
         switch (status.Health)
         {
-            case MonitorHealth.Failing or MonitorHealth.Overdue:
-                var overdueSince = heartbeat ? monitor.NextRunAt : monitor.LastRunAt;
-                var since = status.Failure?.FailingSince
-                            ?? (status.Health == MonitorHealth.Overdue ? overdueSince : null)
-                            ?? status.Failure?.LastRunAt;
-                return new StatusLead(LeadKind.Down, "DOWN", since is null ? "" : "since", since);
+            // A failed last run reads DOWN (as on the board); otherwise an overdue monitor reads OVERDUE.
+            case MonitorHealth.Failing or MonitorHealth.Overdue when status.Failure is not null:
+                var since = status.Failure.FailingSince ?? status.Failure.LastRunAt;
+                return new StatusLead(LeadKind.Down, "DOWN", "since", since);
+            case MonitorHealth.Overdue:
+                var due = heartbeat ? monitor.NextRunAt : monitor.LastRunAt;
+                return new StatusLead(LeadKind.Overdue, "OVERDUE", due is null ? "" : heartbeat ? "ping was due by" : "last check at", due);
             case MonitorHealth.Unknown:
                 return heartbeat
                     ? new StatusLead(LeadKind.Waiting, "WAITING", monitor.NextRunAt is null ? "for the first ping" : "first ping due by", monitor.NextRunAt)

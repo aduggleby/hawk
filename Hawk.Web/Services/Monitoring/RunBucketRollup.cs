@@ -5,7 +5,8 @@
 // Why a rollup: run history is pruned (default 90 days, at least 1 day), but the 24 h strip and the 90-day uptime must
 // survive pruning. Every write path runs under the Hangfire distributed lock "hawk:run-buckets", so two workers never
 // insert the same (MonitorId, BucketStart) key; a busy lock skips the minutely refresh because the next one repairs any gap,
-// while the one-shot jobs (recompute, backfill) wait longer and then fail so Hangfire retries them.
+// while the one-shot jobs (recompute, backfill) fail on a busy lock so Hangfire retries them (retry counts are on
+// IRunBucketRollup: Hangfire reads job filters from the enqueued interface type).
 // The write rule (see Merge) lets late or backfilled history fill gaps without ever shrinking stored history.
 // </summary>
 // </file>
@@ -66,8 +67,11 @@ public sealed class RunBucketRollup(
     private static readonly TimeSpan Retention = TimeSpan.FromDays(95);
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>How long the one-shot jobs (recompute, backfill) wait for the lock before failing for a retry.</summary>
-    public TimeSpan OneShotLockTimeout { get; set; } = TimeSpan.FromMinutes(2);
+    /// <summary>
+    /// How long the one-shot jobs (recompute, backfill) wait for the lock before failing for a retry. Short, because a
+    /// waiting job blocks a Hangfire worker shared with the monitor checks; Hangfire's retry backoff spaces the attempts.
+    /// </summary>
+    public TimeSpan OneShotLockTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Start of the 15-minute UTC bucket containing <paramref name="time"/>.
@@ -126,12 +130,10 @@ public sealed class RunBucketRollup(
     }
 
     /// <inheritdoc />
-    [AutomaticRetry(Attempts = 5)]
     public Task RecomputeAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken) =>
         RunLockedAsync(() => RecomputeCoreAsync(from, to, cancellationToken), skipWhenBusy: false);
 
     /// <inheritdoc />
-    [AutomaticRetry(Attempts = 0)]
     public Task RefreshAsync(CancellationToken cancellationToken) =>
         RunLockedAsync(async () =>
         {
@@ -152,7 +154,6 @@ public sealed class RunBucketRollup(
         });
 
     /// <inheritdoc />
-    [AutomaticRetry(Attempts = 5)]
     public Task BackfillAsync(CancellationToken cancellationToken) =>
         RunLockedAsync(() =>
         {

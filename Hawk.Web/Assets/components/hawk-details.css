@@ -25,6 +25,7 @@
 
 .hawk-d-word.up { color: var(--up); }
 .hawk-d-word.down { color: var(--down); }
+.hawk-d-word.warn { color: var(--warn); }
 .hawk-d-word.idle { color: var(--paused); }
 
 .hawk-d-since {

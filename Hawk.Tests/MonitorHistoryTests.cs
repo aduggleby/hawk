@@ -155,10 +155,17 @@ public sealed class MonitorHistoryTests(PostgresFixture fixture)
         var waiting = MonitorHistoryService.Lead(hb, Status(MonitorState.Active, MonitorHealth.Unknown), MonitorHistoryService.Build(hb, [], Now));
         Assert.Equal((LeadKind.Waiting, "WAITING", "first ping due by", (DateTimeOffset?)Now.AddHours(1)), (waiting.Kind, waiting.Word, waiting.Caption, waiting.Time));
 
-        // An unrecorded heartbeat miss is down since its deadline.
+        // An unrecorded heartbeat miss (last run passed) is overdue since its deadline, as on the board.
         hb.NextRunAt = Now.AddMinutes(-5);
         var missed = MonitorHistoryService.Lead(hb, Status(MonitorState.Active, MonitorHealth.Overdue), MonitorHistoryService.Build(hb, [], Now));
-        Assert.Equal((LeadKind.Down, (DateTimeOffset?)Now.AddMinutes(-5)), (missed.Kind, missed.Time));
+        Assert.Equal((LeadKind.Overdue, "OVERDUE", "ping was due by", (DateTimeOffset?)Now.AddMinutes(-5)), (missed.Kind, missed.Word, missed.Caption, missed.Time));
+
+        // Overdue with a failed last run reads DOWN, as the board does.
+        var failedAt = Now.AddHours(-2);
+        var overdueDown = MonitorHistoryService.Lead(hb,
+            Status(MonitorState.Active, MonitorHealth.Overdue, new FailureSummary(failedAt, null, "No ping", 1, failedAt)),
+            MonitorHistoryService.Build(hb, [], Now));
+        Assert.Equal((LeadKind.Down, (DateTimeOffset?)failedAt), (overdueDown.Kind, overdueDown.Time));
     }
 
     // ---- up since ----
