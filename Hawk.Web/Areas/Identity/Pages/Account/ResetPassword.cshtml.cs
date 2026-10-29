@@ -115,11 +115,10 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
                 return RedirectToPage("./ResetPasswordConfirmation");
             }
 
-            var result = await _userManager.ResetPasswordAsync(user, Input.Code, Input.Password);
+            var result = await _apiKeys.ResetPasswordAndRevokeAsync(_userManager, user, Input.Code, Input.Password);
             if (result.Succeeded)
             {
-                // A reset is how a compromised account is recovered, so its API keys stop working.
-                await _apiKeys.RevokeAllAsync(user.Id);
+                // The reset also revoked the user's API keys (a reset is how a compromised account is recovered).
                 return RedirectToPage("./ResetPasswordConfirmation");
             }
 

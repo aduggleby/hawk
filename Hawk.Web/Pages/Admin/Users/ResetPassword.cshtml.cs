@@ -59,7 +59,7 @@ public class ResetPasswordModel(UserManager<IdentityUser> userManager, ApiKeySer
             return NotFound();
 
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
-        var res = await userManager.ResetPasswordAsync(user, token, Input.NewPassword);
+        var res = await apiKeys.ResetPasswordAndRevokeAsync(userManager, user, token, Input.NewPassword);
         if (!res.Succeeded)
         {
             foreach (var e in res.Errors)
@@ -68,9 +68,7 @@ public class ResetPasswordModel(UserManager<IdentityUser> userManager, ApiKeySer
             return Page();
         }
 
-        // A reset is how a compromised account is recovered, so its API keys stop working.
-        await apiKeys.RevokeAllAsync(user.Id, cancellationToken);
-
+        // The reset also revoked the user's API keys (a reset is how a compromised account is recovered).
         return RedirectToPage("/Admin/Users/Index");
     }
 

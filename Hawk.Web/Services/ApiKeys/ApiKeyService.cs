@@ -97,6 +97,33 @@ public sealed partial class ApiKeyService(ApplicationDbContext db)
     }
 
     /// <summary>
+    /// Resets the password with Identity and revokes all of the user's keys atomically: on relational providers both run in one
+    /// transaction on the shared scoped context (UserManager's store uses the same <see cref="ApplicationDbContext"/>), so a failing
+    /// revoke rolls the reset back. Keys are revoked only after a successful reset. Once the reset succeeded the revoke and commit
+    /// ignore request cancellation. EF InMemory (unit tests) has no transactions and runs the plain sequence.
+    /// </summary>
+    public async Task<IdentityResult> ResetPasswordAndRevokeAsync(
+        UserManager<IdentityUser> users, IdentityUser user, string token, string newPassword)
+    {
+        if (!db.Database.IsRelational())
+        {
+            var plain = await users.ResetPasswordAsync(user, token, newPassword);
+            if (plain.Succeeded)
+                await RevokeAllAsync(user.Id, CancellationToken.None);
+            return plain;
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(CancellationToken.None);
+        var result = await users.ResetPasswordAsync(user, token, newPassword);
+        if (!result.Succeeded)
+            return result; // disposing the transaction rolls back anything Identity wrote
+
+        await RevokeAllAsync(user.Id, CancellationToken.None);
+        await transaction.CommitAsync(CancellationToken.None);
+        return result;
+    }
+
+    /// <summary>
     /// Returns the key and its user, or null for a malformed, unknown or revoked key or a missing user.
     /// Lockout is deliberately ignored.
     /// </summary>
