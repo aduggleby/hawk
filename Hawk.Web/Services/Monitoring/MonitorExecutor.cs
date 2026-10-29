@@ -73,7 +73,8 @@ public sealed class MonitorExecutor(
     JobStorage jobStorage,
     AlertRecipientResolver recipientResolver,
     ILogger<MonitorExecutor> logger,
-    IConfiguration config) : IMonitorExecutor
+    IConfiguration config,
+    IBackgroundJobClient? jobs = null) : IMonitorExecutor
 {
     private const int AlertLockTimeoutSeconds = 60;
     private const int HeartbeatMissLockTimeoutSeconds = 10;
@@ -82,6 +83,11 @@ public sealed class MonitorExecutor(
     private const int FailureLogEntryLimit = 20;
 
     private sealed record FailureLogEntry(DateTimeOffset StartedAt, int? StatusCode);
+
+    private readonly AlertDigestOptions digest = AlertDigestOptions.From(config);
+
+    // Set when an alert was queued in this unit of work; the flush is scheduled only after the save that persists it.
+    private bool alertQueued;
 
     public async Task<MonitorExecutionResult?> ExecuteAsync(Guid monitorId, string? reason, CancellationToken cancellationToken, Guid? runId = null)
     {
@@ -234,6 +240,7 @@ public sealed class MonitorExecutor(
                 db.MonitorRuns.Add(run);
             await db.SaveChangesAsync(cancellationToken);
             saved = true;
+            ScheduleQueuedAlertFlush();
         }
         catch (DistributedLockTimeoutException ex)
         {
@@ -417,6 +424,7 @@ public sealed class MonitorExecutor(
             db.MonitorRuns.Add(run);
             await db.SaveChangesAsync(cancellationToken);
             await tx.CommitAsync(cancellationToken);
+            ScheduleQueuedAlertFlush();
 
             await PruneRunHistoryAsync(monitor, cancellationToken);
         }
@@ -513,6 +521,7 @@ public sealed class MonitorExecutor(
                 db.MonitorRuns.Add(run);
                 await db.SaveChangesAsync(cancellationToken);
                 await tx.CommitAsync(cancellationToken);
+                ScheduleQueuedAlertFlush();
 
                 await PruneRunHistoryAsync(monitor, cancellationToken);
                 return PingResult.Recorded;
@@ -710,20 +719,8 @@ public sealed class MonitorExecutor(
             {failureLogHtml}
             """;
 
-        try
-        {
-            await emailSender.SendAsync(from, to, subject, html, cancellationToken);
-            run.AlertSent = true;
-            run.AlertError = null;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to send alert for monitor {MonitorId}", monitor.Id);
-            run.AlertSent = false;
-            run.AlertError = ex.Message;
-            return false;
-        }
+        var summaryStatus = heartbeat ? "NO_PING" : status;
+        return await DeliverAsync(monitor, run, kind, from, to, subject, html, summaryStatus, run.ErrorMessage, cancellationToken);
     }
 
     private static string BuildFailureLogHtml(IReadOnlyList<FailureLogEntry> entries, int consecutiveFailures, bool timesOnly)
@@ -812,6 +809,50 @@ public sealed class MonitorExecutor(
             {lastAlertLine}
             """;
 
+        var summaryStatus = heartbeat ? "PING_RECEIVED" : status;
+        return await DeliverAsync(monitor, run, MonitorAlertKind.Recovered, from, to, subject, html, summaryStatus, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends the alert now (grouping off) or queues it as a <see cref="PendingAlert"/> that is saved together with the run and
+    /// the alert state and later sent alone or in a summary by <see cref="AlertDigestSender"/>. A queued alert counts as delivered
+    /// for the alert state; the outbox retries failed sends.
+    /// </summary>
+    private async Task<bool> DeliverAsync(
+        MonitorEntity monitor,
+        MonitorRun run,
+        MonitorAlertKind kind,
+        string from,
+        string[] to,
+        string subject,
+        string html,
+        string summaryStatus,
+        string? error,
+        CancellationToken cancellationToken)
+    {
+        if (digest.Enabled)
+        {
+            // PostgreSQL text columns reject NUL characters; a NUL here would fail the save of the run and alert state.
+            db.PendingAlerts.Add(new PendingAlert
+            {
+                MonitorId = monitor.Id,
+                RunId = run.Id,
+                Kind = kind.ToString(),
+                MonitorName = Sanitize(monitor.Name, 200),
+                Status = Sanitize(summaryStatus, 100),
+                Error = TrimOrNull(error, 2000),
+                Recipients = AlertDigestSender.RecipientKey(to),
+                Subject = Sanitize(subject, 500),
+                Html = html.Replace('\0', '\uFFFD'),
+                OccurredAt = run.StartedAt,
+                QueuedAt = DateTimeOffset.UtcNow,
+            });
+            alertQueued = true;
+            run.AlertSent = true;
+            run.AlertError = null;
+            return true;
+        }
+
         try
         {
             await emailSender.SendAsync(from, to, subject, html, cancellationToken);
@@ -821,11 +862,35 @@ public sealed class MonitorExecutor(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to send recovery alert for monitor {MonitorId}", monitor.Id);
+            logger.LogWarning(ex, "Failed to send {Kind} alert for monitor {MonitorId}", kind, monitor.Id);
             run.AlertSent = false;
             run.AlertError = ex.Message;
             return false;
         }
+    }
+
+    private void ScheduleQueuedAlertFlush()
+    {
+        if (!alertQueued)
+            return;
+        alertQueued = false;
+        if (jobs is null)
+            return; // the minutely recurring flush picks it up
+        try
+        {
+            AlertDigestSender.ScheduleFlush(jobs, digest.Window);
+        }
+        catch (Exception ex)
+        {
+            // The alert is saved; the recurring flush sends it.
+            logger.LogWarning(ex, "Scheduling the alert digest flush failed for monitor alerts; the recurring flush sends them.");
+        }
+    }
+
+    private static string Sanitize(string value, int maxLength)
+    {
+        value = value.Replace('\0', '\uFFFD');
+        return value.Length <= maxLength ? value : value[..maxLength];
     }
 
     private async Task<string[]> ResolveRecipientsAsync(MonitorEntity monitor, CancellationToken cancellationToken) =>

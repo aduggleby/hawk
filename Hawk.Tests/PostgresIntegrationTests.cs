@@ -227,6 +227,124 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
     }
 
     [SkippableFact]
+    public async Task Grouped_alerts_are_queued_with_the_run_and_sent_as_one_summary()
+    {
+        await using var app = await CreateAppAsync(new Dictionary<string, string?> { ["Hawk:Alerting:DigestWindowSeconds"] = "30" });
+        var emails = new RecordingEmailSender();
+        Guid a, b;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ma = NewMonitor("Alpha", null);
+            var mb = NewMonitor("Beta", null);
+            db.Monitors.AddRange(ma, mb);
+            await db.SaveChangesAsync();
+            (a, b) = (ma.Id, mb.Id);
+        }
+
+        async Task RunAsync(Guid id, HttpStatusCode status)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await NewExecutor(app, scope, emails, null, status).ExecuteAsync(id, "schedule", CancellationToken.None);
+        }
+
+        async Task FlushAsync()
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await new AlertDigestSender(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                emails,
+                app.Services.GetRequiredService<IConfiguration>(),
+                NullLogger<AlertDigestSender>.Instance,
+                app.Services.GetRequiredService<JobStorage>()).FlushAsync(CancellationToken.None);
+        }
+
+        async Task AgeQueuedAsync()
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var past = DateTimeOffset.UtcNow.AddSeconds(-31);
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().PendingAlerts
+                .Where(x => x.SentAt == null)
+                .ExecuteUpdateAsync(x => x.SetProperty(y => y.QueuedAt, past));
+        }
+
+        await RunAsync(a, HttpStatusCode.InternalServerError);
+        await RunAsync(b, HttpStatusCode.InternalServerError);
+        // A second failure must not queue another alert: the queued one counts as delivered for the alert state.
+        await RunAsync(a, HttpStatusCode.InternalServerError);
+
+        Assert.Empty(emails.Sent);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var queued = await db.PendingAlerts.AsNoTracking().OrderBy(x => x.MonitorName).ToListAsync();
+            Assert.Equal(["Alpha", "Beta"], queued.Select(x => x.MonitorName));
+            Assert.All(queued, x => Assert.Equal("alerts@example.com", x.Recipients));
+            Assert.All(queued, x => Assert.Equal(nameof(MonitorAlertKind.Failure), x.Kind));
+            Assert.NotNull((await db.MonitorAlertStates.AsNoTracking().SingleAsync(x => x.MonitorId == a)).LastFailureAlertSentAt);
+            Assert.True((await db.MonitorRuns.AsNoTracking().SingleAsync(r => r.Id == queued[0].RunId)).AlertSent);
+        }
+
+        // Inside the quiet window nothing is sent.
+        await FlushAsync();
+        Assert.Empty(emails.Sent);
+
+        await AgeQueuedAsync();
+        await FlushAsync();
+        var summary = Assert.Single(emails.Sent);
+        Assert.Equal("[ALERT SUMMARY] 2 failed", summary.Subject);
+        Assert.Contains("Alpha", summary.Html);
+        Assert.Contains("Beta", summary.Html);
+
+        // A flush with nothing due sends nothing more.
+        await FlushAsync();
+        Assert.Single(emails.Sent);
+
+        // A single recovery is sent as its normal email.
+        await RunAsync(a, HttpStatusCode.OK);
+        await AgeQueuedAsync();
+        await FlushAsync();
+        Assert.Equal(2, emails.Sent.Count);
+        Assert.StartsWith("[ALERT RECOVERED] Alpha", emails.Sent[1].Subject);
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var rows = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().PendingAlerts.AsNoTracking().ToListAsync();
+            Assert.All(rows, x => Assert.NotNull(x.SentAt));
+            Assert.Equal([1, 2, 2], rows.Select(x => x.SentInBatchOf!.Value).Order());
+        }
+    }
+
+    [SkippableFact]
+    public async Task Grouped_heartbeat_miss_and_ping_recovery_are_queued_not_sent()
+    {
+        await using var app = await CreateAppAsync(new Dictionary<string, string?> { ["Hawk:Alerting:DigestWindowSeconds"] = "30" });
+        var emails = new RecordingEmailSender();
+        var (id, token) = await AddHeartbeatAsync(app);
+
+        await SetNextRunAsync(app, id, DateTimeOffset.UtcNow.AddSeconds(-1));
+        await MissAsync(app, id, emails);
+        Assert.Equal((200, "OK"), await PingAsync(app, token, emails));
+
+        // The ping request sends no email; both alerts were saved in their own transactions.
+        Assert.Empty(emails.Sent);
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var queued = await db.PendingAlerts.AsNoTracking().OrderBy(x => x.OccurredAt).ToListAsync();
+        Assert.Equal([nameof(MonitorAlertKind.Failure), nameof(MonitorAlertKind.Recovered)], queued.Select(x => x.Kind));
+        Assert.Equal(["NO_PING", "PING_RECEIVED"], queued.Select(x => x.Status));
+        Assert.All(queued, x => Assert.Null(x.SentAt));
+        var runs = await RunsAsync(app, id);
+        Assert.All(queued, x => Assert.Contains(runs, r => r.Id == x.RunId && r.AlertSent));
+
+        // Both events of the flap end up in one summary.
+        var (subject, html) = AlertDigestSender.Compose(queued);
+        Assert.Equal("[ALERT SUMMARY] 1 failed, 1 recovered", subject);
+        Assert.Contains("Heartbeat missed", html);
+        Assert.Contains("Heartbeat recovered", html);
+    }
+
+    [SkippableFact]
     public async Task Alert_lock_times_out_while_held_and_alert_state_stamp_changes_only_with_state()
     {
         await using var app = await CreateAppAsync();
@@ -1354,7 +1472,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
         public ValueTask DisposeAsync() => Services.DisposeAsync();
     }
 
-    private async Task<TestApp> CreateAppAsync()
+    private async Task<TestApp> CreateAppAsync(IReadOnlyDictionary<string, string?>? extraConfig = null)
     {
         // HAWK_REQUIRE_POSTGRES_TESTS=1 (CI/release checks): a missing Docker is a failure, not a skip.
         if (fixture.UnavailableReason is not null && Environment.GetEnvironmentVariable("HAWK_REQUIRE_POSTGRES_TESTS") == "1")
@@ -1367,7 +1485,10 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
             {
                 ["Hawk:Email:Enabled"] = "true",
                 ["Hawk:Email:From"] = "Hawk <hawk@localhost>",
+                // Most tests assert the immediate email; grouped alerts are covered by their own tests.
+                ["Hawk:Alerting:DigestWindowSeconds"] = "0",
             })
+            .AddInMemoryCollection(extraConfig ?? new Dictionary<string, string?>())
             .Build();
 
         // Same registrations as Program.cs for the database, Identity and Hangfire storage.

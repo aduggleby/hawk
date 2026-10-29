@@ -108,7 +108,7 @@ For runs that are still `queued` or `running`, `finishedAt`, `durationMs`, `succ
 
 ### GET /api/v1/monitors/{id}/runs/{runId} (read)
 
-One run with diagnostics: the summary fields plus `requestUrl`, `requestMethod`, `requestContentType`, `requestTimeoutMs`, `requestHeaders`, `requestBodySnippet`, `responseHeaders`, `responseContentType`, `responseContentLength`, `responseSnippet`, `matchResults`, `alertSent`, `alertError`. Returns 404 if the run belongs to a different monitor.
+One run with diagnostics: the summary fields plus `requestUrl`, `requestMethod`, `requestContentType`, `requestTimeoutMs`, `requestHeaders`, `requestBodySnippet`, `responseHeaders`, `responseContentType`, `responseContentLength`, `responseSnippet`, `matchResults`, `alertSent` (true once the alert email was sent or queued for a grouped email), `alertError`. Returns 404 if the run belongs to a different monitor.
 
 ### POST /api/v1/monitors (write)
 

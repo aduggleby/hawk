@@ -113,7 +113,7 @@
                 <dt>@(isHeartbeat ? "Response" : "HTTP status")</dt>
                 <dd>@(Model.Run.StatusCode?.ToString() ?? "NO_RESPONSE")</dd>
                 <dt>Alert</dt>
-                <dd>@(Model.Run.AlertSent ? "sent" : (Model.Run.AlertError ?? "not sent"))</dd>
+                <dd>@Model.AlertStatus</dd>
                 <dt>Error</dt>
                 <dd>@(string.IsNullOrWhiteSpace(Model.Run.ErrorMessage) ? "-" : Model.Run.ErrorMessage)</dd>
             </dl>

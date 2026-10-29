@@ -164,6 +164,7 @@ builder.Services.AddScoped<IMonitorRunner, MonitorRunner>();
 builder.Services.AddScoped<IMonitorExecutor, MonitorExecutor>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
 builder.Services.AddScoped<IRunBucketRollup, RunBucketRollup>();
+builder.Services.AddScoped<IAlertDigestSender, AlertDigestSender>();
 builder.Services.AddScoped<MonitorStatusService>();
 builder.Services.AddScoped<MonitorHistoryService>();
 builder.Services.AddScoped<MonitorBoardService>();
@@ -214,6 +215,9 @@ await using (var scope = app.Services.CreateAsyncScope())
         scope.ServiceProvider.GetRequiredService<IRecurringJobManager>(),
         scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>(),
         app.Configuration.GetValue("Hawk:Scheduler:Enabled", true));
+
+    // Grouped alert emails: minutely flush of queued alerts (retries and safety net for the per-alert scheduled flush).
+    AlertDigestSender.EnsureStarted(scope.ServiceProvider.GetRequiredService<IRecurringJobManager>());
 }
 
 // Configure the HTTP request pipeline.

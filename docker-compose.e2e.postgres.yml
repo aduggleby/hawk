@@ -47,6 +47,8 @@ services:
       Hawk__SeedAdmin__Password: "Hawk!2026-Admin#1"
       Hawk__Security__LoginRequestsPerMinute: "100"
       Hawk__Scheduler__Enabled: "true"
+      # E2E asserts each alert email immediately; grouping is covered by unit/integration tests.
+      Hawk__Alerting__DigestWindowSeconds: "0"
       Hawk__Scheduler__TickSeconds: "1"
       Hawk__Email__Enabled: "true"
       Hawk__Email__From: "Hawk <hawk@localhost>"

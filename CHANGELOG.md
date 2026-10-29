@@ -6,6 +6,13 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-29
+
+### Added
+
+- Grouped alert emails: failure, reminder and recovery alerts are queued and sent once no new alert for the same recipients arrived for 30 seconds (at the latest 2 minutes after the first). A single alert is sent as before; two or more arrive as one `[ALERT SUMMARY]` email listing every event in time order (a monitor that failed and recovered in the window shows both) followed by each alert's details. Configure with `Hawk__Alerting__DigestWindowSeconds` (default 30, `0` = send every alert immediately as before) and `Hawk__Alerting__DigestMaxDelaySeconds` (default 120). Queued alerts survive restarts; failed sends are retried every minute and given up after 24 hours. Run diagnostics show whether the alert is queued, sent (alone or in a summary) or failed.
+- Adds an additive schema migration (`AddPendingAlerts`; back up before upgrading). When rolling back to 0.14.x, delete the `hawk-alert-digest` recurring job and any scheduled `IAlertDigestSender` jobs in the Hangfire dashboard; alerts still queued at that moment are not sent.
+
 ## [0.14.0] - 2026-10-29
 
 ### Changed

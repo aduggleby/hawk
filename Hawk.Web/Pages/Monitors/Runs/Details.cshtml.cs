@@ -5,6 +5,7 @@
 // </file>
 
 using Hawk.Web.Data;
+using Hawk.Web.Data.Alerting;
 using Hawk.Web.Data.Monitoring;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -28,6 +29,25 @@ public sealed class DetailsModel(ApplicationDbContext db) : PageModel
     /// Selected run.
     /// </summary>
     public MonitorRun? Run { get; private set; }
+
+    /// <summary>
+    /// Queued alert email of this run (grouped alert emails), if any.
+    /// </summary>
+    public PendingAlert? QueuedAlert { get; private set; }
+
+    /// <summary>
+    /// Alert status line: queued / sent (alone or in a summary) / failed, or the run's own alert fields.
+    /// </summary>
+    public string AlertStatus => QueuedAlert switch
+    {
+        { SentAt: { } sentAt, SentInBatchOf: > 1 } => $"sent {sentAt.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC in a summary of {QueuedAlert.SentInBatchOf} alerts",
+        { SentAt: { } sentAt } => $"sent {sentAt.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC",
+        { FailedAt: not null } => $"failed: {QueuedAlert.LastError}",
+        { LastError: { } error } => $"queued (send failed {QueuedAlert.Attempts}x, retrying: {error})",
+        not null => "queued for a grouped email",
+        null when Run is null => "-",
+        null => Run.AlertSent ? "sent" : (Run.AlertError ?? "not sent"),
+    };
 
     /// <summary>
     /// Formats raw JSON into indented JSON for diagnostics display.
@@ -64,6 +84,10 @@ public sealed class DetailsModel(ApplicationDbContext db) : PageModel
             .FirstOrDefaultAsync(r => r.Id == runId && r.MonitorId == monitorId, cancellationToken);
         if (Run is null)
             return NotFound();
+
+        QueuedAlert = await db.PendingAlerts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.RunId == runId, cancellationToken);
 
         return Page();
     }

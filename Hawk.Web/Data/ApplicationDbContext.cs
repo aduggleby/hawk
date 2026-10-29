@@ -75,6 +75,11 @@ public class ApplicationDbContext : IdentityDbContext
     public DbSet<MonitorAlertState> MonitorAlertStates => Set<MonitorAlertState>();
 
     /// <summary>
+    /// Alert email outbox (grouped into summaries by AlertDigestSender).
+    /// </summary>
+    public DbSet<PendingAlert> PendingAlerts => Set<PendingAlert>();
+
+    /// <summary>
     /// Per-user HTTP settings for URL checks (e.g., User-Agent override).
     /// </summary>
     public DbSet<UserUrlCheckSettings> UserUrlCheckSettings => Set<UserUrlCheckSettings>();
@@ -133,6 +138,14 @@ public class ApplicationDbContext : IdentityDbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             b.HasIndex(x => x.PendingRecoveryAlert);
+        });
+
+        builder.Entity<PendingAlert>(b =>
+        {
+            // The flush selects queued rows (SentAt and FailedAt null) and deletes old ones by QueuedAt.
+            b.HasIndex(x => new { x.SentAt, x.FailedAt });
+            b.HasIndex(x => x.QueuedAt);
+            b.HasIndex(x => x.RunId);
         });
 
         builder.Entity<UserUrlCheckSettings>(b =>

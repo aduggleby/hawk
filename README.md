@@ -342,6 +342,7 @@ Each monitor has an `AlertAfterConsecutiveFailures` setting (1–20, default 1).
 
 - **Failure alert** — sent when consecutive failures reach the configured threshold.
 - **Failure reminder** — re-sent periodically while the monitor remains failing (default every 24 hours). Configure via `Hawk__Alerting__RepeatFailureAlertEveryHours` (min 1h, max 720h).
+- **Grouping** — alerts are held until no new alert for the same recipients arrived for 30 seconds (at most 2 minutes), then sent as one email: a single alert as its normal email, several as one `[ALERT SUMMARY]`. Configure via `Hawk__Alerting__DigestWindowSeconds` (default 30, 0-600; `0` sends every alert immediately) and `Hawk__Alerting__DigestMaxDelaySeconds` (default 120, up to 3600).
 - **Recovery alert** — sent when a monitor returns to success after an alerted failure incident. If the recovery email fails to deliver, Hawk retries on subsequent successful runs.
 
 ### Alert Recipient Resolution
