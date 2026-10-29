@@ -15,12 +15,20 @@ Extends the agent API (`docs/plans/2026-10-29-0654-feat-agent-api-plan.md`, ship
 - R7. The body is parsed by the handler (16 KB cap, `application/json` only, unknown fields return 400), as in 0.11.0. Field names match the monitor JSON export: `name`, `type`, `url`, `method`, `enabled`, `timeoutSeconds`, `intervalSeconds`, `heartbeatGraceSeconds`, `alertAfterConsecutiveFailures`, `alertEmailOverride`, `allowedStatusCodes`, `runRetentionDays`, `contentType`, `body`, `headers[{name,value}]` and `matchRules[{mode,pattern}]`. `heartbeatToken`, `ownerEmail` and `isPaused` are rejected with 400. The server issues tokens, the caller is the owner, and pause and resume have their own endpoints.
 - R8. Write handlers log the user id, key id, monitor id and action. Delete also logs the monitor name, at Warning level.
 
+- R9. Each monitor has a `FollowRedirects` setting, default `true`, which keeps today's behavior. When it is `false`, the check does not follow redirects and evaluates the 3xx response itself. A 3xx counts as success only when it is listed in `allowedStatusCodes` (2xx always succeeds). Example: `followRedirects: false` with `allowedStatusCodes: "301"` asserts a permanent redirect. The response's `Location` header shows in run diagnostics, as all response headers already do.
+- R10. `FollowRedirects` is available wherever monitor configuration is:
+  - the Create and Edit pages (a checkbox in advanced settings, HTTP only, with Create/Edit parity) and the Details page;
+  - the API create, edit and detail (`followRedirects`);
+  - the JSON export and import (`followRedirects`). The format stays version 3. A missing field means `true`, so older files and older Hawk versions keep working.
+- R11. StatusCake import and seeded monitors use `true`. Heartbeats ignore the setting and store `true`.
+
 ### Acceptance examples
 
 - AE1. A `POST` with `{name, url, intervalSeconds: 60}` returns 201. Defaults match the Create form: `GET`, enabled, timeout and alert threshold from the form defaults. The list then contains the monitor with `ownedByCaller: true`.
 - AE2. A heartbeat `POST` returns a `pingUrl`. Calling it records a ping. A `GET` on the detail never contains the token.
 - AE3. `PATCH {"intervalSeconds": 300}` on a heartbeat moves the deadline. `PATCH {"name": "x"}` does not.
 - AE4. A `PATCH` with a stale `If-Match` returns 412 and changes nothing. A `PATCH` with `{"type": "heartbeat"}` on an HTTP monitor returns 400.
+- AE6. An HTTP monitor with `followRedirects: false` and `allowedStatusCodes: "301"` that checks a mock endpoint returning 301 passes. The same endpoint with `followRedirects: true` follows the redirect, and the result depends on the target.
 - AE5. `DELETE` returns 204. A later `GET` returns 404, and the monitor's runs are gone.
 
 ### Scope boundaries
@@ -39,6 +47,7 @@ Extends the agent API (`docs/plans/2026-10-29-0654-feat-agent-api-plan.md`, ship
 
 - U1. Add `MonitorEditor` and switch the pages to it. Tests: page parity (existing Create/Edit/Delete/Heartbeat tests stay green) and the service on Postgres.
 - U2. Add the API endpoints, models, docs, the `GET /api/v1` endpoint list, tests (InMemory for validation and errors, Postgres for AE1–AE5) and an e2e spec extension.
+- U4. Add `FollowRedirects`: the model plus a migration in both sets, the `urlchecks-noredirect` named HttpClient (`AllowAutoRedirect = false`), `UrlCheckRequest`, `MonitorExecutor`, the form, pages, JSON port, API, a mock-server `/redirect` endpoint, and tests (unit, Postgres, e2e).
 - U3. Version 0.12.0, CHANGELOG, AGENTS.md "Agent API" section.
 
 ## Verification Contract
