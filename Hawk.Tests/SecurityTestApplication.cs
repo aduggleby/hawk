@@ -74,6 +74,7 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
         builder.Services.AddScoped<MonitorStatusService>();
         builder.Services.AddScoped<MonitorCommands>();
         builder.Services.AddScoped<AccountAlertSettings>();
+        builder.Services.AddScoped<AlertRecipientResolver>();
         builder.Services.AddRazorPages(options =>
         {
             options.Conventions.AuthorizeFolder("/");
@@ -97,6 +98,7 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
         application.UseAuthentication();
         application.UseAuthorization();
         application.MapRazorPages();
+        application.MapHawkApi();
         application.MapGet("/test/secure", () => Results.Ok("authenticated")).RequireAuthorization();
         application.MapGet("/test/admin", () => Results.Ok("admin")).RequireAuthorization("AdminOnly");
         application.MapGet("/api/v1/_test/read", (HttpContext http) => Results.Ok(new

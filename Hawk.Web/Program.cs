@@ -270,6 +270,7 @@ app.MapHealthChecks("/live", new HealthCheckOptions { Predicate = _ => false }).
 app.MapHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains(DatabaseHealthCheck.ReadyTag) }).AllowAnonymous();
 
 app.MapHawkHeartbeats();
+app.MapHawkApi();
 
 app.MapStaticAssets();
 app.MapRazorPages()

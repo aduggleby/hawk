@@ -17,21 +17,25 @@ public static class ApiErrors
     /// <summary>
     /// Writes an RFC 9457 problem document with a stable <c>code</c> extension. Does nothing if the response has started.
     /// </summary>
-    public static async Task WriteProblemAsync(HttpContext context, int status, string code, string title, string? detail = null)
+    public static async Task WriteProblemAsync(HttpContext context, int status, string code, string title, string? detail = null,
+        IReadOnlyDictionary<string, string[]>? errors = null)
     {
         if (context.Response.HasStarted) return;
 
         context.Response.StatusCode = status;
         context.Response.Headers.CacheControl = "no-store";
         context.Response.ContentType = "application/problem+json";
-        await context.Response.WriteAsJsonAsync(new Dictionary<string, object?>
+        var problem = new Dictionary<string, object?>
         {
             ["type"] = "about:blank",
             ["title"] = title,
             ["status"] = status,
             ["detail"] = detail,
             ["code"] = code,
-        }, (System.Text.Json.JsonSerializerOptions?)null, "application/problem+json");
+        };
+        if (errors is not null)
+            problem["errors"] = errors;
+        await context.Response.WriteAsJsonAsync(problem, (System.Text.Json.JsonSerializerOptions?)null, "application/problem+json");
     }
 
     /// <summary>
