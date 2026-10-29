@@ -58,6 +58,7 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
         builder.Services.AddScoped<Hawk.Web.Services.ApiKeys.ApiKeyService>();
         builder.Services.AddHawkApplicationCookie(builder.Configuration);
         builder.Services.AddHawkAuthAbuseProtection(builder.Configuration);
+        builder.Services.AddHawkApiAuthentication();
         builder.Services.AddSingleton<CookieTestClock>();
         builder.Services.AddSingleton<TimeProvider>(services => services.GetRequiredService<CookieTestClock>());
         builder.Services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
@@ -84,12 +85,30 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
         var application = builder.Build();
         application.UseExceptionHandler("/Error");
         application.UseHawkAuthAbuseProtection();
+        application.UseHawkApiErrors();
         application.UseRouting();
+        // Test-only: simulates a database failure during key lookup by disposing the request's DbContext.
+        application.Use((context, next) =>
+        {
+            if (context.Request.Headers.ContainsKey("X-Test-Break-Db"))
+                context.RequestServices.GetRequiredService<ApplicationDbContext>().Dispose();
+            return next();
+        });
         application.UseAuthentication();
         application.UseAuthorization();
         application.MapRazorPages();
         application.MapGet("/test/secure", () => Results.Ok("authenticated")).RequireAuthorization();
         application.MapGet("/test/admin", () => Results.Ok("admin")).RequireAuthorization("AdminOnly");
+        application.MapGet("/api/v1/_test/read", (HttpContext http) => Results.Ok(new
+        {
+            userId = http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+            keyId = http.User.FindFirst("hawk:key_id")?.Value,
+            scope = http.User.FindFirst("hawk:scope")?.Value,
+            roles = http.User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value).ToArray(),
+            claimTypes = http.User.Claims.Select(c => c.Type).ToArray()
+        })).RequireAuthorization("ApiRead");
+        application.MapPost("/api/v1/_test/write", () => Results.Ok("written")).RequireAuthorization("ApiWrite");
+        application.MapGet("/api/v1/_test/throw", () => ThrowPrivateException()).RequireAuthorization("ApiRead");
         application.MapGet("/test/error", () => ThrowPrivateException());
         await application.StartAsync();
 

@@ -112,6 +112,7 @@ if (!string.IsNullOrWhiteSpace(dpKeysPath) || runningInContainer)
 builder.Services.AddHawkIdentity(builder.Configuration);
 builder.Services.AddHawkApplicationCookie(builder.Configuration);
 builder.Services.AddHawkAuthAbuseProtection(builder.Configuration);
+builder.Services.AddHawkApiAuthentication();
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -250,6 +251,8 @@ app.Use(async (context, next) =>
         throw;
     }
 });
+
+app.UseHawkApiErrors();
 
 app.UseRouting();
 

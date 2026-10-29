@@ -32,6 +32,9 @@ public sealed partial class ApiKeyService(ApplicationDbContext db)
     /// <summary>Minimum time between <c>LastUsedAt</c> writes for one key.</summary>
     public static readonly TimeSpan TouchInterval = TimeSpan.FromMinutes(5);
 
+    /// <summary>True when <paramref name="key"/> has the shape of an issued key (no database access).</summary>
+    public static bool IsWellFormed(string key) => KeyFormat().IsMatch(key);
+
     [GeneratedRegex("^hawk_[A-Za-z0-9_-]{43}$")]
     private static partial Regex KeyFormat();
 
@@ -131,5 +134,5 @@ public sealed partial class ApiKeyService(ApplicationDbContext db)
         }
     }
 
-    private static string Hash(string key) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+    internal static string Hash(string key) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
 }

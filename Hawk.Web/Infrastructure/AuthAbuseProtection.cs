@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
+using Hawk.Web.Services.ApiKeys;
 using Hawk.Web.Services.Monitoring;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -14,6 +15,8 @@ public sealed class HawkSecurityOptions
     public int EmailCooldownMinutes { get; init; } = 1;
     public int PingRequestsPerMinute { get; init; } = 30;
     public int PingRequestsPerMinutePerIp { get; init; } = 300;
+    public int ApiRequestsPerMinute { get; init; } = 120;
+    public int ApiRequestsPerMinutePerIp { get; init; } = 600;
 
     public static HawkSecurityOptions Read(IConfiguration? configuration)
     {
@@ -26,7 +29,9 @@ public sealed class HawkSecurityOptions
             LockoutMinutes = ReadBounded(section, nameof(LockoutMinutes), 5, 1, 60),
             EmailCooldownMinutes = ReadBounded(section, nameof(EmailCooldownMinutes), 1, 1, 60),
             PingRequestsPerMinute = ReadBounded(section, nameof(PingRequestsPerMinute), 30, 1, 600),
-            PingRequestsPerMinutePerIp = ReadBounded(section, nameof(PingRequestsPerMinutePerIp), 300, 1, 6000)
+            PingRequestsPerMinutePerIp = ReadBounded(section, nameof(PingRequestsPerMinutePerIp), 300, 1, 6000),
+            ApiRequestsPerMinute = ReadBounded(section, nameof(ApiRequestsPerMinute), 120, 1, 6000),
+            ApiRequestsPerMinutePerIp = ReadBounded(section, nameof(ApiRequestsPerMinutePerIp), 600, 1, 60000)
         };
     }
 
@@ -45,6 +50,7 @@ public static class AuthAbuseProtection
     private static readonly TimeSpan LoginWindow = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan EmailWindow = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan PingWindow = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan ApiWindow = TimeSpan.FromMinutes(1);
 
     public static IServiceCollection AddHawkAuthAbuseProtection(this IServiceCollection services, IConfiguration configuration)
     {
@@ -118,20 +124,57 @@ public static class AuthAbuseProtection
                         AutoReplenishment = true
                     });
             });
-            options.GlobalLimiter = PartitionedRateLimiter.CreateChained(authLimiter, pingIpLimiter, pingTokenLimiter);
 
-            options.OnRejected = (context, _) =>
+            // API: one budget per client IP for any /api/* request, then one per well-formed key (chained IP first, as for pings).
+            // The key partition is the SHA-256 of the presented key, never the key itself.
+            var apiIpLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            {
+                if (!ApiErrors.IsApiPath(context.Request.Path))
+                    return RateLimitPartition.GetNoLimiter("other");
+
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    $"api-ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = settings.ApiRequestsPerMinutePerIp,
+                        Window = ApiWindow,
+                        QueueLimit = 0,
+                        AutoReplenishment = true
+                    });
+            });
+            var apiKeyLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            {
+                if (!ApiErrors.IsApiPath(context.Request.Path)
+                    || !ApiKeyAuthentication.TryReadKey(context.Request, out var key)
+                    || !ApiKeyService.IsWellFormed(key))
+                    return RateLimitPartition.GetNoLimiter("other");
+
+                return RateLimitPartition.GetFixedWindowLimiter($"api-key:{ApiKeyService.Hash(key)}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = settings.ApiRequestsPerMinute,
+                    Window = ApiWindow,
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                });
+            });
+            options.GlobalLimiter = PartitionedRateLimiter.CreateChained(authLimiter, pingIpLimiter, pingTokenLimiter, apiIpLimiter, apiKeyLimiter);
+
+            options.OnRejected = async (context, _) =>
             {
                 var response = context.HttpContext.Response;
                 response.StatusCode = StatusCodes.Status429TooManyRequests;
                 var requestPath = context.HttpContext.Request.Path.Value;
-                var fallback = (requestPath?.StartsWith(HeartbeatEndpoints.PathPrefix, StringComparison.OrdinalIgnoreCase) ?? false) ? PingWindow
+                var isApi = ApiErrors.IsApiPath(context.HttpContext.Request.Path);
+                var fallback = isApi ? ApiWindow
+                    : (requestPath?.StartsWith(HeartbeatEndpoints.PathPrefix, StringComparison.OrdinalIgnoreCase) ?? false) ? PingWindow
                     : string.Equals(requestPath?.TrimEnd('/'), "/Identity/Account/Login", StringComparison.OrdinalIgnoreCase) ? LoginWindow : EmailWindow;
                 var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan remaining)
                     ? remaining : fallback;
                 response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))
                     .ToString(CultureInfo.InvariantCulture);
-                return ValueTask.CompletedTask;
+                if (isApi)
+                    await ApiErrors.WriteProblemAsync(context.HttpContext, StatusCodes.Status429TooManyRequests, "rate_limited",
+                        "Too many requests", "Retry after the number of seconds in the Retry-After header.");
             };
         });
         return services;

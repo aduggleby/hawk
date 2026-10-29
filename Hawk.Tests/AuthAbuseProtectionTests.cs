@@ -96,6 +96,51 @@ public class AuthAbuseProtectionTests
     }
 
     [Fact]
+    public async Task Api_requests_are_limited_per_key_and_other_keys_on_the_same_ip_pass()
+    {
+        await using var app = await CreateAppAsync(new Dictionary<string, string?>
+        {
+            ["Hawk:Security:ApiRequestsPerMinute"] = "2",
+            ["Hawk:Security:ApiRequestsPerMinutePerIp"] = "100"
+        });
+        using var client = app.GetTestClient();
+        var keyA = "Bearer hawk_" + new string('a', 43);
+        var keyB = "Bearer hawk_" + new string('b', 43);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/api/v1/monitors", "198.51.100.1", keyA)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Post, "/api/v1/monitors/x/pause", "198.51.100.1", keyA)).StatusCode);
+        using var rejected = await Send(client, HttpMethod.Get, "/api/v1", "198.51.100.1", keyA);
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.Equal("application/problem+json", rejected.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("\"rate_limited\"", await rejected.Content.ReadAsStringAsync());
+        Assert.True(int.TryParse(rejected.Headers.GetValues("Retry-After").Single(), out var seconds) && seconds is > 0 and <= 60);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/api/v1", "198.51.100.1", keyB)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/ready", "198.51.100.1", keyA)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Api_floods_of_random_or_malformed_keys_are_limited_per_client_ip()
+    {
+        await using var app = await CreateAppAsync(new Dictionary<string, string?>
+        {
+            ["Hawk:Security:ApiRequestsPerMinute"] = "100",
+            ["Hawk:Security:ApiRequestsPerMinutePerIp"] = "3"
+        });
+        using var client = app.GetTestClient();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/api/v1", "203.0.113.9", "Bearer hawk_" + new string('a', 43))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/api/v1", "203.0.113.9", "Bearer hawk_" + new string('b', 43))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/api/unknown", "203.0.113.9", "Bearer garbage")).StatusCode);
+        using var rejected = await Send(client, HttpMethod.Get, "/api/v1", "203.0.113.9", "Bearer hawk_" + new string('c', 43));
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.True(rejected.Headers.Contains("Retry-After"));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/api/v1", "203.0.113.10", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(client, HttpMethod.Get, "/ready", "203.0.113.9")).StatusCode);
+    }
+
+    [Fact]
     public void Account_cooldown_is_shared_bounded_and_expires()
     {
         var clock = new ManualTimeProvider();
@@ -124,6 +169,11 @@ public class AuthAbuseProtectionTests
     [InlineData("PingRequestsPerMinute", "601")]
     [InlineData("PingRequestsPerMinutePerIp", "6001")]
     [InlineData("PingRequestsPerMinutePerIp", "x")]
+    [InlineData("ApiRequestsPerMinute", "0")]
+    [InlineData("ApiRequestsPerMinute", "6001")]
+    [InlineData("ApiRequestsPerMinutePerIp", "0")]
+    [InlineData("ApiRequestsPerMinutePerIp", "60001")]
+    [InlineData("ApiRequestsPerMinutePerIp", "x")]
     public void Security_settings_reject_out_of_bounds_values(string key, string value)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -164,10 +214,11 @@ public class AuthAbuseProtectionTests
         return app;
     }
 
-    private static async Task<HttpResponseMessage> Send(HttpClient client, HttpMethod method, string path, string ip)
+    private static async Task<HttpResponseMessage> Send(HttpClient client, HttpMethod method, string path, string ip, string? authorization = null)
     {
         using var request = new HttpRequestMessage(method, path);
         request.Headers.TryAddWithoutValidation("X-Forwarded-For", ip);
+        if (authorization is not null) request.Headers.TryAddWithoutValidation("Authorization", authorization);
         return await client.SendAsync(request);
     }
 
