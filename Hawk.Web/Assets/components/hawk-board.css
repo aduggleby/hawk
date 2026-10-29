@@ -109,6 +109,20 @@
   color: var(--muted);
 }
 
+/* Something is down: the headline carries the status. */
+.hawk-board-headline.is-down {
+  color: var(--text);
+}
+
+.hawk-board-headline.is-down::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  background: var(--down);
+}
+
 /* Attention */
 .hawk-attention {
   margin-bottom: 18px;
@@ -223,11 +237,23 @@
   font-weight: 600;
 }
 
-.hawk-bgroup-actions {
+.hawk-bgroup-head .hawk-menu {
   margin-left: auto;
+}
+
+.hawk-bgroup-head .hawk-menu > summary {
+  color: var(--muted);
+}
+
+.hawk-bgroup-head .hawk-menu > summary:hover,
+.hawk-bgroup-head .hawk-menu[open] > summary {
+  color: var(--text);
+}
+
+.hawk-bgroup-sel,
+.hawk-c-sel-label {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
 }
 
 .hawk-brow {
@@ -438,20 +464,18 @@
   }
 
   .hawk-c-sel,
-  .hawk-bgroup-head > .hawk-check {
+  .hawk-bgroup-sel,
+  .hawk-c-sel-label {
     min-width: 44px;
     min-height: 44px;
     justify-content: center;
   }
 
-  .hawk-bgroup-head > .hawk-check {
-    width: 44px;
-    height: 44px;
-    padding: 12px;
-    box-sizing: border-box;
+  .hawk-bgroup-sel {
+    margin-left: -8px;
   }
 
-  .hawk-bgroup-actions .hawk-btn {
+  .hawk-bgroup-head .hawk-menu > summary {
     min-height: 44px;
     min-width: 44px;
   }
@@ -476,4 +500,10 @@
   .hawk-brow {
     grid-template-columns: 44px auto minmax(0, 1fr);
   }
+}
+
+/* The More menu's toggle sits at the left edge on narrow screens: open its panel rightwards so it stays on screen. */
+.hawk-board-head .hawk-menu-panel {
+  left: 0;
+  right: auto;
 }

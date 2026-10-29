@@ -139,7 +139,7 @@ public sealed class AlertDigestSender(
     public static (string Subject, string Html) Compose(IReadOnlyList<PendingAlert> alerts)
     {
         if (alerts.Count == 1)
-            return (alerts[0].Subject, alerts[0].Html);
+            return (alerts[0].Subject, AlertEmailHtml.Single(alerts[0].Kind, alerts[0].Html));
 
         var failed = alerts.Count(a => a.Kind == nameof(MonitorAlertKind.Failure));
         var stillFailing = alerts.Count(a => a.Kind == nameof(MonitorAlertKind.FailureReminder));
@@ -152,29 +152,51 @@ public sealed class AlertDigestSender(
 
         var first = alerts.Min(a => a.OccurredAt);
         var last = alerts.Max(a => a.OccurredAt);
+        var distinctMonitors = alerts.Select(a => a.MonitorId).Distinct().Count();
+        var oneKind = (failed > 0 ? 1 : 0) + (stillFailing > 0 ? 1 : 0) + (recovered > 0 ? 1 : 0) == 1;
+        var title = oneKind && distinctMonitors == alerts.Count
+            ? $"{alerts.Count} monitors {(failed > 0 ? "failed" : stillFailing > 0 ? "still failing" : "recovered")}"
+            : $"{alerts.Count} alerts: {string.Join(", ", parts)}";
+        var accent = failed > 0 ? AlertEmailHtml.Failed : stillFailing > 0 ? AlertEmailHtml.StillFailing : AlertEmailHtml.Recovered;
+        var line = AlertEmailHtml.Line;
+        var muted = AlertEmailHtml.Muted;
+
+        var span = AlertEmailHtml.FormatUtc(first) == AlertEmailHtml.FormatUtc(last)
+            ? $"At {AlertEmailHtml.FormatUtc(first)}"
+            : $"Between {AlertEmailHtml.FormatUtc(first)} and {AlertEmailHtml.FormatUtc(last)}";
+        var header =
+            $"""<div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:{muted};">Hawk &middot; alert summary</div>""" +
+            $"""<div style="font-size:24px;font-weight:bold;line-height:1.2;margin-top:6px;color:{accent};">{WebUtility.HtmlEncode(title)}</div>""" +
+            $"""<div style="font-size:13px;color:{muted};margin-top:6px;">{span}</div>""";
+
         var sb = new StringBuilder();
-        sb.AppendLine($"<h2>{alerts.Count} alerts</h2>");
-        sb.AppendLine($"<p>Between {first:O} UTC and {last:O} UTC.</p>");
-        sb.AppendLine("""<table cellpadding="4" style="border-collapse: collapse;">""");
-        sb.AppendLine("<tr><th align=\"left\">When (UTC)</th><th align=\"left\">Event</th><th align=\"left\">Monitor</th><th align=\"left\">Status</th><th align=\"left\">Error</th></tr>");
+        sb.AppendLine("""<tr><td style="padding:0 24px 8px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:13px;">""");
+        var th = $"padding:6px 8px;border-bottom:1px solid {line};font-weight:normal;";
+        sb.AppendLine($"""<tr style="color:{muted};font-size:11px;text-transform:uppercase;letter-spacing:0.05em;"><th align="left" style="{th}" colspan="2">Monitor</th><th align="left" style="{th}">Event</th><th align="left" style="{th}">Status</th><th align="left" style="{th}">When (UTC)</th></tr>""");
         foreach (var alert in alerts)
         {
+            var color = AlertEmailHtml.ColorFor(alert.Kind);
+            var td = $"padding:9px 8px;border-bottom:1px solid {line};";
+            var error = string.IsNullOrWhiteSpace(alert.Error)
+                ? ""
+                : $"""<div style="font-size:12px;font-weight:normal;color:{muted};margin-top:2px;">{WebUtility.HtmlEncode(alert.Error)}</div>""";
             sb.AppendLine(
-                $"<tr><td>{alert.OccurredAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}</td>" +
-                $"<td><b>{EventLabel(alert.Kind)}</b></td>" +
-                $"<td>{WebUtility.HtmlEncode(alert.MonitorName)}</td>" +
-                $"<td>{WebUtility.HtmlEncode(alert.Status)}</td>" +
-                $"<td>{WebUtility.HtmlEncode(alert.Error ?? "")}</td></tr>");
+                $"""<tr><td width="4" style="padding:0;background:{color};"></td>""" +
+                $"""<td style="{td}padding-left:10px;font-weight:bold;">{WebUtility.HtmlEncode(alert.MonitorName)}{error}</td>""" +
+                $"""<td style="{td}color:{color};font-weight:bold;">{EventLabel(alert.Kind)}</td>""" +
+                $"""<td style="{td}font-family:{AlertEmailHtml.Mono};font-size:12px;">{WebUtility.HtmlEncode(alert.Status)}</td>""" +
+                $"""<td style="{td}color:{muted};white-space:nowrap;">{alert.OccurredAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}</td></tr>""");
         }
-        sb.AppendLine("</table>");
 
+        sb.AppendLine("</table></td></tr>");
+
+        sb.AppendLine("""<tr><td style="padding:12px 24px 0;">""");
         foreach (var alert in alerts)
-        {
-            sb.AppendLine("<hr>");
             sb.AppendLine(alert.Html);
-        }
+        sb.AppendLine("</td></tr>");
 
-        return (subject, sb.ToString());
+        const string footer = "Alerts that occur within one burst are sent as one summary. Reminder and recovery alerts for these monitors follow the same policy and show up in the Event column.";
+        return (subject, AlertEmailHtml.Document(accent, header, sb.ToString(), footer));
     }
 
     /// <inheritdoc />

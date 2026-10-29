@@ -34,3 +34,17 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Empty blocks collapse to a muted "None"; the error reads as an error */
+.hawk-r-none {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hawk-r-kv dd.err { color: var(--down); }
+
+.hawk-r-kv dd.sans {
+  font-family: inherit;
+  font-size: 13px;
+}

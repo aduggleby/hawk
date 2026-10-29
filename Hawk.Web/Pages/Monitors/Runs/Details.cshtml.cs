@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Web.Pages.Monitors.Runs;
@@ -18,7 +19,7 @@ namespace Hawk.Web.Pages.Monitors.Runs;
 /// <summary>
 /// Displays full diagnostics for a single monitor run.
 /// </summary>
-public sealed class DetailsModel(ApplicationDbContext db) : PageModel
+public sealed partial class DetailsModel(ApplicationDbContext db) : PageModel
 {
     /// <summary>
     /// Parent monitor.
@@ -46,8 +47,30 @@ public sealed class DetailsModel(ApplicationDbContext db) : PageModel
         { LastError: { } error } => $"queued (send failed {QueuedAlert.Attempts}x, retrying: {error})",
         not null => "queued for a grouped email",
         null when Run is null => "-",
-        null => Run.AlertSent ? "sent" : (Run.AlertError ?? "not sent"),
+        null => Run.AlertSent ? "sent" : DescribeAlertError(Run.AlertError),
     };
+
+    /// <summary>
+    /// Turns the decider's machine text (failures=N, threshold=M) into words; other messages pass through.
+    /// </summary>
+    public static string DescribeAlertError(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error))
+            return "not sent";
+
+        var match = AlertCountsPattern().Match(error);
+        if (!match.Success)
+            return error;
+
+        var failures = match.Groups["failures"].Value;
+        var threshold = match.Groups["threshold"].Value;
+        return match.Groups["kind"].Value.StartsWith("Not alerted", StringComparison.Ordinal)
+            ? $"Not sent for this run (failure {failures} of an incident; alert threshold {threshold})"
+            : $"No failure alert delivered yet (failure {failures} of an incident; alert threshold {threshold})";
+    }
+
+    [GeneratedRegex(@"^(?<kind>Not alerted|No failure alert delivered yet) \(failures=(?<failures>\d+), threshold=(?<threshold>\d+)\)\.?$")]
+    private static partial Regex AlertCountsPattern();
 
     /// <summary>
     /// Formats raw JSON into indented JSON for diagnostics display.

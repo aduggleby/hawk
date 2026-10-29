@@ -8,6 +8,7 @@
 
 using Hawk.Web.Data;
 using Hawk.Web.Data.Monitoring;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
@@ -39,8 +40,34 @@ public sealed record BoardRow(
 /// <param name="Reason">Error text, or the HTTP status.</param>
 /// <param name="Since">Start of the incident, else the last failed run.</param>
 /// <param name="StatusCode">HTTP status of the last run, if any.</param>
+/// <param name="PingSince">For a heartbeat whose reason names its last ping ("No ping received since ... UTC"): that time,
+/// so the page can localise it; <see cref="ReasonBefore"/> and <see cref="ReasonAfter"/> are the text around it. Null otherwise.</param>
 public sealed record BoardAttention(
-    MonitorEntity Monitor, MonitorState State, string Reason, DateTimeOffset Since, int? StatusCode);
+    MonitorEntity Monitor, MonitorState State, string Reason, DateTimeOffset Since, int? StatusCode, DateTimeOffset? PingSince = null)
+{
+    private static readonly Regex PingTime = new(@"since (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC", RegexOptions.Compiled);
+
+    /// <summary>The last-ping time named in a heartbeat miss reason ("No ping received since ... UTC"), else null.</summary>
+    public static DateTimeOffset? FindPingTime(string reason) =>
+        PingTime.Match(reason) is { Success: true } m
+        && DateTime.TryParseExact(m.Groups[1].Value, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var t)
+            ? new DateTimeOffset(t, TimeSpan.Zero)
+            : null;
+
+    /// <summary>Reason text up to and including "since ", or the whole reason when <see cref="PingSince"/> is null.</summary>
+    public string ReasonBefore => Split().Before;
+
+    /// <summary>Reason text after the UTC time (empty when <see cref="PingSince"/> is null).</summary>
+    public string ReasonAfter => Split().After;
+
+    private (string Before, string After) Split()
+    {
+        if (PingSince is null || PingTime.Match(Reason) is not { Success: true } m)
+            return (Reason, "");
+        return (Reason[..m.Index] + "since ", Reason[(m.Index + m.Length)..]);
+    }
+}
 
 /// <summary>One group section; <see cref="Name"/> is null for Ungrouped.</summary>
 public sealed record BoardGroup(string? Name, string Anchor, List<BoardRow> Rows, int DownCount);
@@ -168,7 +195,8 @@ public sealed class MonitorBoardService(ApplicationDbContext db, MonitorStatusSe
                 var since = f?.FailingSince ?? f?.LastRunAt ?? lastRuns[m.Id].StartedAt;
                 var code = f?.StatusCode;
                 var reason = !string.IsNullOrWhiteSpace(f?.Error) ? f!.Error! : "Check failed";
-                return new BoardAttention(m, MonitorStatusService.ComputeState(m), reason, since, code);
+                var pingSince = m.Type == MonitorType.Heartbeat ? BoardAttention.FindPingTime(reason) : null;
+                return new BoardAttention(m, MonitorStatusService.ComputeState(m), reason, since, code, pingSince);
             })
             .OrderBy(a => a.Since)
             .ToList();

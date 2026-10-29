@@ -170,7 +170,7 @@ test('alert threshold: only alert after N consecutive failures', async ({ page, 
   let emails = await emailsRes.json();
   expect(emails.length).toBe(0);
 
-  await page.getByRole('link', { name: /back to monitor/i }).click();
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: /threshold 2/i }).click();
   await expect(page.getByRole('heading', { name: /threshold 2/i })).toBeVisible();
 
   // Run 2: second consecutive failure should alert.
@@ -232,7 +232,7 @@ test('edit monitor after running once: add second contains rule and save succeed
   await waitForRunDiagnosticsResult(page, 'OK', 30_000);
   await snap(page, '23-edit-after-run-after-run');
 
-  await page.getByRole('link', { name: /back to monitor/i }).click();
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: new RegExp(name, 'i') }).click();
   await expect(page.getByRole('heading', { name: new RegExp(name, 'i') })).toBeVisible();
 
   await page.getByRole('link', { name: /^edit$/i }).click();

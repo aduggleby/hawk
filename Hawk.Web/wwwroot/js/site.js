@@ -44,3 +44,22 @@
         el.title = `Local: ${localLabel}\nUTC: ${utcLabel}`;
     }
 })();
+
+// <details> menus (Account, More, group Actions): close on Escape (focus back on the toggle) and on a click outside.
+(() => {
+    const openMenus = () => document.querySelectorAll("details.hawk-menu[open], details[data-menu][open]");
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        for (const menu of openMenus()) {
+            menu.open = false;
+            if (menu.contains(document.activeElement)) menu.querySelector("summary")?.focus();
+        }
+    });
+
+    document.addEventListener("click", (event) => {
+        for (const menu of openMenus()) {
+            if (!menu.contains(event.target)) menu.open = false;
+        }
+    });
+})();

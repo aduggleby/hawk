@@ -1118,7 +1118,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
             var index = NewIndex(scope);
             InitPage(index);
             await index.OnPostPauseAllAsync(CancellationToken.None);
-            Assert.Equal("Paused 1 monitor(s).", index.TempData["FlashInfo"]);
+            Assert.Equal("Paused 1 monitor.", index.TempData["FlashInfo"]);
         }
         var paused = await GetMonitorAsync(app, active);
         Assert.True(paused.IsPaused);
@@ -1130,7 +1130,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
             var index = NewIndex(scope);
             InitPage(index);
             await index.OnPostResumeAllAsync(CancellationToken.None);
-            Assert.Equal("Resumed 1 monitor(s).", index.TempData["FlashInfo"]);
+            Assert.Equal("Resumed 1 monitor.", index.TempData["FlashInfo"]);
         }
         var resumed = await GetMonitorAsync(app, active);
         Assert.False(resumed.IsPaused);

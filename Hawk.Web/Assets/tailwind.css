@@ -175,6 +175,7 @@
 @import "./components/hawk-topbar.css";
 @import "./components/hawk-card.css";
 @import "./components/hawk-btn.css";
+@import "./components/hawk-menu.css";
 @import "./components/hawk-input.css";
 @import "./components/hawk-badge.css";
 @import "./components/hawk-loading.css";
@@ -183,6 +184,7 @@
 @import "./components/hawk-details.css";
 @import "./components/hawk-board.css";
 @import "./components/hawk-run.css";
+@import "./components/hawk-form.css";
 
 /* App utilities */
 @import "./utilities/animations.css";

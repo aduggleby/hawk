@@ -6,7 +6,7 @@
 <div class="flex items-center gap-2">
 @if (SignInManager.IsSignedIn(User))
 {
-    <details class="relative">
+    <details class="relative" data-menu>
         <summary class="hawk-btn hawk-btn-ghost hawk-topbar-item cursor-pointer select-none list-none">Account</summary>
         <div class="absolute z-50 mt-2 right-0 w-72 max-w-[85vw]">
             <div class="border border-[color:var(--border-primary)] bg-[color:var(--bg-secondary)] p-0">

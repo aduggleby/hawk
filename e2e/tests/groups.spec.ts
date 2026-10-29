@@ -21,6 +21,12 @@ async function createMonitor(page: Page, name: string, group: string) {
   await expect(page.getByRole('navigation', { name: /breadcrumb/i }).getByRole('link', { name: group })).toBeVisible();
 }
 
+/** Opens a group's Actions menu and clicks one entry. */
+async function groupAction(group: Locator, name: RegExp) {
+  await group.locator('summary', { hasText: /^actions/i }).click();
+  await group.getByRole('button', { name }).click();
+}
+
 /** The group section card on the monitors index: the card whose header names the group. */
 function section(page: Page, group: string): Locator {
   return page.locator('section.hawk-bgroup', { has: page.getByRole('heading', { name: group, exact: true }) });
@@ -46,21 +52,21 @@ test('groups: sections, group pause, and batch resume across two groups', async 
   await page.goto('/Monitors');
   const cardA = section(page, groupA);
   const cardB = section(page, groupB);
-  await expect(cardA).toContainText('2 monitor(s)');
+  await expect(cardA).toContainText('2 monitors');
   await expect(cardA.getByRole('link', { name: a1 })).toBeVisible();
   await expect(cardA.getByRole('link', { name: a2 })).toBeVisible();
-  await expect(cardB).toContainText('1 monitor(s)');
+  await expect(cardB).toContainText('1 monitor');
   await snap(page, '60-groups-index');
 
   // Group Pause pauses both members of group A and leaves group B alone.
-  await cardA.getByRole('button', { name: /^pause$/i }).click();
-  await expect(page.getByText(new RegExp(`Paused 2 monitor\\(s\\) in ${groupA}`))).toBeVisible();
+  await groupAction(cardA, /^pause group$/i);
+  await expect(page.getByText(new RegExp(`Paused 2 monitors in ${groupA}`))).toBeVisible();
   await expect(section(page, groupA).locator('[data-status="paused"]')).toHaveCount(2);
   await expect(section(page, groupB).locator('[data-status="paused"]')).toHaveCount(0);
 
   // Resume only counts paused monitors, so pause group B as well before the cross-group batch resume.
-  await cardB.getByRole('button', { name: /^pause$/i }).click();
-  await expect(page.getByText(new RegExp(`Paused 1 monitor\\(s\\) in ${groupB}`))).toBeVisible();
+  await groupAction(cardB, /^pause group$/i);
+  await expect(page.getByText(new RegExp(`Paused 1 monitor in ${groupB}`))).toBeVisible();
   await expect(section(page, groupB).locator('[data-status="paused"]')).toHaveCount(1);
 
   // Select one monitor in each group: the batch bar appears and Resume posts to the batch handler.
@@ -68,7 +74,7 @@ test('groups: sections, group pause, and batch resume across two groups', async 
   await section(page, groupB).getByRole('row', { name: new RegExp(b1) }).locator('input[type=checkbox]').check();
   await expect(page.locator('#monitors-selected-count')).toHaveText('2');
   await page.locator('#monitors-actions-selected').getByRole('button', { name: /^resume$/i }).click();
-  await expect(page.getByText(/Resumed 2 monitor\(s\)\./)).toBeVisible();
+  await expect(page.getByText(/Resumed 2 monitors\./)).toBeVisible();
   await expect(section(page, groupA).locator('[data-status="paused"]')).toHaveCount(1);
 
   // Group select-all checks every member and drives the batch bar.
@@ -78,10 +84,10 @@ test('groups: sections, group pause, and batch resume across two groups', async 
 
   // Rename moves the members.
   const renamed = `${groupA} renamed`;
-  await section(page, groupA).getByRole('button', { name: /^rename$/i }).click();
+  await groupAction(section(page, groupA), /^rename group/i);
   await page.locator('#group-rename-new').fill(renamed);
   await page.locator('#group-rename-form').getByRole('button', { name: /^rename$/i }).click();
   await expect(page.getByText(/Renamed group/)).toBeVisible();
-  await expect(section(page, renamed)).toContainText('2 monitor(s)');
+  await expect(section(page, renamed)).toContainText('2 monitors');
   await snap(page, '61-groups-renamed');
 });

@@ -7,6 +7,15 @@
     var isDone = string.Equals(state, "completed", StringComparison.OrdinalIgnoreCase);
     var word = !isDone ? state.ToUpperInvariant() : Model.Run!.Success ? "OK" : "FAIL";
     var wordClass = !isDone ? "idle" : Model.Run!.Success ? "up" : "down";
+    // Empty values collapse to a muted "None". Only stored JSON fields (headers, match results) treat "{}"/"[]" as empty:
+    // a request or response body of exactly "{}" or "[]" is real content.
+    Microsoft.AspNetCore.Html.IHtmlContent Block(string? value, bool json = false)
+    {
+        var text = value?.Trim();
+        return string.IsNullOrEmpty(text) || (json && text is "{}" or "[]")
+            ? Html.Raw("<p class=\"hawk-r-none\">None</p>")
+            : Html.Raw($"<pre class=\"hawk-r-pre\">{Html.Encode(value)}</pre>");
+    }
     static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
     static string UtcDetailedFallback(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
 }
@@ -44,7 +53,6 @@
                 <button class="hawk-btn hawk-btn-primary" type="submit">Run again</button>
             </form>
         }
-        <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@Model.Monitor.Id">Back to monitor</a>
     </div>
 </div>
 
@@ -103,19 +111,26 @@
                     }
                 </dd>
                 <dt>Reason</dt>
-                <dd>@(Model.Run.Reason ?? "-")</dd>
+                <dd class="sans">@(Model.Run.Reason ?? "-")</dd>
                 <dt>Started</dt>
-                <dd><time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.StartedAt)</time></dd>
+                <dd class="sans"><time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.StartedAt)</time></dd>
                 <dt>Finished</dt>
-                <dd><time data-utc="@Model.Run.FinishedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.FinishedAt)</time></dd>
+                <dd class="sans"><time data-utc="@Model.Run.FinishedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.FinishedAt)</time></dd>
                 <dt>Duration</dt>
                 <dd>@Model.Run.DurationMs ms</dd>
                 <dt>@(isHeartbeat ? "Response" : "HTTP status")</dt>
                 <dd>@(Model.Run.StatusCode?.ToString() ?? "NO_RESPONSE")</dd>
                 <dt>Alert</dt>
-                <dd>@Model.AlertStatus</dd>
+                <dd class="sans">@Model.AlertStatus</dd>
                 <dt>Error</dt>
-                <dd>@(string.IsNullOrWhiteSpace(Model.Run.ErrorMessage) ? "-" : Model.Run.ErrorMessage)</dd>
+                @if (string.IsNullOrWhiteSpace(Model.Run.ErrorMessage))
+                {
+                    <dd><span class="hawk-r-none">None</span></dd>
+                }
+                else
+                {
+                    <dd class="err">@Model.Run.ErrorMessage</dd>
+                }
             </dl>
         </div>
     </div>
@@ -133,11 +148,11 @@
                 }
             </dl>
             <div class="hawk-r-label">@(isHeartbeat ? "Source (client IP, User-Agent)" : "Headers")</div>
-            <pre class="hawk-r-pre">@((string.IsNullOrWhiteSpace(Model.Run.RequestHeadersJson) ? "{}" : Model.Run.RequestHeadersJson))</pre>
+            @Block(Model.Run.RequestHeadersJson, json: true)
             @if (!isHeartbeat)
             {
                 <div class="hawk-r-label">Body snippet</div>
-                <pre class="hawk-r-pre">@(string.IsNullOrWhiteSpace(Model.Run.RequestBodySnippet) ? "-" : Model.Run.RequestBodySnippet)</pre>
+                @Block(Model.Run.RequestBodySnippet)
             }
         </div>
 
@@ -150,15 +165,15 @@
                     <dt>Content-Length</dt><dd>@(Model.Run.ResponseContentLength?.ToString() ?? "-")</dd>
                 </dl>
                 <div class="hawk-r-label">Headers</div>
-                <pre class="hawk-r-pre">@Model.FormatJson(Model.Run.ResponseHeadersJson, "{}")</pre>
+                @Block(Model.FormatJson(Model.Run.ResponseHeadersJson, "{}"), json: true)
                 <div class="hawk-r-label">Response snippet</div>
                 @{
-                    var snippet = string.IsNullOrWhiteSpace(Model.Run.ResponseSnippet) ? "-" : Model.Run.ResponseSnippet!;
+                    var snippet = Model.Run.ResponseSnippet ?? "";
                     const int previewLimit = 600;
                     var hasMore = snippet.Length > previewLimit;
                     var preview = hasMore ? snippet[..previewLimit] + "..." : snippet;
                 }
-                <pre class="hawk-r-pre">@preview</pre>
+                @Block(preview)
                 @if (hasMore)
                 {
                     <details class="mt-2">
@@ -167,7 +182,7 @@
                     </details>
                 }
                 <div class="hawk-r-label">Match results</div>
-                <pre class="hawk-r-pre">@((string.IsNullOrWhiteSpace(Model.Run.MatchResultsJson) ? "[]" : Model.Run.MatchResultsJson))</pre>
+                @Block(Model.Run.MatchResultsJson, json: true)
             </div>
         }
     </div>

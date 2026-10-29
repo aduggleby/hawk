@@ -7,6 +7,8 @@
     var board = Model.Board;
     var now = DateTimeOffset.UtcNow;
     static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
+    static string Plural(int n, string word) => n == 1 ? $"1 {word}" : $"{n} {word}s";
+    var Chevron = new Microsoft.AspNetCore.Html.HtmlString("<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\"/></svg>");
     static string StatusClass(BoardRow r) =>
         r.Failing ? "down" : r.State == MonitorState.Disabled ? "disabled" : r.State == MonitorState.Paused ? "paused"
             : r.Overdue ? "overdue" : r.Pending ? "pending" : "up";
@@ -39,20 +41,26 @@
 <div class="hawk-board-head">
     <div>
         <h1 class="text-2xl font-semibold tracking-tight">Monitors</h1>
-        <p class="hawk-board-headline" data-testid="board-headline">@board.Headline</p>
+        <p class="hawk-board-headline@(board.Attention.Count != 0 ? " is-down" : "")" data-testid="board-headline">@board.Headline</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
         <div id="monitors-actions-default" class="flex flex-wrap items-center gap-2">
-            @if (User.IsInRole("Admin"))
-            {
-                <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
-            }
-            <form method="post" asp-page-handler="PauseAll">
-                <button class="hawk-btn hawk-btn-ghost" type="submit">Pause all</button>
-            </form>
-            <form method="post" asp-page-handler="ResumeAll">
-                <button class="hawk-btn hawk-btn-ghost" type="submit">Resume all</button>
-            </form>
+            <details class="hawk-menu">
+                <summary class="hawk-btn hawk-btn-ghost">More @Chevron</summary>
+                <div class="hawk-menu-panel">
+                    @if (User.IsInRole("Admin"))
+                    {
+                        <a class="hawk-btn hawk-menu-item" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
+                        <hr />
+                    }
+                    <form method="post" asp-page-handler="PauseAll">
+                        <button class="hawk-btn hawk-menu-item" type="submit">Pause all</button>
+                    </form>
+                    <form method="post" asp-page-handler="ResumeAll">
+                        <button class="hawk-btn hawk-menu-item" type="submit">Resume all</button>
+                    </form>
+                </div>
+            </details>
             <a class="hawk-btn hawk-btn-primary" asp-page="/Monitors/Create">New monitor</a>
         </div>
 
@@ -88,7 +96,14 @@ else
                             <span class="hawk-att-nm">@a.Monitor.Name</span>
                             <span class="hawk-att-kind">@(a.Monitor.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat ? "Heartbeat" : "HTTP")@(a.State == MonitorState.Active ? "" : $" \u00b7 {a.State}")</span>
                         </span>
-                        <span class="hawk-att-reason">@a.Reason</span>
+                        <span class="hawk-att-reason">@if (a.PingSince is { } ping)
+                        {
+                            @a.ReasonBefore<time data-utc="@ping.ToString("O")" data-utc-format="short">@UtcFallback(ping)</time>@a.ReasonAfter
+                        }
+                        else
+                        {
+                            @a.Reason
+                        }</span>
                         <span class="hawk-att-meta">
                             <b>Down @BoardHeadline.Duration(now - a.Since)</b>
                             since <time data-utc="@a.Since.ToString("O")" data-utc-format="short">@UtcFallback(a.Since)</time>
@@ -108,22 +123,26 @@ else
         {
             <section class="hawk-bgroup" id="@grp.Anchor">
                 <div class="hawk-bgroup-head">
-                    <input class="hawk-check" type="checkbox" data-group-select="@grp.Anchor" aria-label="Select all in @(grp.Name ?? "Ungrouped")" />
+                    <label class="hawk-bgroup-sel"><input class="hawk-check" type="checkbox" data-group-select="@grp.Anchor" aria-label="Select all in @(grp.Name ?? "Ungrouped")" /></label>
                     <h2>@(grp.Name ?? "Ungrouped")</h2>
                     <div class="hawk-bgroup-count">
-                        @grp.Rows.Count monitor(s)@if (grp.DownCount > 0)
+                        @Plural(grp.Rows.Count, "monitor")@if (grp.DownCount > 0)
                         {
                             <span class="hawk-bgroup-down"> &middot; @grp.DownCount down</span>
                         }
                     </div>
                     @if (grp.Name is not null)
                     {
-                        <div class="hawk-bgroup-actions">
-                            <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupRun" name="Group" value="@grp.Name">Run</button>
-                            <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupPause" name="Group" value="@grp.Name">Pause</button>
-                            <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupResume" name="Group" value="@grp.Name">Resume</button>
-                            <button class="hawk-btn hawk-btn-ghost" type="button" data-rename-group="@grp.Name">Rename</button>
-                        </div>
+                        <details class="hawk-menu">
+                            <summary class="hawk-btn hawk-btn-ghost hawk-btn-sm" aria-label="Actions for @grp.Name">Actions @Chevron</summary>
+                            <div class="hawk-menu-panel">
+                                <button class="hawk-btn hawk-menu-item" type="submit" formaction="?handler=GroupRun" name="Group" value="@grp.Name">Run all now</button>
+                                <button class="hawk-btn hawk-menu-item" type="submit" formaction="?handler=GroupPause" name="Group" value="@grp.Name">Pause group</button>
+                                <button class="hawk-btn hawk-menu-item" type="submit" formaction="?handler=GroupResume" name="Group" value="@grp.Name">Resume group</button>
+                                <hr />
+                                <button class="hawk-btn hawk-menu-item" type="button" data-rename-group="@grp.Name">Rename group&hellip;</button>
+                            </div>
+                        </details>
                     }
                 </div>
                 <div class="hawk-brows" role="table" aria-label="@(grp.Name ?? "Ungrouped") monitors">
@@ -141,7 +160,7 @@ else
                         var cls = StatusClass(r);
                         <div class="hawk-brow @(r.Failing ? "is-down" : "") @(r.State != MonitorState.Active ? "is-off" : "")" role="row">
                             <span role="cell" class="hawk-c-sel">
-                                <input class="hawk-check" type="checkbox" name="SelectedMonitorIds" value="@m.Id" data-group="@grp.Anchor" aria-label="Select @m.Name" />
+                                <label class="hawk-c-sel-label"><input class="hawk-check" type="checkbox" name="SelectedMonitorIds" value="@m.Id" data-group="@grp.Anchor" aria-label="Select @m.Name" /></label>
                             </span>
                             <span role="cell" class="hawk-c-st" data-status="@cls"><i class="hawk-sq @cls"></i>@r.StatusLabel</span>
                             <span role="cell" class="hawk-c-nm">
@@ -243,6 +262,7 @@ else
                 try { groups = JSON.parse(dialog.dataset.groups || "[]"); } catch { groups = []; }
                 for (const btn of document.querySelectorAll("[data-rename-group]")) {
                     btn.addEventListener("click", () => {
+                        btn.closest("details")?.removeAttribute("open");
                         oldInput.value = btn.dataset.renameGroup;
                         newInput.value = btn.dataset.renameGroup;
                         dialog.showModal();

@@ -1,0 +1,15 @@
+/* Monitor Create/Edit form: width, card titles and one hint style. */
+.hawk-form {
+  max-width: 880px;
+}
+
+.hawk-form-title {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.hawk-form-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}

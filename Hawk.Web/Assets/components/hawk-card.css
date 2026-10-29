@@ -6,6 +6,9 @@
   transition: border-color 150ms ease;
 }
 
-.hawk-card:hover {
+/* Only interactive cards react to hover. */
+a.hawk-card:hover,
+button.hawk-card:hover,
+.hawk-card[role="link"]:hover {
   border-color: var(--muted);
 }

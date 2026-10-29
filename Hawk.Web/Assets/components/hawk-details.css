@@ -41,13 +41,20 @@
 .hawk-d-figures {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 22px;
+  gap: 4px 0;
   margin: 0 0 18px;
   font-size: 14px;
   color: var(--muted);
 }
 
-.hawk-d-figures > div {
+.hawk-d-figures dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+  margin: 0;
+}
+
+.hawk-d-figures dl > div {
   display: flex;
   gap: 6px;
 }
@@ -79,28 +86,24 @@
   color: var(--muted);
 }
 
-.hawk-d-facts {
-  display: grid;
-  grid-template-columns: 90px 1fr;
-  gap: 4px 12px;
-  margin: 12px 0 0;
-  font-size: 13px;
-}
-
-.hawk-d-facts dt { color: var(--muted); }
-.hawk-d-facts dd { margin: 0; }
-
 /* Response-time chart */
 .hawk-d-chart {
   display: block;
   width: 100%;
   height: auto;
+  /* The top axis label sits at the very top of the viewBox; let its glyphs extend past it. */
+  overflow: visible;
 }
 
 .hawk-d-chart text {
   fill: var(--muted);
   font-size: 11px;
   font-family: inherit;
+  /* Panel-coloured halo keeps the labels legible over the failure bands. */
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 4px;
+  stroke-linejoin: round;
 }
 
 .hawk-d-chart .gl { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
@@ -154,3 +157,50 @@
   width: 10px;
   height: 10px;
 }
+
+/* Last/next check (or last ping/due by): one separated state group after the uptime figures */
+.hawk-d-state {
+  margin-left: 4px;
+  padding-left: 22px;
+  border-left: 1px solid var(--line);
+}
+
+.hawk-d-state dd.muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+@media (max-width: 639px) {
+  .hawk-d-state {
+    flex-basis: 100%;
+    margin: 2px 0 0;
+    padding: 0;
+    border: 0;
+  }
+}
+
+/* Config: one value style, tighter rows */
+.hawk-d-config dl { row-gap: 6px; }
+.hawk-d-config dd { font-weight: 400; }
+.hawk-d-config dd.mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; }
+.hawk-d-config dd .default { color: var(--muted); }
+
+/* Recent runs: 30 px rows, the result as the board's square + word */
+.hawk-runs-tbody > tr > td,
+.hawk-runs-thead th {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.hawk-runs-tbody .hawk-badge {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-weight: 600;
+}
+
+.hawk-runs-tbody .hawk-badge-success { color: var(--text); }
+.hawk-runs-tbody .hawk-badge-success::before { background: var(--up); }
+.hawk-runs-tbody .hawk-badge-danger::before { background: var(--down); }
+.hawk-runs-tbody .reason { color: var(--muted); }
+.hawk-runs-tbody > tr > td:first-child { white-space: nowrap; }

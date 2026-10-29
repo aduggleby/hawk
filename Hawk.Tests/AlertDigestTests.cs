@@ -94,7 +94,26 @@ public sealed class AlertDigestTests
     {
         var alert = Alert("A", MonitorAlertKind.Failure, 40);
 
-        Assert.Equal((alert.Subject, alert.Html), AlertDigestSender.Compose([alert]));
+        var (subject, html) = AlertDigestSender.Compose([alert]);
+
+        // Same subject and block, wrapped in the email card (no summary table).
+        Assert.Equal(alert.Subject, subject);
+        Assert.StartsWith("<!doctype html>", html);
+        Assert.Contains(alert.Html, html);
+        Assert.DoesNotContain("alert summary", html);
+    }
+
+    [Fact]
+    public void Summary_of_one_instant_shows_the_time_once()
+    {
+        var a = Alert("A", MonitorAlertKind.Failure, 40);
+        var b = Alert("B", MonitorAlertKind.Failure, 40);
+        b.OccurredAt = a.OccurredAt;
+
+        var (_, html) = AlertDigestSender.Compose([a, b]);
+
+        Assert.Contains("At 2026-10-29 11:59:20 UTC", html);
+        Assert.DoesNotContain("Between", html);
     }
 
     [Fact]
@@ -108,11 +127,13 @@ public sealed class AlertDigestTests
         ]);
 
         Assert.Equal("[ALERT SUMMARY] 1 failed, 1 still failing, 1 recovered", subject);
-        var failed = html.IndexOf("FAILED</b>", StringComparison.Ordinal);
-        var recovered = html.IndexOf("RECOVERED</b>", StringComparison.Ordinal);
+        var failed = html.IndexOf("FAILED</td>", StringComparison.Ordinal);
+        var recovered = html.IndexOf("RECOVERED</td>", StringComparison.Ordinal);
         Assert.True(failed >= 0 && recovered > failed);
         Assert.Contains("Old &lt;b&gt;", html);
         Assert.Contains("<p>details Flappy</p>", html);
+        Assert.Contains("Between 2026-10-29 11:59:10 UTC and 2026-10-29 11:59:25 UTC", html);
+        Assert.DoesNotContain(".0000000", html);
     }
 
     [Fact]

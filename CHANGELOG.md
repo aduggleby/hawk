@@ -6,6 +6,18 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-29
+
+### Changed
+
+- UI polish from a design review:
+  - Monitors board: each group has one **Actions** menu (Run all now, Pause group, Resume group, Rename group) instead of four buttons, and the page actions are **New monitor** plus a **More** menu (Import StatusCake, Pause all, Resume all). The headline is emphasised while something is down, "1 monitor"/"4 monitors" replaces "monitor(s)", the heartbeat attention card shows the last ping in local time, and checkboxes have proper touch targets on phones.
+  - Monitor details: last and next check sit next to the uptime figures, Config is simpler ("Default recipient", "2xx only"), the chart's axis labels stay readable over the failure band, recent runs are denser, and Back is gone (use the breadcrumb). Heartbeat pages show the ping strip full width and no longer repeat last ping and deadline.
+  - Run diagnostics: empty blocks read "None", the error is red, and the alert line is in words.
+  - Create and Edit: one "Monitor" card (type, name, group, URL) and one "Check and alerts" card.
+  - Alert emails (single and summary) have a cleaner layout with readable UTC times and colour-coded events. Subjects are unchanged.
+- Menus close on Escape and on a click outside.
+
 ## [0.15.0] - 2026-10-29
 
 ### Added

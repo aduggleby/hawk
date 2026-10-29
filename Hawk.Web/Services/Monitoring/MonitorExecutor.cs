@@ -6,7 +6,6 @@
 // </file>
 
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using Hangfire;
 using Hangfire.Storage;
@@ -394,7 +393,7 @@ public sealed class MonitorExecutor(
             if (deadline > now)
                 return;
 
-            var since = monitor.LastPingAt is { } lastPing ? $"since {lastPing.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC" : "since monitoring started";
+            var since = HeartbeatTokens.MissSince(monitor.LastPingAt);
             var run = new MonitorRun
             {
                 MonitorId = monitor.Id,
@@ -694,30 +693,33 @@ public sealed class MonitorExecutor(
         var subjectPrefix = kind == MonitorAlertKind.FailureReminder ? "[ALERT FAIL REMINDER]" : "[ALERT FAIL]";
         var subject = $"{subjectPrefix} {monitor.Name} ({(heartbeat ? "NO_PING" : status)})";
         var failureWord = consecutiveFailures == 1 ? "failure" : "failures";
-        var failuresLine = $"<p><b>Failures:</b> {consecutiveFailures} consecutive {failureWord} (alert threshold: {threshold})</p>";
-        var incidentLine = incidentOpenedAt is null ? "" : $"<p><b>Incident opened:</b> {incidentOpenedAt:O} UTC</p>";
-        var lastAlertLine = lastFailureAlertSentAt is null ? "" : $"<p><b>Last alert sent:</b> {lastFailureAlertSentAt:O} UTC</p>";
-        var failureLogHtml = BuildFailureLogHtml(failureLog, consecutiveFailures, heartbeat);
-        var targetLines = heartbeat
-            ? $"""
-              <p><b>Type:</b> Heartbeat ({WebUtility.HtmlEncode(DescribeHeartbeat(monitor))})</p>
-              """
-            : $"""
-              <p><b>URL:</b> {WebUtility.HtmlEncode(monitor.Url)}</p>
-              <p><b>Method:</b> {WebUtility.HtmlEncode(monitor.Method)}</p>
-              <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
-              """;
-        var html = $"""
-            <h2>{(heartbeat ? "Heartbeat missed" : "Monitor failed")}</h2>
-            <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
-            {targetLines}
-            <p><b>Error:</b> {WebUtility.HtmlEncode(run.ErrorMessage ?? "(none)")}</p>
-            {failuresLine}
-            <p><b>When:</b> {run.StartedAt:O} UTC</p>
-            {incidentLine}
-            {lastAlertLine}
-            {failureLogHtml}
-            """;
+        var color = AlertEmailHtml.ColorFor(kind.ToString());
+        var rows = new List<AlertEmailHtml.Row>();
+        if (heartbeat)
+            rows.Add(new("Type", $"Heartbeat ({DescribeHeartbeat(monitor)})"));
+        else
+            rows.Add(new("Request", $"{monitor.Method} {monitor.Url}", true));
+
+        // One result line: the error already names the HTTP status in most cases; otherwise prefix it.
+        var result = run.ErrorMessage ?? status;
+        if (!heartbeat && !result.Contains(status, StringComparison.Ordinal))
+            result = $"{status} · {result}";
+        rows.Add(new("Result", result, false, color));
+        rows.Add(new("Failures", $"{consecutiveFailures} consecutive {failureWord} (alert threshold: {threshold})"));
+        // The failure log's newest line is this run; repeat the time only when there is no log.
+        if (failureLog.Count == 0)
+            rows.Add(new("When", AlertEmailHtml.FormatUtc(run.StartedAt)));
+        if (incidentOpenedAt is not null)
+            rows.Add(new("Incident opened", AlertEmailHtml.FormatUtc(incidentOpenedAt.Value)));
+        if (lastFailureAlertSentAt is not null)
+            rows.Add(new("Last alert sent", AlertEmailHtml.FormatUtc(lastFailureAlertSentAt.Value)));
+
+        var html = AlertEmailHtml.Block(
+            monitor.Name,
+            heartbeat ? "Heartbeat missed" : "Monitor failed",
+            color,
+            rows,
+            BuildFailureLogHtml(failureLog, consecutiveFailures, heartbeat));
 
         var summaryStatus = heartbeat ? "NO_PING" : status;
         return await DeliverAsync(monitor, run, kind, from, to, subject, html, summaryStatus, run.ErrorMessage, cancellationToken);
@@ -728,26 +730,11 @@ public sealed class MonitorExecutor(
         if (entries.Count == 0)
             return "";
 
-        var sb = new StringBuilder();
-        if (consecutiveFailures > entries.Count)
-            sb.AppendLine($"Showing latest {entries.Count} of {consecutiveFailures} consecutive failures.");
-
-        foreach (var entry in entries)
-        {
-            if (timesOnly)
-            {
-                sb.AppendLine($"{entry.StartedAt:O} UTC");
-                continue;
-            }
-
-            var status = entry.StatusCode is null ? "NO_RESPONSE" : entry.StatusCode.Value.ToString();
-            sb.AppendLine($"{entry.StartedAt:O} UTC status={status}");
-        }
-
-        return $"""
-            <h3>Failure log</h3>
-            <pre style="font-family: monospace; white-space: pre-wrap;">{WebUtility.HtmlEncode(sb.ToString().TrimEnd())}</pre>
-            """;
+        var note = consecutiveFailures > entries.Count
+            ? $"Showing latest {entries.Count} of {consecutiveFailures} consecutive failures."
+            : null;
+        return AlertEmailHtml.FailureLog(note, entries.Select(e =>
+            (e.StartedAt, timesOnly ? null : e.StatusCode is null ? "NO_RESPONSE" : e.StatusCode.Value.ToString())));
     }
 
     private async Task<bool> TrySendRecoveredAlertAsync(
@@ -785,29 +772,33 @@ public sealed class MonitorExecutor(
         var status = run.StatusCode is null ? "NO_RESPONSE" : run.StatusCode.ToString()!;
         var subject = $"[ALERT RECOVERED] {monitor.Name} ({(heartbeat ? "PING_RECEIVED" : status)})";
 
-        var incidentOpenedLine = incidentOpenedAt is null ? "" : $"<p><b>Incident opened:</b> {incidentOpenedAt:O} UTC</p>";
-        var incidentDurationLine = incidentOpenedAt is null ? "" : $"<p><b>Incident duration:</b> {(run.StartedAt - incidentOpenedAt.Value).TotalMinutes:F1} minutes</p>";
-        var lastAlertLine = lastFailureAlertSentAt is null ? "" : $"<p><b>Last failure alert sent:</b> {lastFailureAlertSentAt:O} UTC</p>";
-        var targetLines = heartbeat
-            ? $"""
-              <p><b>Type:</b> Heartbeat ({WebUtility.HtmlEncode(DescribeHeartbeat(monitor))})</p>
-              <p><b>Status:</b> Ping received</p>
-              """
-            : $"""
-              <p><b>URL:</b> {WebUtility.HtmlEncode(monitor.Url)}</p>
-              <p><b>Method:</b> {WebUtility.HtmlEncode(monitor.Method)}</p>
-              <p><b>Status:</b> {WebUtility.HtmlEncode(status)}</p>
-              """;
+        var rows = new List<AlertEmailHtml.Row>();
+        if (heartbeat)
+        {
+            rows.Add(new("Type", $"Heartbeat ({DescribeHeartbeat(monitor)})"));
+            rows.Add(new("Status", "Ping received", false, AlertEmailHtml.Recovered));
+        }
+        else
+        {
+            rows.Add(new("Request", $"{monitor.Method} {monitor.Url}", true));
+            rows.Add(new("Status", status, false, AlertEmailHtml.Recovered));
+        }
 
-        var html = $"""
-            <h2>{(heartbeat ? "Heartbeat recovered" : "Monitor recovered")}</h2>
-            <p><b>Name:</b> {WebUtility.HtmlEncode(monitor.Name)}</p>
-            {targetLines}
-            <p><b>When:</b> {run.StartedAt:O} UTC</p>
-            {incidentOpenedLine}
-            {incidentDurationLine}
-            {lastAlertLine}
-            """;
+        rows.Add(new("When", AlertEmailHtml.FormatUtc(run.StartedAt)));
+        if (incidentOpenedAt is not null)
+        {
+            rows.Add(new("Incident opened", AlertEmailHtml.FormatUtc(incidentOpenedAt.Value)));
+            rows.Add(new("Incident duration", $"{(run.StartedAt - incidentOpenedAt.Value).TotalMinutes:F1} minutes"));
+        }
+
+        if (lastFailureAlertSentAt is not null)
+            rows.Add(new("Last failure alert sent", AlertEmailHtml.FormatUtc(lastFailureAlertSentAt.Value)));
+
+        var html = AlertEmailHtml.Block(
+            monitor.Name,
+            heartbeat ? "Heartbeat recovered" : "Monitor recovered",
+            AlertEmailHtml.Recovered,
+            rows);
 
         var summaryStatus = heartbeat ? "PING_RECEIVED" : status;
         return await DeliverAsync(monitor, run, MonitorAlertKind.Recovered, from, to, subject, html, summaryStatus, null, cancellationToken);
@@ -855,7 +846,7 @@ public sealed class MonitorExecutor(
 
         try
         {
-            await emailSender.SendAsync(from, to, subject, html, cancellationToken);
+            await emailSender.SendAsync(from, to, subject, AlertEmailHtml.Single(kind.ToString(), html), cancellationToken);
             run.AlertSent = true;
             run.AlertError = null;
             return true;

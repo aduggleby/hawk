@@ -46,7 +46,7 @@ public class IndexModel(
         if (!TryGroup(group, out var name))
             return RedirectToPage();
         var updated = await commands.PauseAsync(MonitorGroups.InGroup(db.Monitors, name), cancellationToken);
-        TempData["FlashInfo"] = $"Paused {updated} monitor(s) in {name}.";
+        TempData["FlashInfo"] = $"Paused {Monitors(updated)} in {name}.";
         return RedirectToPage();
     }
 
@@ -55,7 +55,7 @@ public class IndexModel(
         if (!TryGroup(group, out var name))
             return RedirectToPage();
         var updated = await commands.ResumeAsync(MonitorGroups.InGroup(db.Monitors, name), cancellationToken);
-        TempData["FlashInfo"] = $"Resumed {updated} monitor(s) in {name}.";
+        TempData["FlashInfo"] = $"Resumed {Monitors(updated)} in {name}.";
         return RedirectToPage();
     }
 
@@ -78,7 +78,7 @@ public class IndexModel(
         if (result.Error is not null)
             TempData["FlashError"] = result.Error;
         else
-            TempData["FlashInfo"] = $"Renamed group {name} to {result.NewName} ({result.Renamed} monitor(s)).";
+            TempData["FlashInfo"] = $"Renamed group {name} to {result.NewName} ({Monitors(result.Renamed)}).";
         return RedirectToPage();
     }
 
@@ -96,7 +96,7 @@ public class IndexModel(
     {
         var updated = await commands.PauseAsync(db.Monitors, cancellationToken);
 
-        TempData["FlashInfo"] = $"Paused {updated} monitor(s).";
+        TempData["FlashInfo"] = $"Paused {Monitors(updated)}.";
         return RedirectToPage();
     }
 
@@ -104,7 +104,7 @@ public class IndexModel(
     {
         var updated = await commands.ResumeAsync(db.Monitors, cancellationToken);
 
-        TempData["FlashInfo"] = $"Resumed {updated} monitor(s).";
+        TempData["FlashInfo"] = $"Resumed {Monitors(updated)}.";
         return RedirectToPage();
     }
 
@@ -155,7 +155,9 @@ public class IndexModel(
             updated = await commands.ResumeAsync(query, cancellationToken);
         }
 
-        TempData["FlashInfo"] = $"{(action == "pause" ? "Paused" : "Resumed")} {updated} monitor(s).";
+        TempData["FlashInfo"] = $"{(action == "pause" ? "Paused" : "Resumed")} {Monitors(updated)}.";
         return RedirectToPage();
     }
+
+    private static string Monitors(int count) => count == 1 ? "1 monitor" : $"{count} monitors";
 }

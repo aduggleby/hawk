@@ -1,0 +1,54 @@
+/* Shared <details> menu: a summary button and a floating panel of .hawk-menu-item entries (monitors board). */
+.hawk-menu {
+  position: relative;
+}
+
+.hawk-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  gap: 0.25rem;
+}
+
+.hawk-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.hawk-menu > summary svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+
+.hawk-menu[open] > summary {
+  background: var(--hover);
+  border-color: var(--muted);
+}
+
+.hawk-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 15; /* under the sticky topbar (20) */
+  min-width: 170px;
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.hawk-menu-panel .hawk-menu-item {
+  font-size: 13px;
+  min-height: 1.75rem;
+}
+
+.hawk-menu-panel hr {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+@media (pointer: coarse) {
+  .hawk-menu-panel .hawk-menu-item {
+    min-height: 44px;
+  }
+}

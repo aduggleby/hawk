@@ -444,7 +444,7 @@ Monitors can be temporarily paused without disabling them. A paused monitor:
 
 Pause, resume, and run from the monitors list:
 
-- **Pause all / Resume all** — applies to all monitors.
+- **Pause all / Resume all** (in the **More** menu) — applies to all monitors.
 - **Pause selected / Resume selected** — batch action on checked monitors.
 - **Run now (selected)** — enqueue immediate Hangfire jobs for all checked monitors.
 
@@ -458,7 +458,7 @@ The monitors index is a board:
 
 The monitor details page shows the same 24-hour strip, a response-time chart, a 90-day row and an uptime row (last 24 hours, 7 days and 30 days) built from a 15-minute rollup that survives run pruning.
 
-Batch actions apply to checked monitors. When monitors are selected, the action bar switches to: **Run now**, **Pause**, **Resume**, and **Uncheck all**. Without a selection, the bar shows **New monitor**, **Import StatusCake**, **Pause all**, and **Resume all**.
+Batch actions apply to checked monitors. When monitors are selected, the action bar switches to: **Run now**, **Pause**, **Resume**, and **Uncheck all**. Without a selection, the bar shows **New monitor** and a **More** menu with **Import StatusCake**, **Pause all** and **Resume all**. Each group has an **Actions** menu: **Run all now**, **Pause group**, **Resume group** and **Rename group**.
 
 Timestamps (last run, next run, run history) are displayed in the **browser's local time zone**. Hovering over a timestamp shows a tooltip with both the local time and the UTC time.
 

@@ -44,6 +44,13 @@ public static class HeartbeatTokens
     }
 
     /// <summary>
+    /// The "since ..." part of a missed-ping reason. The board parses this text back
+    /// (<see cref="BoardAttention.FindPingTime"/>) to show the time in the browser's zone, so keep the two in step.
+    /// </summary>
+    public static string MissSince(DateTimeOffset? lastPing) =>
+        lastPing is { } t ? $"since {t.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC" : "since monitoring started";
+
+    /// <summary>
     /// The deadline for a new, imported, resumed or edited heartbeat: a full period plus grace from <paramref name="now"/>.
     /// </summary>
     public static DateTimeOffset InitialDeadline(DateTimeOffset now, int periodSeconds, int graceSeconds) =>

@@ -25,6 +25,24 @@ public sealed class MonitorBoardTests
     private static readonly DateTimeOffset Now = new(2026, 10, 29, 12, 7, 0, TimeSpan.Zero);
 
     [Fact]
+    public void FindPingTime_splits_a_heartbeat_reason_around_the_utc_time()
+    {
+        const string reason = "No ping received since 2026-10-29 09:14:00 UTC (every 1 h, grace 5 min).";
+        var at = BoardAttention.FindPingTime(reason);
+        Assert.Equal(new DateTimeOffset(2026, 10, 29, 9, 14, 0, TimeSpan.Zero), at);
+
+        var card = new BoardAttention(new MonitorEntity { Name = "hb", Url = "", Method = "GET" }, MonitorState.Active, reason, DateTimeOffset.UtcNow, null, at);
+        Assert.Equal("No ping received since ", card.ReasonBefore);
+        Assert.Equal(" (every 1 h, grace 5 min).", card.ReasonAfter);
+
+        Assert.Null(BoardAttention.FindPingTime("No ping received since monitoring started (every 1 h)."));
+
+        // The executor writes the reason with HeartbeatTokens.MissSince; the board must read it back.
+        var lastPing = new DateTimeOffset(2026, 10, 29, 9, 14, 0, TimeSpan.Zero);
+        Assert.Equal(lastPing, BoardAttention.FindPingTime($"No ping received {HeartbeatTokens.MissSince(lastPing)} (expected every 1 h)."));
+    }
+
+    [Fact]
     public void Headline_covers_none_one_several_down_all_paused_and_no_monitors()
     {
         Assert.Equal("No monitors yet.", BoardHeadline.For(0, 0, 0, null, null));

@@ -5,6 +5,9 @@
     ViewData["Title"] = Model.Monitor?.Name ?? "Monitor";
     var isHeartbeat = Model.Monitor?.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat;
     static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
+    Microsoft.AspNetCore.Html.IHtmlContent StateTime(DateTimeOffset? value, string? id) => value is { } v
+        ? Html.Raw($"<time{(id is null ? "" : $" id=\"{id}\"")} data-utc=\"{v:O}\" data-utc-format=\"short\">{UtcFallback(v)}</time>")
+        : Html.Raw("&mdash;");
 }
 
 @if (Model.Monitor is null)
@@ -71,9 +74,8 @@
                 <button class="hawk-btn hawk-btn-primary" type="submit">Run now</button>
             </form>
         }
-        <a class="hawk-btn hawk-btn-ghost" asp-page-handler="Export" asp-route-id="@Model.Monitor.Id">Export JSON</a>
         <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Edit" asp-route-id="@Model.Monitor.Id">Edit</a>
-        <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Index">Back</a>
+        <a class="hawk-btn hawk-btn-ghost" asp-page-handler="Export" asp-route-id="@Model.Monitor.Id">Export JSON</a>
     </div>
 </div>
 
@@ -88,11 +90,25 @@
     </span>
 </section>
 
-<dl class="hawk-d-figures num" data-testid="uptime-figures">
-    <div><dt>24 h</dt><dd data-testid="uptime-24h">@Hawk.Web.Services.Monitoring.MonitorHistoryService.FormatPercent(history.Uptime.Last24h)</dd></div>
-    <div><dt>7 d</dt><dd data-testid="uptime-7d">@Hawk.Web.Services.Monitoring.MonitorHistoryService.FormatPercent(history.Uptime.Last7d)</dd></div>
-    <div><dt>30 d</dt><dd data-testid="uptime-30d">@Hawk.Web.Services.Monitoring.MonitorHistoryService.FormatPercent(history.Uptime.Last30d)</dd></div>
-</dl>
+<div class="hawk-d-figures num">
+    <dl data-testid="uptime-figures">
+        <div><dt>24 h</dt><dd data-testid="uptime-24h">@Hawk.Web.Services.Monitoring.MonitorHistoryService.FormatPercent(history.Uptime.Last24h)</dd></div>
+        <div><dt>7 d</dt><dd data-testid="uptime-7d">@Hawk.Web.Services.Monitoring.MonitorHistoryService.FormatPercent(history.Uptime.Last7d)</dd></div>
+        <div><dt>30 d</dt><dd data-testid="uptime-30d">@Hawk.Web.Services.Monitoring.MonitorHistoryService.FormatPercent(history.Uptime.Last30d)</dd></div>
+    </dl>
+    <dl class="hawk-d-state" data-testid="check-state">
+        @if (isHeartbeat)
+        {
+            <div><dt>Last ping</dt><dd>@StateTime(Model.Monitor.LastPingAt, "last-ping")</dd></div>
+            <div><dt>Due by</dt><dd>@StateTime(Model.Monitor.NextRunAt, null)</dd></div>
+        }
+        else
+        {
+            <div><dt>Last check</dt><dd>@StateTime(Model.Monitor.LastRunAt, null)</dd></div>
+            <div><dt>Next</dt><dd class="muted">@StateTime(Model.Monitor.NextRunAt, null)</dd></div>
+        }
+    </dl>
+</div>
 
 @section Scripts {
     <script>
@@ -134,55 +150,17 @@
 
 @if (isHeartbeat)
 {
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        @if (Model.PingUrl is { } pingUrl)
+    <div class="hawk-card mb-4" data-testid="ping-timeline">
+        <div class="font-semibold mb-3">Pings <span class="hawk-d-sub">last 24 hours</span></div>
+        @if (history.Strip.Cells.All(c => c.State == Hawk.Web.Services.Monitoring.StripCellState.Empty))
         {
-            <div class="hawk-card" data-testid="ping-card">
-                <div class="font-semibold mb-3">Ping URL</div>
-                <div class="flex items-center gap-2">
-                    <input id="ping-url" class="hawk-input font-mono text-xs" type="text" readonly value="@pingUrl" aria-label="Ping URL" />
-                    <button id="ping-url-copy" class="hawk-btn hawk-btn-ghost" type="button">Copy</button>
-                </div>
-                <p class="text-xs text-[color:var(--text-secondary)] mt-3">GET, HEAD or POST this URL from your job when it succeeds. Keep it secret: anyone with the URL can send pings.</p>
-                <pre id="ping-curl" class="mt-3 p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-all text-xs font-mono">curl -fsS -m 10 --retry 3 @pingUrl</pre>
-            </div>
+            <div class="hawk-d-empty">No data yet</div>
         }
-        <div class="hawk-card" data-testid="ping-timeline">
-            <div class="font-semibold mb-3">Pings <span class="hawk-d-sub">last 24 hours</span></div>
-            @if (history.Strip.Cells.All(c => c.State == Hawk.Web.Services.Monitoring.StripCellState.Empty))
-            {
-                <div class="hawk-d-empty">No data yet</div>
-            }
-            else
-            {
-                <partial name="_StatusStrip" model="history.Strip" />
-                <div class="hawk-d-axis"><span>24 h ago</span><span>12 h ago</span><span>now</span></div>
-            }
-            <dl class="hawk-d-facts num">
-                <dt>Last ping</dt>
-                <dd>
-                    @if (Model.Monitor.LastPingAt is { } lastPing)
-                    {
-                        <time data-utc="@lastPing.ToString("O")" data-utc-format="short">@UtcFallback(lastPing)</time>
-                    }
-                    else
-                    {
-                        @:&mdash;
-                    }
-                </dd>
-                <dt>Deadline</dt>
-                <dd>
-                    @if (Model.Monitor.NextRunAt is { } nextDeadline)
-                    {
-                        <time data-utc="@nextDeadline.ToString("O")" data-utc-format="short">@UtcFallback(nextDeadline)</time>
-                    }
-                    else
-                    {
-                        @:&mdash;
-                    }
-                </dd>
-            </dl>
-        </div>
+        else
+        {
+            <partial name="_StatusStrip" model="history.Strip" />
+            <div class="hawk-d-axis"><span>24 h ago</span><span>12 h ago</span><span>now</span></div>
+        }
     </div>
 }
 else
@@ -199,7 +177,6 @@ else
                 @foreach (var line in chart.Grid)
                 {
                     <line class="gl" x1="0" x2="@chart.Width" y1="@line.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)" y2="@line.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)" />
-                    @:<text x="@chart.Width" y="@((line.Y - 3).ToString(System.Globalization.CultureInfo.InvariantCulture))" text-anchor="end">@line.Ms ms</text>
                 }
                 @foreach (var pt in chart.Points.Where(p => p.Failed))
                 {
@@ -213,6 +190,11 @@ else
                 {
                     var tip = $"{pt.Cell.Start.UtcDateTime:HH:mm} UTC: {pt.Cell.Runs} {(pt.Cell.Runs == 1 ? "run" : "runs")}, {pt.Cell.Failures} failed, avg {pt.Cell.AverageMs} ms";
                     <circle class="@(pt.Failed ? "pt fail" : pt.Isolated ? "pt" : "hit")" cx="@pt.X.ToString(System.Globalization.CultureInfo.InvariantCulture)" cy="@pt.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)" r="@(pt.Failed || pt.Isolated ? 3 : 5)"><title>@tip</title></circle>
+                }
+                @* Labels come last so they paint over the failure bands (halo in hawk-details.css). *@
+                @foreach (var line in chart.Grid)
+                {
+                    @:<text x="@chart.Width" y="@((line.Y - 3).ToString(System.Globalization.CultureInfo.InvariantCulture))" text-anchor="end">@line.Ms ms</text>
                 }
             </svg>
             <div class="hawk-d-axis"><span>24 h ago</span><span>12 h ago</span><span>now</span></div>
@@ -258,11 +240,23 @@ else
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
     <div class="lg:col-span-5 space-y-4">
-        <div class="hawk-card">
+        @if (isHeartbeat && Model.PingUrl is { } pingUrl)
+        {
+            <div class="hawk-card" data-testid="ping-card">
+                <div class="font-semibold mb-3">Ping URL</div>
+                <div class="flex items-center gap-2">
+                    <input id="ping-url" class="hawk-input font-mono text-xs" type="text" readonly value="@pingUrl" aria-label="Ping URL" />
+                    <button id="ping-url-copy" class="hawk-btn hawk-btn-ghost" type="button">Copy</button>
+                </div>
+                <p class="text-xs text-[color:var(--text-secondary)] mt-3">GET, HEAD or POST this URL from your job when it succeeds. Keep it secret: anyone with the URL can send pings.</p>
+                <pre id="ping-curl" class="mt-3 p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-all text-xs font-mono">curl -fsS -m 10 --retry 3 @pingUrl</pre>
+            </div>
+        }
+        <div class="hawk-card hawk-d-config">
             <div class="font-semibold mb-3">Config</div>
-            <dl class="grid grid-cols-12 gap-y-4 text-sm">
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Status</dt>
-                <dd class="col-span-8 font-medium py-1">
+            <dl class="grid grid-cols-12 text-sm">
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Status</dt>
+                <dd class="col-span-8">
                     @if (!Model.Monitor.Enabled)
                     {
                         <span class="hawk-badge hawk-badge-danger">Disabled</span>
@@ -278,75 +272,49 @@ else
                 </dd>
                 @if (isHeartbeat)
                 {
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Expected every</dt>
-                    <dd class="col-span-8 font-medium py-1">@Hawk.Web.Services.Monitoring.MonitorIntervals.FormatDuration(Model.Monitor.IntervalSeconds)</dd>
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Grace</dt>
-                    <dd class="col-span-8 font-medium py-1">@Hawk.Web.Services.Monitoring.MonitorIntervals.FormatDuration(Model.Monitor.HeartbeatGraceSeconds)</dd>
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Last ping</dt>
-                    <dd class="col-span-8 py-1">
-                        @if (Model.Monitor.LastPingAt is { } lastPingAt)
-                        {
-                            <time id="last-ping" data-utc="@lastPingAt.ToString("O")" data-utc-format="short">@UtcFallback(lastPingAt)</time>
-                        }
-                        else
-                        {
-                            @:-
-                        }
-                    </dd>
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Deadline</dt>
-                    <dd class="col-span-8 py-1">
-                        @if (Model.Monitor.NextRunAt is { } deadline)
-                        {
-                            <time data-utc="@deadline.ToString("O")" data-utc-format="short">@UtcFallback(deadline)</time>
-                        }
-                        else
-                        {
-                            @:-
-                        }
-                    </dd>
+                    <dt class="col-span-4 text-[color:var(--text-secondary)]">Expected every</dt>
+                    <dd class="col-span-8">@Hawk.Web.Services.Monitoring.MonitorIntervals.FormatDuration(Model.Monitor.IntervalSeconds)</dd>
+                    <dt class="col-span-4 text-[color:var(--text-secondary)]">Grace</dt>
+                    <dd class="col-span-8">@Hawk.Web.Services.Monitoring.MonitorIntervals.FormatDuration(Model.Monitor.HeartbeatGraceSeconds)</dd>
                 }
                 else
                 {
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Interval</dt>
-                    <dd class="col-span-8 font-medium py-1">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Timeout</dt>
-                    <dd class="col-span-8 font-medium py-1">@Model.Monitor.TimeoutSeconds s</dd>
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Allowed status</dt>
-                    <dd class="col-span-8 font-mono text-xs break-words py-1">@(string.IsNullOrWhiteSpace(Model.Monitor.AllowedStatusCodes) ? "2xx only" : $"2xx + {Model.Monitor.AllowedStatusCodes}")</dd>
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Follow redirects</dt>
-                    <dd class="col-span-8 font-medium py-1">@(Model.Monitor.FollowRedirects ? "Yes" : "No")</dd>
-                }
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Last run</dt>
-                <dd class="col-span-8 py-1">
-                    @if (Model.Monitor.LastRunAt is { } lastRunAt)
+                    <dt class="col-span-4 text-[color:var(--text-secondary)]">Interval</dt>
+                    <dd class="col-span-8">@((Model.Monitor.IntervalSeconds < 60) ? $"{Model.Monitor.IntervalSeconds}s" : $"{Model.Monitor.IntervalSeconds / 60}m")</dd>
+                    <dt class="col-span-4 text-[color:var(--text-secondary)]">Timeout</dt>
+                    <dd class="col-span-8">@Model.Monitor.TimeoutSeconds s</dd>
+                    <dt class="col-span-4 text-[color:var(--text-secondary)]">Allowed status</dt>
+                    @if (string.IsNullOrWhiteSpace(Model.Monitor.AllowedStatusCodes))
                     {
-                        <time data-utc="@lastRunAt.ToString("O")" data-utc-format="short">@UtcFallback(lastRunAt)</time>
+                        <dd class="col-span-8"><span class="default">2xx only</span></dd>
                     }
                     else
                     {
-                        @:-
+                        <dd class="col-span-8 mono break-words">2xx + @Model.Monitor.AllowedStatusCodes</dd>
                     }
-                </dd>
-                @if (!isHeartbeat)
-                {
-                    <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Next run</dt>
-                    <dd class="col-span-8 py-1">
-                        @if (Model.Monitor.NextRunAt is { } nextRunAt)
-                        {
-                            <time data-utc="@nextRunAt.ToString("O")" data-utc-format="short">@UtcFallback(nextRunAt)</time>
-                        }
-                        else
-                        {
-                            @:-
-                        }
-                    </dd>
+                    <dt class="col-span-4 text-[color:var(--text-secondary)]">Follow redirects</dt>
+                    <dd class="col-span-8">@(Model.Monitor.FollowRedirects ? "Yes" : "No")</dd>
                 }
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Alert after</dt>
-                <dd class="col-span-8 font-medium py-1">@Model.Monitor.AlertAfterConsecutiveFailures consecutive @(Model.Monitor.AlertAfterConsecutiveFailures == 1 ? "failure" : "failures")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Alert email</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">@(!string.IsNullOrWhiteSpace(Model.Monitor.AlertEmailOverride) ? Model.Monitor.AlertEmailOverride : "-")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Run retention</dt>
-                <dd class="col-span-8 font-medium py-1">@(Model.Monitor.RunRetentionDays is > 0 ? $"{Model.Monitor.RunRetentionDays} days (override)" : "Account/default policy")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert after</dt>
+                <dd class="col-span-8">@Model.Monitor.AlertAfterConsecutiveFailures consecutive @(Model.Monitor.AlertAfterConsecutiveFailures == 1 ? "failure" : "failures")</dd>
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert email</dt>
+                @if (!string.IsNullOrWhiteSpace(Model.Monitor.AlertEmailOverride))
+                {
+                    <dd class="col-span-8 mono break-words">@Model.Monitor.AlertEmailOverride</dd>
+                }
+                else
+                {
+                    <dd class="col-span-8"><span class="default">Default recipient</span></dd>
+                }
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Run retention</dt>
+                @if (Model.Monitor.RunRetentionDays is > 0)
+                {
+                    <dd class="col-span-8">@Model.Monitor.RunRetentionDays days (override)</dd>
+                }
+                else
+                {
+                    <dd class="col-span-8"><span class="default">Account/default policy</span></dd>
+                }
             </dl>
         </div>
 
@@ -401,11 +369,14 @@ else
             {
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-xs">
-                        <thead class="bg-[color:var(--bg-secondary)] text-[color:var(--text-secondary)]">
+                        <thead class="hawk-runs-thead bg-[color:var(--bg-secondary)] text-[color:var(--text-secondary)]">
                         <tr>
-                            <th class="text-left font-semibold px-4 py-3">When</th>
-                            <th class="text-left font-semibold px-4 py-3">Duration</th>
-                            <th class="text-left font-semibold px-4 py-3">Result</th>
+                            <th class="text-left font-semibold px-4">When</th>
+                            @if (!isHeartbeat)
+                            {
+                                <th class="text-left font-semibold px-4">Duration</th>
+                            }
+                            <th class="text-left font-semibold px-4">Result</th>
                         </tr>
                         </thead>
                         <tbody class="hawk-runs-tbody">
@@ -417,7 +388,7 @@ else
                                 tabindex="0"
                                 onclick="window.location.href='@Url.Page("/Monitors/Runs/Details", new { monitorId = Model.Monitor.Id, runId = r.Id })'"
                                 onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); window.location.href='@Url.Page("/Monitors/Runs/Details", new { monitorId = Model.Monitor.Id, runId = r.Id })'; }">
-                                <td class="px-4 py-3">
+                                <td class="px-4">
                                     <a class="underline decoration-dotted underline-offset-2 hover:no-underline"
                                        asp-page="/Monitors/Runs/Details"
                                        asp-route-monitorId="@Model.Monitor.Id"
@@ -425,8 +396,11 @@ else
                                         <time data-utc="@r.StartedAt.ToString("O")" data-utc-format="short">@UtcFallback(r.StartedAt)</time>
                                     </a>
                                 </td>
-                                <td class="px-4 py-3 text-[color:var(--text-secondary)]">@r.DurationMs ms</td>
-                                <td class="px-4 py-3">
+                                @if (!isHeartbeat)
+                                {
+                                    <td class="px-4 text-[color:var(--text-secondary)]">@r.DurationMs ms</td>
+                                }
+                                <td class="px-4">
                                     @if (!string.Equals(runState, "completed", StringComparison.OrdinalIgnoreCase))
                                     {
                                         <span class="hawk-badge hawk-badge-warning">@runState.ToUpperInvariant()</span>
@@ -438,7 +412,7 @@ else
                                     else
                                     {
                                         <span class="hawk-badge hawk-badge-danger">FAIL</span>
-                                        <span class="text-xs text-[color:var(--text-secondary)] ml-2">@((r.ErrorMessage ?? "-").Length > 120 ? (r.ErrorMessage![..120] + "...") : (r.ErrorMessage ?? "-"))</span>
+                                        <span class="reason ml-2">@((r.ErrorMessage ?? "-").Length > 120 ? (r.ErrorMessage![..120] + "...") : (r.ErrorMessage ?? "-"))</span>
                                     }
                                 </td>
                             </tr>

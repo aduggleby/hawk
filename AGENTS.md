@@ -10,10 +10,10 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - E2E tests: `e2e` (Playwright, Chromium; dockerized headed runs; SQL Server and PostgreSQL stacks)
 - Monitor types: HTTP checks and heartbeat (push) monitors (see "Heartbeat Monitors")
 - Mock server: `Hawk.MockServer` (deterministic endpoints + Resend-compatible `/emails` capture + `/flaky` alternating endpoint)
-- UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), "Tower" design (0.14.0, see "Tower Design"), dark mode support, mobile nav drawer. Bootstrap has been removed.
+- UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), "Tower" design (0.14.0, polished in 0.16.0, see "Tower Design"), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.15.0`
+- Version: `0.16.0`
 
 ## Ports
 
@@ -362,14 +362,14 @@ Alert recipient resolution (in order):
 - `Services/Monitoring/MonitorGroups.cs` is the one place for group rules: `Normalize` (trim, blank = null), `Validate` (≤100 chars, no NUL; also run on every lookup input, because PostgreSQL rejects NUL in queries), `CanonicalizeAsync` (case-insensitive match against other monitors' groups, in memory; takes the existing spelling), `DisplayName` (ordinal-first spelling among case-insensitively equal names), `InGroup` (`GroupName.ToLower() == name` filter, translates on both providers), `Anchor` (`group-<slug>-<6 hex of SHA-256>`, ungrouped `group-none`) and `ListAsync`.
 - `MonitorEditor.CreateAsync/UpdateAsync` normalize + canonicalize (update excludes the edited monitor, so the only member can change the casing). The Edit page and `ApiMonitorBody.FromEntity` copy `GroupName` into the form; dropping that would clear groups on save.
 - Group commands in `MonitorCommands`: pause/resume = existing `PauseAsync/ResumeAsync(MonitorGroups.InGroup(...))` (stamps + heartbeat deadlines unchanged); `QueueGroupRunAsync` = `QueueManualRunAsync(reuseInFlight: true, rejectDisabled: true)` per HTTP monitor (queued / already in flight / skipped heartbeats and disabled); `RenameGroupAsync` = validate, canonicalize against other groups (a case-only rename stores the new spelling; same name = no-op), set-based update that renews stamps. The page and the API call the same methods.
-- Index: group headers sit inside `batch-form`, so group buttons use `formaction` + `name="Group"` (no nested forms); the rename dialog is a separate form outside it and confirms a merge into another existing group. Ungrouped has select-all only.
+- Index: group headers sit inside `batch-form`; each has one **Actions** `<details class="hawk-menu">` whose items use `formaction` + `name="Group"` (no nested forms); the rename dialog is a separate form outside it and confirms a merge into another existing group. Ungrouped has select-all only.
 - API: `group` on list/detail/create/PATCH (merge patch: absent keeps, null/blank clears), `GET /api/v1/monitors?group=` (case-insensitive; empty = ungrouped), `GET /api/v1/groups` (`failingCount` = last completed run failed, same rule as the Index), `POST /api/v1/groups/{pause,resume,run,rename}` with a JSON body `{group[, newName]}` (unknown group 404).
 - JSON export writes `group` (format still v3; missing = no group); single import prefills it; bulk transfer canonicalizes against existing groups and earlier file entries and shows a Group column. Seeded monitors are in group `Seed`.
 
 ## Monitors Index — Batch Actions
 
 - The monitors index supports batch actions on selected monitors via checkboxes.
-- When monitors are selected, the default action bar (Import StatusCake, Pause all, Resume all, New monitor) is replaced by a selection action bar with: **Run now**, **Pause**, **Resume**, and **Uncheck all**.
+- When monitors are selected, the default action bar (New monitor plus a **More** menu with Import StatusCake, Pause all, Resume all) is replaced by a selection action bar with: **Run now**, **Pause**, **Resume**, and **Uncheck all**.
 - **Batch Run now** enqueues a Hangfire `RunAsync` job for each selected monitor and shows a flash message with the count of queued runs.
 
 ## Monitor Detail Page
@@ -456,6 +456,8 @@ A versioned JSON API under `/api/v1` for agents (e.g. Claude Code) using per-use
 - Rollback to 0.13.x: delete the `hawk-run-buckets` recurring job and any enqueued, scheduled (retry) or failed `IRunBucketRollup` jobs in the Hangfire dashboard (the old image cannot load the type).
 
 ## Tower Design
+
+- 0.16.0 polish (designer review, mockups in `docs/plans/2026-10-29-1530-feat-ui-polish-plan.md`): `<details>` menus use `.hawk-menu`/`.hawk-menu-panel` (`Assets/components/hawk-menu.css`) or `data-menu` (Account); `site.js` closes them on Escape and outside click. Checkboxes are wrapped in labels that carry the 44 px touch target (the inputs stay 20 px). Only interactive cards (`a`/`button`/`[role=link]`) get a hover border. Create/Edit share `Assets/components/hawk-form.css` (one "Monitor" card, "Check and alerts", 880 px, `hawk-form-hint`). Alert email markup lives in `Services/Monitoring/AlertEmailHtml.cs` (table layout, inline styles, hex colours; `Document` shell used by single alerts and the summary). The board's heartbeat attention card localises the last-ping time by parsing the reason text written with `HeartbeatTokens.MissSince` (keep both in step; `MonitorBoardTests` pins it). Run diagnostics show a muted "None" for empty blocks (`{}`/`[]` count as empty only for stored JSON fields, never for bodies).
 
 - Tokens are CSS variables on `:root` (light, "day shift") and `.dark` in `Assets/tailwind.css` (`--bg --panel --line --text --muted --up --down --paused --chart --down-tint --hover --faint --warn`), exposed to Tailwind via `@theme inline`; the `hawk-*` component classes are restyled on them. Theme follows the OS unless `hawk.theme` (localStorage) says otherwise; the toggle is unchanged.
 - Font: Archivo variable (wght 100-900, wdth 62-125), self-hosted at `wwwroot/fonts/Archivo-latin-variable.woff2` (OFL in `wwwroot/fonts/OFL.txt`, latin subset only); no external font requests. `.condensed` (`font-stretch: 68%`) and `.num` (tabular numerals) utilities. Monospace is a system stack.

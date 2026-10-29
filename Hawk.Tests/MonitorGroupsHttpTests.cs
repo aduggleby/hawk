@@ -200,7 +200,7 @@ public sealed class MonitorGroupsHttpTests(PostgresFixture fixture)
         await SeedAsync(app, a, b, c);
 
         var flash = await PostGroupAsync(app, "GroupPause", "shop");
-        Assert.Contains("Paused 2 monitor(s)", flash);
+        Assert.Contains("Paused 2 monitors", flash);
         var all = await LoadAllAsync(app);
         Assert.True(all.Single(m => m.Name == "a").IsPaused);
         Assert.True(all.Single(m => m.Name == "b").IsPaused);
@@ -209,7 +209,7 @@ public sealed class MonitorGroupsHttpTests(PostgresFixture fixture)
         Assert.Equal(c.ConcurrencyStamp, all.Single(m => m.Name == "c").ConcurrencyStamp);
 
         flash = await PostGroupAsync(app, "GroupResume", "Shop");
-        Assert.Contains("Resumed 2 monitor(s)", flash);
+        Assert.Contains("Resumed 2 monitors", flash);
         Assert.All((await LoadAllAsync(app)).Where(m => m.Name != "c"), m => Assert.False(m.IsPaused));
     }
 
