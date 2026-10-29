@@ -61,7 +61,10 @@ public sealed record ApiAlertState(
 
 public sealed record ApiAlertRecipients(AlertRecipientSource Source, IReadOnlyList<string> Addresses);
 
-/// <summary>Monitor configuration as the Details page shows it. The heartbeat ping token is never included.</summary>
+/// <summary>
+/// Monitor configuration as the Details page shows it. <see cref="ConcurrencyStamp"/> is the ETag value for If-Match.
+/// <see cref="PingUrl"/> (with the heartbeat ping token) is set only in the response to creating a heartbeat; it is null everywhere else.
+/// </summary>
 public sealed record ApiMonitorDetail(
     Guid Id,
     string Name,
@@ -86,7 +89,9 @@ public sealed record ApiMonitorDetail(
     ApiAlertState AlertState,
     ApiAlertRecipients AlertRecipients,
     IReadOnlyList<ApiHeader> Headers,
-    IReadOnlyList<ApiMatchRule> MatchRules);
+    IReadOnlyList<ApiMatchRule> MatchRules,
+    Guid ConcurrencyStamp,
+    string? PingUrl);
 
 public sealed record ApiHeader(string Name, string Value);
 

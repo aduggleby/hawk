@@ -34,9 +34,12 @@ public class ApiHttpTests
     }
 
     private static async Task<HttpResponseMessage> SendAsync(
-        SecurityTestApplication app, string key, HttpMethod method, string path, string? body = null, string contentType = "application/json")
+        SecurityTestApplication app, string key, HttpMethod method, string path, string? body = null, string contentType = "application/json",
+        string? ifMatch = null)
     {
         var request = new HttpRequestMessage(method, path);
+        if (ifMatch is not null)
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
         if (body is not null)
             request.Content = new StringContent(body, Encoding.UTF8, contentType);
@@ -385,5 +388,227 @@ public class ApiHttpTests
             using var response = await SendAsync(app, key, HttpMethod.Put, "/api/v1/account/alerting", body);
             await AssertProblemAsync(response, HttpStatusCode.BadRequest, "validation_failed");
         }
+    }
+
+    // ---- monitor create / edit / delete (validation and errors; the happy paths run on PostgreSQL in ApiPostgresHttpTests) ----
+
+    private static async Task<int> CountMonitorsAsync(SecurityTestApplication app)
+    {
+        await using var scope = app.App.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.CountAsync();
+    }
+
+    [Fact]
+    public async Task Index_lists_the_monitor_create_edit_and_delete_endpoints()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, _) = await CreateKeyAsync(app, ApiKeyScope.Read);
+        using var response = await SendAsync(app, key, HttpMethod.Get, "/api/v1");
+        var endpoints = (await JsonAsync(response)).GetProperty("endpoints").EnumerateArray()
+            .Select(e => (e.GetProperty("method").GetString(), e.GetProperty("path").GetString(), e.GetProperty("scope").GetString())).ToList();
+        Assert.Contains(("POST", "/api/v1/monitors", "write"), endpoints);
+        Assert.Contains(("PATCH", "/api/v1/monitors/{id}", "write"), endpoints);
+        Assert.Contains(("DELETE", "/api/v1/monitors/{id}", "write"), endpoints);
+    }
+
+    [Fact]
+    public async Task Detail_returns_the_concurrency_stamp_as_body_field_and_etag_and_never_a_ping_url()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, userId) = await CreateKeyAsync(app, ApiKeyScope.Read);
+        var m = await SeedAsync(app, db =>
+        {
+            var monitor = Http("a", userId);
+            db.Monitors.Add(monitor);
+            return Task.FromResult(monitor);
+        });
+
+        using var response = await SendAsync(app, key, HttpMethod.Get, $"/api/v1/monitors/{m.Id}");
+        var json = await JsonAsync(response);
+        Assert.Equal(m.ConcurrencyStamp, json.GetProperty("concurrencyStamp").GetGuid());
+        Assert.Equal($"\"{m.ConcurrencyStamp:D}\"", response.Headers.ETag?.ToString());
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("pingUrl").ValueKind);
+    }
+
+    [Fact]
+    public async Task Read_keys_get_403_on_monitor_create_patch_and_delete()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, userId) = await CreateKeyAsync(app, ApiKeyScope.Read);
+        var id = await SeedAsync(app, db =>
+        {
+            var monitor = Http("a", userId);
+            db.Monitors.Add(monitor);
+            return Task.FromResult(monitor.Id);
+        });
+
+        foreach (var (method, path) in new[] { (HttpMethod.Post, "/api/v1/monitors"), (HttpMethod.Patch, $"/api/v1/monitors/{id}"), (HttpMethod.Delete, $"/api/v1/monitors/{id}") })
+        {
+            using var response = await SendAsync(app, key, method, path, "{}");
+            await AssertProblemAsync(response, HttpStatusCode.Forbidden, "insufficient_scope");
+        }
+
+        Assert.Equal(1, await CountMonitorsAsync(app));
+    }
+
+    [Theory]
+    [InlineData("{}", "name")]
+    [InlineData("{\"name\":\"x\"}", "url")]
+    [InlineData("{\"name\":\"x\",\"url\":\"ftp://example.com\"}", "url")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"intervalSeconds\":7}", "intervalSeconds")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"intervalSeconds\":\"60\"}", "intervalSeconds")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"timeoutSeconds\":0}", "timeoutSeconds")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"method\":\"PUT\"}", "method")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"method\":\"POST\"}", "body")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"enabled\":\"yes\"}", "enabled")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"alertAfterConsecutiveFailures\":21}", "alertAfterConsecutiveFailures")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"alertEmailOverride\":\"nope\"}", "alertEmailOverride")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"allowedStatusCodes\":\"99\"}", "allowedStatusCodes")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"runRetentionDays\":0}", "runRetentionDays")]
+    [InlineData("{\"name\":\"x\\u0000\",\"url\":\"https://example.com\"}", "request")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"matchRules\":[{\"mode\":\"regex\",\"pattern\":\"(\"}]}", "matchRules[0].pattern")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"matchRules\":[{\"mode\":\"nope\",\"pattern\":\"a\"}]}", "matchRules[0].mode")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"matchRules\":[{\"mode\":\"contains\",\"pattern\":\"a\",\"extra\":1}]}", "matchRules[0].extra")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"matchRules\":{}}", "matchRules")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"headers\":[{\"name\":\"A\"}]}", "headers[0].value")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"headers\":[{\"name\":\"A\",\"value\":5}]}", "headers[0].value")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"unknownField\":1}", "unknownField")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"heartbeatToken\":\"0123456789abcdef0123456789abcdef\"}", "heartbeatToken")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"ownerEmail\":\"a@b.co\"}", "ownerEmail")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"isPaused\":true}", "isPaused")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"type\":\"ping\"}", "type")]
+    [InlineData("{\"name\":\"x\",\"url\":\"https://example.com\",\"heartbeatGraceSeconds\":300}", "heartbeatGraceSeconds")]
+    [InlineData("{\"name\":\"x\",\"type\":\"heartbeat\",\"intervalSeconds\":7}", "intervalSeconds")]
+    [InlineData("{\"name\":\"x\",\"type\":\"heartbeat\",\"heartbeatGraceSeconds\":7}", "heartbeatGraceSeconds")]
+    [InlineData("{\"name\":\"x\",\"type\":\"heartbeat\",\"url\":\"https://example.com\"}", "url")]
+    public async Task Create_rejects_invalid_bodies_with_json_field_names_and_creates_nothing(string body, string expectedField)
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, _) = await CreateKeyAsync(app, ApiKeyScope.Write);
+
+        using var response = await SendAsync(app, key, HttpMethod.Post, "/api/v1/monitors", body);
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "validation_failed");
+        var errors = (await JsonAsync(response)).GetProperty("errors");
+        Assert.True(errors.TryGetProperty(expectedField, out var messages) && messages.GetArrayLength() > 0, $"no error for '{expectedField}': {errors}");
+        Assert.Equal(0, await CountMonitorsAsync(app));
+    }
+
+    [Fact]
+    public async Task Create_reports_every_invalid_field_at_once_and_enforces_header_and_pattern_limits()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, _) = await CreateKeyAsync(app, ApiKeyScope.Write);
+        var longName = new string('h', 201);
+
+        using var response = await SendAsync(app, key, HttpMethod.Post, "/api/v1/monitors",
+            $"{{\"name\":\"\",\"url\":\"nope\",\"timeoutSeconds\":999,\"headers\":[{{\"name\":\"{longName}\",\"value\":\"v\"}}]," +
+            $"\"matchRules\":[{{\"mode\":\"contains\",\"pattern\":\"{new string('p', 2001)}\"}}]}}");
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "validation_failed");
+        var errors = (await JsonAsync(response)).GetProperty("errors");
+        foreach (var field in new[] { "name", "url", "timeoutSeconds", "headers[0].name", "matchRules[0].pattern" })
+            Assert.True(errors.TryGetProperty(field, out _), $"missing '{field}' in {errors}");
+    }
+
+    [Fact]
+    public async Task Create_requires_a_json_object_body()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, _) = await CreateKeyAsync(app, ApiKeyScope.Write);
+
+        using var wrongType = await SendAsync(app, key, HttpMethod.Post, "/api/v1/monitors", "{}", "text/plain");
+        await AssertProblemAsync(wrongType, HttpStatusCode.BadRequest, "validation_failed");
+        using var array = await SendAsync(app, key, HttpMethod.Post, "/api/v1/monitors", "[]");
+        await AssertProblemAsync(array, HttpStatusCode.BadRequest, "validation_failed");
+        using var empty = await SendAsync(app, key, HttpMethod.Post, "/api/v1/monitors", "");
+        await AssertProblemAsync(empty, HttpStatusCode.BadRequest, "validation_failed");
+    }
+
+    [Fact]
+    public async Task Patch_and_delete_return_404_for_unknown_monitors_and_400_for_a_malformed_if_match()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, userId) = await CreateKeyAsync(app, ApiKeyScope.Write);
+        var id = await SeedAsync(app, db =>
+        {
+            var monitor = Http("a", userId);
+            db.Monitors.Add(monitor);
+            return Task.FromResult(monitor.Id);
+        });
+
+        using (var patch = await SendAsync(app, key, HttpMethod.Patch, $"/api/v1/monitors/{Guid.NewGuid()}", "{\"name\":\"x\"}"))
+            await AssertProblemAsync(patch, HttpStatusCode.NotFound, "not_found");
+        using (var delete = await SendAsync(app, key, HttpMethod.Delete, $"/api/v1/monitors/{Guid.NewGuid()}"))
+            await AssertProblemAsync(delete, HttpStatusCode.NotFound, "not_found");
+
+        foreach (var ifMatch in new[] { "abc", "*", "W/\"" + Guid.NewGuid() + "\"", "\"" + Guid.NewGuid() + "\", \"" + Guid.NewGuid() + "\"" })
+        {
+            using var patch = await SendAsync(app, key, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"name\":\"x\"}", ifMatch: ifMatch);
+            await AssertProblemAsync(patch, HttpStatusCode.BadRequest, "validation_failed");
+            using var delete = await SendAsync(app, key, HttpMethod.Delete, $"/api/v1/monitors/{id}", ifMatch: ifMatch);
+            await AssertProblemAsync(delete, HttpStatusCode.BadRequest, "validation_failed");
+        }
+
+        Assert.Equal(1, await CountMonitorsAsync(app));
+    }
+
+    [Fact]
+    public async Task Patch_and_delete_with_a_stale_if_match_return_412_and_change_nothing_AE4()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, userId) = await CreateKeyAsync(app, ApiKeyScope.Write);
+        var m = await SeedAsync(app, db =>
+        {
+            var monitor = Http("a", userId);
+            db.Monitors.Add(monitor);
+            return Task.FromResult(monitor);
+        });
+
+        foreach (var ifMatch in new[] { $"\"{Guid.NewGuid()}\"", Guid.NewGuid().ToString() })
+        {
+            using var patch = await SendAsync(app, key, HttpMethod.Patch, $"/api/v1/monitors/{m.Id}", "{\"name\":\"changed\"}", ifMatch: ifMatch);
+            await AssertProblemAsync(patch, HttpStatusCode.PreconditionFailed, "precondition_failed");
+            using var delete = await SendAsync(app, key, HttpMethod.Delete, $"/api/v1/monitors/{m.Id}", ifMatch: ifMatch);
+            await AssertProblemAsync(delete, HttpStatusCode.PreconditionFailed, "precondition_failed");
+        }
+
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var saved = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.AsNoTracking().SingleAsync(x => x.Id == m.Id);
+        Assert.Equal("a", saved.Name);
+        Assert.Equal(m.ConcurrencyStamp, saved.ConcurrencyStamp);
+    }
+
+    [Theory]
+    [InlineData("{\"type\":\"heartbeat\"}", "type")]
+    [InlineData("{\"heartbeatGraceSeconds\":300}", "heartbeatGraceSeconds")]
+    [InlineData("{\"heartbeatToken\":\"0123456789abcdef0123456789abcdef\"}", "heartbeatToken")]
+    [InlineData("{\"ownerEmail\":\"a@b.co\"}", "ownerEmail")]
+    [InlineData("{\"isPaused\":true}", "isPaused")]
+    [InlineData("{\"unknown\":1}", "unknown")]
+    [InlineData("{\"url\":\"ftp://example.com\"}", "url")]
+    [InlineData("{\"name\":null}", "name")]
+    [InlineData("{\"intervalSeconds\":7}", "intervalSeconds")]
+    [InlineData("{\"method\":\"POST\"}", "body")]
+    public async Task Patch_rejects_invalid_bodies_and_changes_nothing(string body, string expectedField)
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, userId) = await CreateKeyAsync(app, ApiKeyScope.Write);
+        var m = await SeedAsync(app, db =>
+        {
+            var monitor = Http("a", userId);
+            monitor.ContentType = "application/json";
+            db.Monitors.Add(monitor);
+            return Task.FromResult(monitor);
+        });
+
+        using var response = await SendAsync(app, key, HttpMethod.Patch, $"/api/v1/monitors/{m.Id}", body);
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "validation_failed");
+        var errors = (await JsonAsync(response)).GetProperty("errors");
+        Assert.True(errors.TryGetProperty(expectedField, out _), $"no error for '{expectedField}': {errors}");
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var saved = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.AsNoTracking().SingleAsync(x => x.Id == m.Id);
+        Assert.Equal(m.ConcurrencyStamp, saved.ConcurrencyStamp);
     }
 }

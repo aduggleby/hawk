@@ -10,6 +10,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Hawk.Web.Data;
 using Hawk.Web.Data.Monitoring;
+using Hawk.Web.Pages.Monitors;
 using Hawk.Web.Services.Monitoring;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
@@ -37,6 +38,9 @@ public static class ApiEndpoints
         new("GET", Prefix + "/monitors/{id}", "read", "One monitor: configuration, alert state and alert recipients."),
         new("GET", Prefix + "/monitors/{id}/runs?limit=", "read", "Recent runs, newest first (default 25, max 100)."),
         new("GET", Prefix + "/monitors/{id}/runs/{runId}", "read", "One run with request and response diagnostics."),
+        new("POST", Prefix + "/monitors", "write", "Create an HTTP or heartbeat monitor owned by the caller; a heartbeat response includes the pingUrl."),
+        new("PATCH", Prefix + "/monitors/{id}", "write", "Edit a monitor (merge patch; headers and matchRules replace the list; optional If-Match)."),
+        new("DELETE", Prefix + "/monitors/{id}", "write", "Delete a monitor with its runs and alert state; cannot be undone (optional If-Match)."),
         new("PATCH", Prefix + "/monitors/{id}/alerting", "write", "Change alertAfterConsecutiveFailures (1-20) and/or alertEmailOverride (null clears)."),
         new("GET", Prefix + "/account/alerting", "read", "The caller's account-wide alert email."),
         new("PUT", Prefix + "/account/alerting", "write", "Replace the account-wide alert email: {\"alertEmail\": string|null}."),
@@ -64,6 +68,9 @@ public static class ApiEndpoints
         api.MapGet("/monitors/{id:guid}/runs/{runId:guid}", GetRunAsync).RequireAuthorization(ApiKeyAuthentication.ReadPolicy);
         api.MapGet("/account/alerting", GetAccountAlertingAsync).RequireAuthorization(ApiKeyAuthentication.ReadPolicy);
 
+        api.MapPost("/monitors", CreateMonitorAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
+        api.MapMethods("/monitors/{id:guid}", [HttpMethods.Patch], PatchMonitorAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
+        api.MapDelete("/monitors/{id:guid}", DeleteMonitorAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
         api.MapMethods("/monitors/{id:guid}/alerting", [HttpMethods.Patch], PatchAlertingAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
         api.MapPut("/account/alerting", PutAccountAlertingAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
         api.MapPost("/monitors/{id:guid}/pause", (Guid id, HttpContext http, MonitorCommands commands, ILoggerFactory logs, CancellationToken ct) =>
@@ -113,7 +120,13 @@ public static class ApiEndpoints
     }
 
     private static async Task<IResult> GetMonitorAsync(
-        Guid id, HttpContext http, ApplicationDbContext db, MonitorStatusService statuses, AlertRecipientResolver resolver, CancellationToken ct)
+        Guid id, HttpContext http, ApplicationDbContext db, MonitorStatusService statuses, AlertRecipientResolver resolver, CancellationToken ct) =>
+        await DetailAsync(id, http, db, statuses, resolver, StatusCodes.Status200OK, includePingUrl: false, ct);
+
+    /// <summary>The monitor detail response; sets the ETag. <paramref name="includePingUrl"/> is true only when creating a heartbeat.</summary>
+    private static async Task<IResult> DetailAsync(
+        Guid id, HttpContext http, ApplicationDbContext db, MonitorStatusService statuses, AlertRecipientResolver resolver,
+        int statusCode, bool includePingUrl, CancellationToken ct)
     {
         var m = await db.Monitors.AsNoTracking()
             .Include(x => x.Headers).Include(x => x.MatchRules).AsSplitQuery()
@@ -123,6 +136,7 @@ public static class ApiEndpoints
         var status = (await statuses.GetStatusesAsync([m], ct))[id];
         var state = await db.MonitorAlertStates.AsNoTracking().FirstOrDefaultAsync(s => s.MonitorId == id, ct);
         var heartbeat = m.Type == MonitorType.Heartbeat;
+        http.Response.Headers.ETag = ETagOf(m.ConcurrencyStamp);
 
         return Json(new ApiMonitorDetail(
             m.Id, m.Name, m.Type, UrlOf(m), status.State, status.Health, m.CreatedByUserId == UserId(http), FailureOf(status),
@@ -138,7 +152,11 @@ public static class ApiEndpoints
             heartbeat ? [] : m.Headers.OrderBy(h => h.Name, StringComparer.Ordinal).ThenBy(h => h.Value, StringComparer.Ordinal)
                 .Select(h => new ApiHeader(h.Name, h.Value)).ToList(),
             heartbeat ? [] : m.MatchRules.OrderBy(r => r.Mode).ThenBy(r => r.Pattern, StringComparer.Ordinal)
-                .Select(r => new ApiMatchRule(r.Mode, r.Pattern)).ToList()));
+                .Select(r => new ApiMatchRule(r.Mode, r.Pattern)).ToList(),
+            m.ConcurrencyStamp,
+            // Same URL the Details page shows.
+            includePingUrl && m.HeartbeatToken is { } token ? $"{http.Request.Scheme}://{http.Request.Host}/ping/{token}" : null),
+            statusCode);
     }
 
     private static async Task<IResult> GetRunsAsync(Guid id, HttpContext http, ApplicationDbContext db, CancellationToken ct)
@@ -280,6 +298,120 @@ public static class ApiEndpoints
             errors[property.Name] = [emailError];
         return (email, true);
     }
+
+    // ---- monitor create / edit / delete ----
+
+    private static async Task<IResult> CreateMonitorAsync(
+        HttpContext http, ApplicationDbContext db, MonitorEditor editor, IHostEnvironment env, MonitorStatusService statuses,
+        AlertRecipientResolver resolver, ILoggerFactory logs, CancellationToken ct)
+    {
+        var (body, bodyError) = await ReadBodyAsync(http, ct);
+        if (bodyError is not null) return bodyError;
+
+        var form = new MonitorForm();
+        var errors = ApiMonitorBody.Apply(body, form, persistedType: null, out _, out _);
+        if (errors.Count == 0)
+            errors = ApiMonitorBody.Validate(form, env);
+        if (errors.Count > 0)
+            return ValidationProblem(errors);
+
+        var m = await editor.CreateAsync(form, UserId(http), ct);
+        LogWrite(http, logs, m.Id, "monitor.create");
+        http.Response.Headers.Location = $"{Prefix}/monitors/{m.Id}";
+        return await DetailAsync(m.Id, http, db, statuses, resolver, StatusCodes.Status201Created, includePingUrl: true, ct);
+    }
+
+    private static async Task<IResult> PatchMonitorAsync(
+        Guid id, HttpContext http, ApplicationDbContext db, MonitorEditor editor, IHostEnvironment env, MonitorStatusService statuses,
+        AlertRecipientResolver resolver, ILoggerFactory logs, CancellationToken ct)
+    {
+        if (!TryReadIfMatch(http, out var ifMatch, out var ifMatchError)) return ifMatchError!;
+        var (body, bodyError) = await ReadBodyAsync(http, ct);
+        if (bodyError is not null) return bodyError;
+
+        var m = await db.Monitors.AsNoTracking()
+            .Include(x => x.Headers).Include(x => x.MatchRules).AsSplitQuery()
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (m is null) return MonitorNotFound();
+        if (ifMatch is not null && ifMatch != m.ConcurrencyStamp) return PreconditionFailed();
+
+        // Merge patch: start from the persisted values and apply the properties that are present.
+        var form = ApiMonitorBody.FromEntity(m, m.Headers.ToList(), m.MatchRules.ToList());
+        var errors = ApiMonitorBody.Apply(body, form, m.Type, out var headersPresent, out var rulesPresent);
+        if (errors.Count == 0)
+            errors = ApiMonitorBody.Validate(form, env);
+        if (errors.Count > 0)
+            return ValidationProblem(errors);
+
+        switch (await editor.UpdateAsync(id, form, ifMatch, replaceHeaders: headersPresent, replaceMatchRules: rulesPresent, ct))
+        {
+            case MonitorUpdateOutcome.NotFound:
+                return MonitorNotFound();
+            case MonitorUpdateOutcome.Conflict:
+                return ifMatch is not null
+                    ? PreconditionFailed()
+                    : Problem(StatusCodes.Status409Conflict, "conflict", "The monitor was changed concurrently", "Retry the request.");
+        }
+
+        LogWrite(http, logs, id, "monitor.update");
+        return await DetailAsync(id, http, db, statuses, resolver, StatusCodes.Status200OK, includePingUrl: false, ct);
+    }
+
+    private static async Task<IResult> DeleteMonitorAsync(
+        Guid id, HttpContext http, ApplicationDbContext db, MonitorEditor editor, ILoggerFactory logs, CancellationToken ct)
+    {
+        if (!TryReadIfMatch(http, out var ifMatch, out var ifMatchError)) return ifMatchError!;
+
+        var m = await db.Monitors.AsNoTracking().Where(x => x.Id == id).Select(x => new { x.Name, x.ConcurrencyStamp }).FirstOrDefaultAsync(ct);
+        if (m is null) return MonitorNotFound();
+        if (ifMatch is not null && ifMatch != m.ConcurrencyStamp) return PreconditionFailed();
+
+        switch (await editor.DeleteAsync(id, ifMatch, ct))
+        {
+            case MonitorDeleteOutcome.NotFound:
+                return MonitorNotFound();
+            case MonitorDeleteOutcome.Conflict:
+                return PreconditionFailed();
+        }
+
+        // Deleting is irreversible, so it is logged at Warning with the name.
+        logs.CreateLogger("Hawk.Api").LogWarning(
+            "API write: user {UserId} key {KeyId} monitor {MonitorId} action {Action} name {Name}",
+            UserId(http), http.User.FindFirstValue(ApiKeyAuthentication.KeyIdClaim), id, "monitor.delete", m.Name);
+        return Results.NoContent();
+    }
+
+    private static string ETagOf(Guid stamp) => $"\"{stamp:D}\"";
+
+    /// <summary>Reads an optional <c>If-Match</c>: the monitor's concurrencyStamp, quoted (as in the ETag) or bare. Anything else is a 400.</summary>
+    private static bool TryReadIfMatch(HttpContext http, out Guid? stamp, out IResult? error)
+    {
+        stamp = null;
+        error = null;
+        var values = http.Request.Headers.IfMatch;
+        if (values.Count == 0)
+            return true;
+
+        var raw = values.Count == 1 ? values[0]?.Trim() ?? string.Empty : string.Empty;
+        if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+            raw = raw[1..^1];
+        if (Guid.TryParseExact(raw, "D", out var parsed))
+        {
+            stamp = parsed;
+            return true;
+        }
+
+        error = Problem(StatusCodes.Status400BadRequest, "validation_failed", "The request is not valid",
+            "If-Match must be the monitor's concurrencyStamp (the ETag of a previous response), quoted or bare.");
+        return false;
+    }
+
+    private static IResult PreconditionFailed() => Problem(StatusCodes.Status412PreconditionFailed, "precondition_failed",
+        "The monitor changed since you read it", "Its concurrencyStamp no longer matches If-Match. GET the monitor again and retry.");
+
+    private static IResult ValidationProblem(Dictionary<string, List<string>> errors) =>
+        Problem(StatusCodes.Status400BadRequest, "validation_failed", "The request is not valid",
+            errors: errors.ToDictionary(e => e.Key, e => e.Value.ToArray()));
 
     private static async Task<IResult> PauseResumeAsync(
         Guid id, string action, HttpContext http, Func<Guid, CancellationToken, Task<PauseResumeOutcome>> command,

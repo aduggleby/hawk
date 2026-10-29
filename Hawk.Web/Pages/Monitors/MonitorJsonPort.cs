@@ -234,14 +234,14 @@ public static class MonitorJsonPort
             Body = model.Body,
         };
 
-        // Field-level attributes ([Required]/[MaxLength]/[Range]) first, then the form's cross-field rules.
-        var attributeResults = new List<ValidationResult>();
-        Validator.TryValidateObject(form, new ValidationContext(form), attributeResults, validateAllProperties: true);
-        var validationError = attributeResults
+        // Field-level attributes first, then the form's cross-field rules, then the header and match-rule limits (HTTP only).
+        var validationError = MonitorValidation.Attributes(form)
             .Concat(form.Validate(env))
+            .Concat(heartbeat ? [] : MonitorValidation.ChildLimits(
+                model.Headers.Select(h => (h?.Name, h?.Value)),
+                model.MatchRules.Select(r => (r?.Mode ?? ContentMatchMode.None, r?.Pattern))))
             .Select(v => v.ErrorMessage)
-            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m))
-            ?? (heartbeat ? null : ValidateChildren(model));
+            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m));
         if (!string.IsNullOrWhiteSpace(validationError))
         {
             error = validationError;
@@ -305,38 +305,6 @@ public static class MonitorJsonPort
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Validates header and match-rule lengths and regex syntax, mirroring the entity column limits.
-    /// </summary>
-    private static string? ValidateChildren(MonitorExportModel model)
-    {
-        foreach (var header in model.Headers)
-        {
-            var name = (header?.Name ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(name))
-                continue;
-            if (name.Length > 200)
-                return $"Header name '{name[..20]}...' is longer than 200 characters.";
-            if ((header!.Value ?? string.Empty).Trim().Length > 2000)
-                return $"Header '{name}' value is longer than 2000 characters.";
-            if (name.Contains('\0') || (header.Value ?? string.Empty).Contains('\0'))
-                return $"Header '{name.Replace('\0', ' ')}' contains NUL characters.";
-        }
-
-        foreach (var rule in model.MatchRules)
-        {
-            var pattern = (rule?.Pattern ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(pattern) || rule!.Mode == ContentMatchMode.None)
-                continue;
-            if (pattern.Length > 2000)
-                return "Match rule pattern is longer than 2000 characters.";
-            if (pattern.Contains('\0'))
-                return "Match rule pattern contains NUL characters.";
-        }
-
-        return null;
     }
 
     /// <summary>

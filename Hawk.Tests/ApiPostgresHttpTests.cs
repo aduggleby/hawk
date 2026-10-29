@@ -16,6 +16,7 @@ using Hawk.Web.Data;
 using Hawk.Web.Data.ApiKeys;
 using Hawk.Web.Data.Monitoring;
 using Hawk.Web.Infrastructure;
+using Hawk.Web.Services;
 using Hawk.Web.Services.ApiKeys;
 using Hawk.Web.Services.Monitoring;
 using Microsoft.AspNetCore.Builder;
@@ -72,6 +73,7 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         builder.Services.AddScoped<ApiKeyService>();
         builder.Services.AddScoped<MonitorStatusService>();
         builder.Services.AddScoped<MonitorCommands>();
+        builder.Services.AddScoped<MonitorEditor>();
         builder.Services.AddScoped<AlertRecipientResolver>();
         builder.Services.AddScoped<AccountAlertSettings>();
         var jobs = new Jobs();
@@ -135,6 +137,269 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         Name = "hb", Type = MonitorType.Heartbeat, Url = "", Method = "GET", IntervalSeconds = 3600, HeartbeatGraceSeconds = 300,
         HeartbeatToken = HeartbeatTokens.Generate(), IsPaused = paused, NextRunAt = DateTimeOffset.UtcNow.AddDays(-2),
     };
+
+    private static async Task<(HttpStatusCode Status, JsonElement Json, HttpResponseMessage Response)> SendFullAsync(
+        Host host, HttpMethod method, string path, string? body = null, string? ifMatch = null)
+    {
+        var request = new HttpRequestMessage(method, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", host.WriteKey);
+        if (ifMatch is not null)
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        if (body is not null)
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var response = await host.Client.SendAsync(request);
+        var text = await response.Content.ReadAsStringAsync();
+        return (response.StatusCode, text.Length == 0 ? default : JsonDocument.Parse(text).RootElement.Clone(), response);
+    }
+
+    private static async Task<MonitorEntity> GetFullAsync(Host host, Guid id)
+    {
+        await using var scope = host.App.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.AsNoTracking()
+            .Include(m => m.Headers).Include(m => m.MatchRules).SingleAsync(m => m.Id == id);
+    }
+
+    [SkippableFact]
+    public async Task Create_http_monitor_applies_form_defaults_and_is_owned_by_the_key_user_AE1()
+    {
+        await using var host = await CreateHostAsync();
+
+        var (status, json, response) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors", "{\"name\":\" api web \",\"url\":\"https://example.com/health\",\"intervalSeconds\":60}");
+
+        Assert.Equal(HttpStatusCode.Created, status);
+        var id = json.GetProperty("id").GetGuid();
+        Assert.Equal($"/api/v1/monitors/{id}", response.Headers.Location?.ToString());
+        Assert.Equal($"\"{json.GetProperty("concurrencyStamp").GetGuid():D}\"", response.Headers.ETag?.ToString());
+        Assert.Equal("api web", json.GetProperty("name").GetString());
+        Assert.Equal("http", json.GetProperty("type").GetString());
+        Assert.Equal("GET", json.GetProperty("method").GetString());
+        Assert.Equal(15, json.GetProperty("timeoutSeconds").GetInt32());
+        Assert.Equal(1, json.GetProperty("alertAfterConsecutiveFailures").GetInt32());
+        Assert.Equal("active", json.GetProperty("state").GetString());
+        Assert.True(json.GetProperty("ownedByCaller").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("pingUrl").ValueKind);
+
+        var saved = await GetFullAsync(host, id);
+        Assert.Equal(host.UserId, saved.CreatedByUserId);
+        Assert.True(saved.Enabled);
+        Assert.False(saved.IsPaused);
+        var defaults = new Hawk.Web.Pages.Monitors.MonitorForm();
+        Assert.Equal(defaults.Method, saved.Method);
+        Assert.Equal(defaults.TimeoutSeconds, saved.TimeoutSeconds);
+        Assert.Equal(defaults.AlertAfterConsecutiveFailures, saved.AlertAfterConsecutiveFailures);
+        Assert.Equal(defaults.ContentType, saved.ContentType);
+
+        var (_, list) = await SendAsync(host, host.ReadKey, HttpMethod.Get, "/api/v1/monitors");
+        var item = list.GetProperty("monitors").EnumerateArray().Single(m => m.GetProperty("id").GetGuid() == id);
+        Assert.True(item.GetProperty("ownedByCaller").GetBoolean());
+    }
+
+    [SkippableFact]
+    public async Task Create_stores_headers_and_match_rules_accepting_mode_or_type_and_more_than_five_headers()
+    {
+        await using var host = await CreateHostAsync();
+        var headers = string.Join(",", Enumerable.Range(0, 7).Select(i => $"{{\"name\":\"X-H{i}\",\"value\":\" v{i} \"}}"));
+
+        var (status, json, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors",
+            "{\"name\":\"rich\",\"url\":\"https://example.com/\",\"method\":\"post\",\"body\":\"{}\",\"allowedStatusCodes\":\"404, 429\"," +
+            "\"alertEmailOverride\":\"ops@x.com\",\"runRetentionDays\":30,\"enabled\":false," +
+            $"\"headers\":[{headers}],\"matchRules\":[{{\"mode\":\"contains\",\"pattern\":\"ok\"}},{{\"type\":\"regex\",\"pattern\":\"a+\"}}]}}");
+
+        Assert.Equal(HttpStatusCode.Created, status);
+        var saved = await GetFullAsync(host, json.GetProperty("id").GetGuid());
+        Assert.Equal("POST", saved.Method);
+        Assert.False(saved.Enabled);
+        Assert.Equal("404,429", saved.AllowedStatusCodes);
+        Assert.Equal(30, saved.RunRetentionDays);
+        Assert.Equal(7, saved.Headers.Count);
+        Assert.Contains(saved.Headers, h => h.Name == "X-H3" && h.Value == "v3");
+        Assert.Equal([ContentMatchMode.Contains, ContentMatchMode.Regex], saved.MatchRules.Select(r => r.Mode).Order());
+        Assert.Equal("disabled", json.GetProperty("state").GetString());
+        Assert.Equal(7, json.GetProperty("headers").GetArrayLength());
+    }
+
+    [SkippableFact]
+    public async Task Create_heartbeat_returns_the_ping_url_once_and_get_never_contains_the_token_AE2()
+    {
+        await using var host = await CreateHostAsync();
+
+        var (status, json, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors",
+            "{\"name\":\"nightly\",\"type\":\"heartbeat\",\"intervalSeconds\":3600,\"heartbeatGraceSeconds\":300}");
+
+        Assert.Equal(HttpStatusCode.Created, status);
+        var id = json.GetProperty("id").GetGuid();
+        var saved = await GetFullAsync(host, id);
+        Assert.Matches("^[0-9a-f]{32}$", saved.HeartbeatToken);
+        Assert.Equal($"http://localhost/ping/{saved.HeartbeatToken}", json.GetProperty("pingUrl").GetString());
+        Assert.Equal(host.UserId, saved.CreatedByUserId);
+        Assert.False(saved.IsPaused);
+        Assert.True(saved.NextRunAt >= DateTimeOffset.UtcNow.AddSeconds(3800));
+        Assert.Equal(300, json.GetProperty("heartbeatGraceSeconds").GetInt32());
+
+        var get = await host.Client.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"/api/v1/monitors/{id}")
+        {
+            Headers = { Authorization = new AuthenticationHeaderValue("Bearer", host.ReadKey) },
+        });
+        var text = await get.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(saved.HeartbeatToken!, text);
+        Assert.Equal(JsonValueKind.Null, JsonDocument.Parse(text).RootElement.GetProperty("pingUrl").ValueKind);
+        var (_, list) = await SendAsync(host, host.ReadKey, HttpMethod.Get, "/api/v1/monitors");
+        Assert.DoesNotContain(saved.HeartbeatToken!, list.GetRawText());
+    }
+
+    [SkippableFact]
+    public async Task Patch_heartbeat_moves_the_deadline_only_for_period_grace_or_re_enable_AE3()
+    {
+        await using var host = await CreateHostAsync();
+        var (_, created, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors", "{\"name\":\"hb\",\"type\":\"heartbeat\",\"intervalSeconds\":3600}");
+        var id = created.GetProperty("id").GetGuid();
+        var path = $"/api/v1/monitors/{id}";
+        var original = await GetFullAsync(host, id);
+
+        var (status, json, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"name\":\"x\"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("x", json.GetProperty("name").GetString());
+        var renamed = await GetFullAsync(host, id);
+        Assert.Equal(original.NextRunAt, renamed.NextRunAt);
+        Assert.Equal(original.HeartbeatToken, renamed.HeartbeatToken);
+        Assert.NotEqual(original.ConcurrencyStamp, renamed.ConcurrencyStamp);
+        Assert.Equal(renamed.ConcurrencyStamp, json.GetProperty("concurrencyStamp").GetGuid());
+
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"intervalSeconds\":86400}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        var longer = await GetFullAsync(host, id);
+        Assert.Equal(86400, longer.IntervalSeconds);
+        Assert.True(longer.NextRunAt > original.NextRunAt!.Value.AddHours(20));
+
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"enabled\":false}");
+        var disabled = await GetFullAsync(host, id);
+        Assert.False(disabled.Enabled);
+        Assert.Equal(longer.NextRunAt, disabled.NextRunAt);
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"enabled\":true,\"heartbeatGraceSeconds\":900}");
+        var reenabled = await GetFullAsync(host, id);
+        Assert.Equal(900, reenabled.HeartbeatGraceSeconds);
+        Assert.True(reenabled.NextRunAt >= DateTimeOffset.UtcNow.AddSeconds(86400 + 800));
+    }
+
+    [SkippableFact]
+    public async Task Patch_http_merges_scalars_and_replaces_headers_and_rules_only_when_present()
+    {
+        await using var host = await CreateHostAsync();
+        var seeded = Http(host.UserId);
+        seeded.ContentType = "application/json";
+        for (var i = 0; i < 7; i++)
+            seeded.Headers.Add(new MonitorHeader { Name = $"X-H{i}", Value = "v" });
+        seeded.MatchRules.Add(new MonitorMatchRule { Mode = ContentMatchMode.Contains, Pattern = "ok" });
+        var m = await AddAsync(host, seeded);
+        var path = $"/api/v1/monitors/{m.Id}";
+
+        var (status, json, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"name\":\"renamed\",\"timeoutSeconds\":30}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        var renamed = await GetFullAsync(host, m.Id);
+        Assert.Equal("renamed", renamed.Name);
+        Assert.Equal(30, renamed.TimeoutSeconds);
+        Assert.Equal("https://example.com/", renamed.Url);
+        Assert.Equal("ops@x.com", renamed.AlertEmailOverride);
+        Assert.Equal(7, renamed.Headers.Count);
+        Assert.Single(renamed.MatchRules);
+        Assert.Equal(7, json.GetProperty("headers").GetArrayLength());
+
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path,
+            "{\"headers\":[{\"name\":\"Authorization\",\"value\":\"Bearer t\"}],\"alertEmailOverride\":null,\"runRetentionDays\":10}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        var replaced = await GetFullAsync(host, m.Id);
+        Assert.Equal("Authorization", Assert.Single(replaced.Headers).Name);
+        Assert.Single(replaced.MatchRules);
+        Assert.Null(replaced.AlertEmailOverride);
+        Assert.Equal(10, replaced.RunRetentionDays);
+
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"matchRules\":[],\"type\":\"http\"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        var cleared = await GetFullAsync(host, m.Id);
+        Assert.Empty(cleared.MatchRules);
+        Assert.Single(cleared.Headers);
+
+        // Validation errors on an existing monitor change nothing.
+        var before = await GetFullAsync(host, m.Id);
+        (status, json, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"name\":\"nope\",\"matchRules\":[{\"mode\":\"regex\",\"pattern\":\"(\"}]}");
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(json.GetProperty("errors").TryGetProperty("matchRules[0].pattern", out _));
+        var after = await GetFullAsync(host, m.Id);
+        Assert.Equal(before.Name, after.Name);
+        Assert.Equal(before.ConcurrencyStamp, after.ConcurrencyStamp);
+    }
+
+    [SkippableFact]
+    public async Task Patch_honours_if_match_in_quoted_and_bare_form_and_rejects_stale_values_AE4()
+    {
+        await using var host = await CreateHostAsync();
+        var m = await AddAsync(host, Http(host.UserId));
+        var path = $"/api/v1/monitors/{m.Id}";
+
+        var (status, json, response) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"name\":\"first\"}", ifMatch: $"\"{m.ConcurrencyStamp:D}\"");
+        Assert.Equal(HttpStatusCode.OK, status);
+        var next = json.GetProperty("concurrencyStamp").GetGuid();
+        Assert.NotEqual(m.ConcurrencyStamp, next);
+        Assert.Equal($"\"{next:D}\"", response.Headers.ETag?.ToString());
+
+        // The old stamp is now stale: 412, nothing changes, the stamp stays.
+        (status, json, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"name\":\"stale\"}", ifMatch: $"\"{m.ConcurrencyStamp:D}\"");
+        Assert.Equal(HttpStatusCode.PreconditionFailed, status);
+        Assert.Equal("precondition_failed", json.GetProperty("code").GetString());
+        var saved = await GetFullAsync(host, m.Id);
+        Assert.Equal("first", saved.Name);
+        Assert.Equal(next, saved.ConcurrencyStamp);
+
+        // Bare GUID works; without If-Match the last write wins.
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"name\":\"second\"}", ifMatch: next.ToString("D"));
+        Assert.Equal(HttpStatusCode.OK, status);
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"name\":\"third\"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("third", (await GetFullAsync(host, m.Id)).Name);
+
+        // PATCH {"type":"heartbeat"} on an HTTP monitor is a 400.
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, path, "{\"type\":\"heartbeat\"}");
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+    }
+
+    [SkippableFact]
+    public async Task Delete_removes_the_monitor_with_its_runs_and_honours_if_match_AE5()
+    {
+        await using var host = await CreateHostAsync();
+        var seeded = Http(host.UserId);
+        seeded.Headers.Add(new MonitorHeader { Name = "A", Value = "b" });
+        var m = await AddAsync(host, seeded);
+        await using (var scope = host.App.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.MonitorRuns.Add(new MonitorRun { MonitorId = m.Id, StartedAt = DateTimeOffset.UtcNow, State = "completed", Success = true });
+            db.MonitorAlertStates.Add(new Hawk.Web.Data.Alerting.MonitorAlertState { MonitorId = m.Id });
+            await db.SaveChangesAsync();
+        }
+
+        var path = $"/api/v1/monitors/{m.Id}";
+        var (status, json, _) = await SendFullAsync(host, HttpMethod.Delete, path, ifMatch: $"\"{Guid.NewGuid()}\"");
+        Assert.Equal(HttpStatusCode.PreconditionFailed, status);
+        Assert.Equal("precondition_failed", json.GetProperty("code").GetString());
+        Assert.NotNull(await GetFullAsync(host, m.Id));
+
+        (status, json, _) = await SendFullAsync(host, HttpMethod.Delete, path, ifMatch: $"\"{m.ConcurrencyStamp:D}\"");
+        Assert.Equal(HttpStatusCode.NoContent, status);
+        Assert.Equal(JsonValueKind.Undefined, json.ValueKind);
+
+        (status, json, _) = await SendFullAsync(host, HttpMethod.Get, path);
+        Assert.Equal(HttpStatusCode.NotFound, status);
+        await using (var scope = host.App.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.False(await db.MonitorRuns.AnyAsync(r => r.MonitorId == m.Id));
+            Assert.False(await db.MonitorHeaders.AnyAsync(h => h.MonitorId == m.Id));
+            Assert.False(await db.MonitorAlertStates.AnyAsync(s => s.MonitorId == m.Id));
+        }
+
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Delete, path);
+        Assert.Equal(HttpStatusCode.NotFound, status);
+    }
 
     [SkippableFact]
     public async Task Patch_alerting_follows_merge_patch_semantics_AE1()
