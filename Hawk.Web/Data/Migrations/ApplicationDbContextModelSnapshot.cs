@@ -173,6 +173,10 @@ namespace Hawk.Web.Data.Migrations
                     b.Property<bool>("FollowRedirects")
                         .HasColumnType("bit");
 
+                    b.Property<string>("GroupName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<int>("HeartbeatGraceSeconds")
                         .HasColumnType("int");
 

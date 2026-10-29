@@ -37,6 +37,13 @@ public sealed class MonitorForm
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
+    /// Optional group (trimmed; blank means none). Takes the spelling of an existing group that matches ignoring case.
+    /// </summary>
+    [Display(Name = "Group")]
+    [MaxLength(100)]
+    public string? Group { get; set; }
+
+    /// <summary>
     /// Monitor type. Create binds it; Edit overwrites it with the persisted type (the type is immutable).
     /// </summary>
     [Display(Name = "Monitor type")]
@@ -162,6 +169,9 @@ public sealed class MonitorForm
         }
 
         var heartbeat = Type == MonitorType.Heartbeat;
+
+        if (MonitorGroups.Validate(Group) is { } groupError)
+            yield return new ValidationResult(groupError, [nameof(Group)]);
 
         if (heartbeat)
         {

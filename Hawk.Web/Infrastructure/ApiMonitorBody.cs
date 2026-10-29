@@ -35,6 +35,7 @@ internal static partial class ApiMonitorBody
     public static MonitorForm FromEntity(MonitorEntity m, IReadOnlyList<MonitorHeader> headers, IReadOnlyList<MonitorMatchRule> rules) => new()
     {
         Name = m.Name,
+        Group = m.GroupName,
         Type = m.Type,
         Url = m.Url,
         Method = m.Method,

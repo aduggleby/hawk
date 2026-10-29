@@ -38,6 +38,13 @@ public sealed class Monitor
     public required string Name { get; set; }
 
     /// <summary>
+    /// Optional group name (free text, trimmed, case-insensitively unique by spelling; see <c>MonitorGroups</c>). Null means ungrouped.
+    /// Named GroupName because GROUP is a reserved SQL word. Not indexed: group filters use ToLower() and cannot seek.
+    /// </summary>
+    [MaxLength(100)]
+    public string? GroupName { get; set; }
+
+    /// <summary>
     /// Check type. Immutable after creation.
     /// </summary>
     public MonitorType Type { get; set; } = MonitorType.Http;

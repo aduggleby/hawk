@@ -22,6 +22,12 @@ public enum ManualRunOutcome { Queued, AlreadyInFlight, NotFound, Heartbeat, Dis
 /// <summary>Outcome of <see cref="MonitorCommands.QueueManualRunAsync"/>; <see cref="RunId"/> is set for Queued and AlreadyInFlight.</summary>
 public sealed record ManualRunResult(ManualRunOutcome Outcome, Guid? RunId = null);
 
+/// <summary>Result of <see cref="MonitorCommands.RenameGroupAsync"/>: the new spelling and member count, or a validation <see cref="Error"/> (nothing changed).</summary>
+public sealed record GroupRenameResult(int Renamed, string? NewName = null, string? Error = null);
+
+/// <summary>Result of <see cref="MonitorCommands.QueueGroupRunAsync"/>; skipped counts heartbeats and disabled monitors.</summary>
+public sealed record GroupRunResult(int Queued, int AlreadyInFlight, int Skipped);
+
 /// <summary>
 /// Shared monitor commands.
 /// </summary>
@@ -81,6 +87,53 @@ public sealed class MonitorCommands(ApplicationDbContext db, IBackgroundJobClien
                 .SetProperty(m => m.IsPaused, false)
                 .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
         return updated;
+    }
+
+    /// <summary>
+    /// Renames group <paramref name="from"/> to <paramref name="to"/> for all its members in one set-based update that renews their
+    /// stamps. The new name is validated (blank is an error) and takes the spelling of another existing group that matches ignoring
+    /// case (a merge); a case-only rename of the same group stores the new spelling.
+    /// </summary>
+    public async Task<GroupRenameResult> RenameGroupAsync(string from, string to, CancellationToken cancellationToken)
+    {
+        var source = MonitorGroups.Normalize(from);
+        if (source is null)
+            return new GroupRenameResult(0, Error: "Group is required.");
+        var target = MonitorGroups.Normalize(to);
+        if (target is null)
+            return new GroupRenameResult(0, Error: "New group name is required.");
+        if (MonitorGroups.Validate(target) is { } error)
+            return new GroupRenameResult(0, Error: error);
+
+        target = await MonitorGroups.CanonicalizeAsync(db, target, excludeGroup: source, cancellationToken: cancellationToken) ?? target;
+        var stamp = Guid.NewGuid();
+        var renamed = await MonitorGroups.InGroup(db.Monitors, source)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(m => m.GroupName, target)
+                .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
+        return new GroupRenameResult(renamed, target);
+    }
+
+    /// <summary>
+    /// Queues a manual run for every HTTP monitor in <paramref name="group"/> (reusing a run already in flight). Heartbeats and
+    /// disabled monitors are counted as skipped.
+    /// </summary>
+    public async Task<GroupRunResult> QueueGroupRunAsync(string group, CancellationToken cancellationToken)
+    {
+        var ids = await MonitorGroups.InGroup(db.Monitors, group).Select(m => m.Id).ToListAsync(cancellationToken);
+        int queued = 0, inFlight = 0, skipped = 0;
+        foreach (var id in ids)
+        {
+            var result = await QueueManualRunAsync(id, reuseInFlight: true, rejectDisabled: true, cancellationToken);
+            switch (result.Outcome)
+            {
+                case ManualRunOutcome.Queued: queued++; break;
+                case ManualRunOutcome.AlreadyInFlight: inFlight++; break;
+                default: skipped++; break;
+            }
+        }
+
+        return new GroupRunResult(queued, inFlight, skipped);
     }
 
     /// <summary>

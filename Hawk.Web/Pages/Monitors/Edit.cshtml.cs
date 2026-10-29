@@ -74,6 +74,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env, MonitorEdi
         {
             ConcurrencyStamp = m.ConcurrencyStamp.ToString("D"),
             Name = m.Name,
+            Group = m.GroupName,
             Type = m.Type,
             Url = m.Url,
             Method = m.Method,

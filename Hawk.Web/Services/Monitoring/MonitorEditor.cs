@@ -31,6 +31,7 @@ public sealed class MonitorEditor(ApplicationDbContext db)
         var m = new MonitorEntity
         {
             Name = form.Name.Trim(),
+            GroupName = await MonitorGroups.CanonicalizeAsync(db, MonitorGroups.Normalize(form.Group), cancellationToken: cancellationToken),
             Type = form.Type,
             Url = heartbeat ? string.Empty : (form.Url ?? string.Empty).Trim(),
             Method = heartbeat ? "GET" : form.Method.Trim().ToUpperInvariant(),
@@ -90,6 +91,7 @@ public sealed class MonitorEditor(ApplicationDbContext db)
         var oldGrace = m.HeartbeatGraceSeconds;
 
         m.Name = form.Name.Trim();
+        m.GroupName = await MonitorGroups.CanonicalizeAsync(db, MonitorGroups.Normalize(form.Group), excludeMonitorId: m.Id, cancellationToken: cancellationToken);
         m.Enabled = form.Enabled;
         m.IntervalSeconds = form.IntervalSeconds;
         m.AlertAfterConsecutiveFailures = form.AlertAfterConsecutiveFailures;
