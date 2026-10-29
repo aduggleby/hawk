@@ -89,6 +89,8 @@
 
 .hawk-sq.up { background: var(--up); }
 .hawk-sq.down { background: var(--down); }
+.hawk-sq.overdue { background: var(--warn); }
+.hawk-sq.pending { background: transparent; border: 1px solid var(--muted); }
 .hawk-sq.disabled { background: transparent; border: 1px solid var(--paused); }
 .hawk-sq.empty { background: var(--faint); }
 

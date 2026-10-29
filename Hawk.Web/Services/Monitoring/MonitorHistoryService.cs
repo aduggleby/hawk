@@ -13,7 +13,7 @@ using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 
 namespace Hawk.Web.Services.Monitoring;
 
-/// <summary>Color state of one day cell (R12).</summary>
+/// <summary>Color state of one day cell.</summary>
 public enum DayState
 {
     /// <summary>No runs that day.</summary>
@@ -92,7 +92,6 @@ public sealed class MonitorHistoryService(ApplicationDbContext db)
     /// <summary>Days in the day row, and the rollup history.</summary>
     public const int HistoryDays = 90;
 
-    private static readonly TimeSpan CellLength = TimeSpan.FromMinutes(15);
     private const int ChartWidth = 720;
     private const int ChartHeight = 180;
     private const int PadLeft = 8;
@@ -145,10 +144,11 @@ public sealed class MonitorHistoryService(ApplicationDbContext db)
     private async Task<DateTimeOffset?> RefineUpSinceAsync(
         Guid monitorId, DateTimeOffset bucketStart, DateTimeOffset? fallback, CancellationToken cancellationToken)
     {
-        var bucketEnd = bucketStart + CellLength;
+        var bucketEnd = bucketStart + RunBucketRollup.BucketLength;
         var lastFailed = await db.MonitorRuns
             .AsNoTracking()
-            .Where(r => r.MonitorId == monitorId && (r.State == "completed" || r.State == "") && !r.Success
+            .WhereCompleted()
+            .Where(r => r.MonitorId == monitorId && !r.Success
                         && r.StartedAt >= bucketStart && r.StartedAt < bucketEnd)
             .OrderByDescending(r => r.StartedAt)
             .Select(r => (DateTimeOffset?)r.StartedAt)
@@ -158,7 +158,8 @@ public sealed class MonitorHistoryService(ApplicationDbContext db)
 
         var firstOk = await db.MonitorRuns
             .AsNoTracking()
-            .Where(r => r.MonitorId == monitorId && (r.State == "completed" || r.State == "") && r.Success && r.StartedAt > failedAt)
+            .WhereCompleted()
+            .Where(r => r.MonitorId == monitorId && r.Success && r.StartedAt > failedAt)
             .OrderBy(r => r.StartedAt)
             .Select(r => (DateTimeOffset?)r.StartedAt)
             .FirstOrDefaultAsync(cancellationToken);
@@ -175,7 +176,7 @@ public sealed class MonitorHistoryService(ApplicationDbContext db)
         var days = Days(buckets, now);
 
         var newestFailing = buckets
-            .Where(b => b.FailureCount > 0 && b.RunCount > 0)
+            .Where(b => b.FailureCount > 0 && b.RunCount > 0 && b.BucketStart <= RunBucketRollup.BucketStartOf(now))
             .Select(b => (DateTimeOffset?)b.BucketStart)
             .OrderByDescending(b => b)
             .FirstOrDefault();
@@ -183,7 +184,7 @@ public sealed class MonitorHistoryService(ApplicationDbContext db)
         DateTimeOffset? upSince = null;
         var moreThanHistory = false;
         if (newestFailing is { } failing)
-            upSince = failing + CellLength;
+            upSince = failing + RunBucketRollup.BucketLength;
         else if (monitor.CreatedAt > now - TimeSpan.FromDays(HistoryDays))
             upSince = monitor.CreatedAt;
         else
@@ -223,8 +224,9 @@ public sealed class MonitorHistoryService(ApplicationDbContext db)
     public static List<DayCell> Days(IEnumerable<MonitorRunBucket> buckets, DateTimeOffset now)
     {
         var first = HistoryStart(now);
+        var current = RunBucketRollup.BucketStartOf(now);
         var perDay = buckets
-            .Where(b => b.BucketStart >= first)
+            .Where(b => b.BucketStart >= first && b.BucketStart <= current)
             .GroupBy(b => b.BucketStart.UtcDateTime.Date)
             .ToDictionary(g => g.Key, g => (Runs: g.Sum(b => (long)b.RunCount), Failures: g.Sum(b => (long)b.FailureCount)));
 
@@ -245,7 +247,9 @@ public sealed class MonitorHistoryService(ApplicationDbContext db)
     /// </summary>
     public static UptimeFigures Uptime(IEnumerable<MonitorRunBucket> buckets, DateTimeOffset now)
     {
-        var list = buckets.Where(b => b.RunCount > 0).ToList();
+        // Buckets after the current one (imports with future timestamps) are not history yet.
+        var current = RunBucketRollup.BucketStartOf(now);
+        var list = buckets.Where(b => b.RunCount > 0 && b.BucketStart <= current).ToList();
         double? Window(DateTimeOffset from)
         {
             var inWindow = list.Where(b => b.BucketStart >= from).ToList();

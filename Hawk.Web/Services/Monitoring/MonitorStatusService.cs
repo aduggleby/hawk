@@ -48,7 +48,7 @@ public sealed class MonitorStatusService(ApplicationDbContext db, IConfiguration
     {
         var runs = db.MonitorRuns
             .AsNoTracking()
-            .Where(r => r.State == "completed" || r.State == "");
+            .WhereCompleted();
         if (monitorIds is not null)
             runs = runs.Where(r => monitorIds.Contains(r.MonitorId));
 
@@ -97,6 +97,12 @@ public sealed class MonitorStatusService(ApplicationDbContext db, IConfiguration
                 return Evaluate(m, last, alertState, now, tickSeconds);
             });
     }
+
+    /// <summary>
+    /// Health of one monitor as of <paramref name="now"/> (resolves the scheduler tick from configuration).
+    /// </summary>
+    public MonitorHealth Health(MonitorEntity monitor, LastCompletedRun? last, DateTimeOffset now) =>
+        ComputeHealth(monitor, last, now, MonitorScheduler.ResolveTickSeconds(config, env));
 
     /// <summary>
     /// Pure status computation.

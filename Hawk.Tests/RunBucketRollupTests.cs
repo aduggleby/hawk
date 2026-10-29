@@ -131,6 +131,42 @@ public sealed class RunBucketRollupTests
     }
 
     [Fact]
+    public async Task Recompute_counts_legacy_runs_with_an_empty_state_and_covers_every_monitor()
+    {
+        var (db, rollup, id) = await CreateAsync();
+        var other = new MonitorEntity { Name = "O", Url = "https://example.com", Method = "GET", IntervalSeconds = 60 };
+        db.Monitors.Add(other);
+        var t = RunBucketRollup.BucketStartOf(DateTimeOffset.UtcNow).AddHours(-3);
+        AddRun(db, id, t.AddSeconds(5), true, 10, state: "");
+        AddRun(db, other.Id, t.AddHours(1), false, 20);
+        await db.SaveChangesAsync();
+
+        await rollup.RecomputeAsync(t, t.AddDays(3), CancellationToken.None);
+
+        var rows = await db.MonitorRunBuckets.AsNoTracking().ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(1, rows.Single(b => b.MonitorId == id).RunCount);
+        Assert.Equal(1, rows.Single(b => b.MonitorId == other.Id).FailureCount);
+    }
+
+    [Fact]
+    public async Task Refresh_clamps_its_look_back_to_7_days()
+    {
+        var (db, rollup, id) = await CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var newest = RunBucketRollup.BucketStartOf(now.AddDays(-10));
+        db.MonitorRunBuckets.Add(new MonitorRunBucket { MonitorId = id, BucketStart = newest, RunCount = 1 });
+        AddRun(db, id, now.AddDays(-9), true, 1);
+        AddRun(db, id, now.AddDays(-6), true, 1);
+        await db.SaveChangesAsync();
+
+        await rollup.RefreshAsync(CancellationToken.None);
+
+        var starts = (await db.MonitorRunBuckets.AsNoTracking().Select(b => b.BucketStart).ToListAsync()).OrderBy(x => x).ToList();
+        Assert.Equal([newest, RunBucketRollup.BucketStartOf(now.AddDays(-6))], starts);
+    }
+
+    [Fact]
     public async Task Refresh_overwrites_recent_buckets_with_lower_counts()
     {
         var (db, rollup, id) = await CreateAsync();
@@ -409,6 +445,17 @@ public sealed class RunBucketRollupPostgresTests(PostgresFixture fixture)
         using (var holder = storage.GetConnection())
         using (holder.AcquireDistributedLock("hawk:run-buckets", TimeSpan.FromSeconds(60)))
             await app.NewRollup(scope).RefreshAsync(CancellationToken.None);
+        Assert.Empty(await db.MonitorRunBuckets.ToListAsync());
+
+        // The one-shot jobs wait for the lock and then fail, so Hangfire retries them.
+        using (var holder = storage.GetConnection())
+        using (holder.AcquireDistributedLock("hawk:run-buckets", TimeSpan.FromSeconds(60)))
+        {
+            var oneShot = app.NewRollup(scope);
+            oneShot.OneShotLockTimeout = TimeSpan.FromSeconds(1);
+            await Assert.ThrowsAnyAsync<DistributedLockTimeoutException>(() => oneShot.RecomputeAsync(t.AddHours(-1), t.AddHours(1), CancellationToken.None));
+            await Assert.ThrowsAnyAsync<DistributedLockTimeoutException>(() => oneShot.BackfillAsync(CancellationToken.None));
+        }
         Assert.Empty(await db.MonitorRunBuckets.ToListAsync());
 
         await app.NewRollup(scope).RefreshAsync(CancellationToken.None);

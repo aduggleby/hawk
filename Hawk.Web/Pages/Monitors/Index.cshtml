@@ -7,8 +7,9 @@
     var board = Model.Board;
     var now = DateTimeOffset.UtcNow;
     static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
-    static string StatusClass(MonitorState state, bool failing) =>
-        failing ? "down" : state == MonitorState.Disabled ? "disabled" : state == MonitorState.Paused ? "paused" : "up";
+    static string StatusClass(BoardRow r) =>
+        r.Failing ? "down" : r.State == MonitorState.Disabled ? "disabled" : r.State == MonitorState.Paused ? "paused"
+            : r.Overdue ? "overdue" : r.Pending ? "pending" : "up";
 }
 
 <div class="hawk-board-layout">
@@ -137,7 +138,7 @@ else
                     @foreach (var r in grp.Rows)
                     {
                         var m = r.Monitor;
-                        var cls = StatusClass(r.State, r.Failing);
+                        var cls = StatusClass(r);
                         <div class="hawk-brow @(r.Failing ? "is-down" : "") @(r.State != MonitorState.Active ? "is-off" : "")" role="row">
                             <span role="cell" class="hawk-c-sel">
                                 <input class="hawk-check" type="checkbox" name="SelectedMonitorIds" value="@m.Id" data-group="@grp.Anchor" aria-label="Select @m.Name" />

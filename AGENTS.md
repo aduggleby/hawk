@@ -340,7 +340,8 @@ Alert recipient resolution (in order):
 ## Monitors Index (Tower Board)
 
 - `Services/Monitoring/MonitorBoardService.cs` builds the index view model (`BoardModel`: groups, attention list, headline, per-row 24h strip); the page stays thin and its POST handlers (batch, group actions, rename) are unchanged.
-- Headline: pure `BoardHeadline.For(...)` ("2 of 31 monitors are down. Longest outage: ..." / "All 31 monitors are up.").
+- Headline: pure `BoardHeadline.For(...)` ("2 of 31 monitors are down. Longest outage: ..." / "All 31 monitors are up." / "5 of 7 monitors are up. 1 overdue, 1 waiting for a first check."). Only healthy active monitors count as up.
+- Status words (`BoardRow.StatusLabel`): Down (failing), Disabled, Paused, **Overdue** (`MonitorHealth.Overdue`: a heartbeat past its deadline, or HTTP checks stopped; `--warn` square, `data-status="overdue"`), **Pending** (no completed run yet, `data-status="pending"`), Up.
 - **Attention** section (`data-testid="attention"`): one card per monitor whose most recent completed run failed (`MonitorStatusService.IsInFailingGroup`), longest outage first, no checkboxes. The monitor itself appears once, as a row in its group (selectable there).
 - Group rail (desktop column, mobile chips) links to the group anchors; rows show status word, name, kind, the 24h strip (`_StatusStrip`), the newest bucket's average response time and the last run. Below 640 px rows wrap to two lines; touch layouts get 44 px targets.
 - CSS: `Assets/components/hawk-board.css`.
@@ -434,7 +435,9 @@ A versioned JSON API under `/api/v1` for agents (e.g. Claude Code) using per-use
 ## Run Buckets (Rollup)
 
 - Table `MonitorRunBuckets` (`Data/Monitoring/MonitorRunBucket.cs`; migration `AddMonitorRunBuckets` in both sets): `MonitorId`, `BucketStart` (UTC, 15-minute aligned), `RunCount`, `FailureCount`, `TotalDurationMs`; PK (`MonitorId`, `BucketStart`), cascade FK, index on `BucketStart`. It survives run pruning and feeds the 24h strips, the 90-day row and API `uptime`.
-- Only `Services/Monitoring/RunBucketRollup.cs` writes it, always under the Hangfire distributed lock `hawk:run-buckets` (10 s; busy = skip), jobs `[AutomaticRetry(Attempts = 0)]`:
+- Only `Services/Monitoring/RunBucketRollup.cs` writes it, always under the Hangfire distributed lock `hawk:run-buckets` (10 s). `RefreshAsync` skips on a busy lock (`[AutomaticRetry(Attempts = 0)]`, the next minute repairs it); `RecomputeAsync` and `BackfillAsync` wait up to 2 min (`OneShotLockTimeout`) and then rethrow, with `[AutomaticRetry(Attempts = 5)]`, so a range older than the refresh look-back is not lost:
+  - `RecomputeCoreAsync` runs one range query per monitor (`MonitorId`, `StartedAt` index) over the whole range, never a scan over all runs. "Completed" is `RunQueries.WhereCompleted()` (`State == "completed"` or legacy `""`), shared with `MonitorStatusService` and `MonitorHistoryService`.
+  - Buckets after the current one (future-dated imports) are ignored by the strip, day cells and uptime. `RunBucketRollup.BucketLength` is the one bucket length; the backfill span is `MonitorHistoryService.HistoryDays`.
   - Recurring `hawk-run-buckets` (`RefreshAsync`, every minute): recomputes from min(now - 30 min, newest bucket), at most 7 days back, then deletes buckets older than 95 days.
   - `BackfillAsync` (last 90 days) is enqueued on every startup; StatusCake alert import enqueues `RecomputeAsync` over the imported days.
   - Merge rule (`RunBucketRollup.Merge`): buckets younger than 23 h are overwritten; older ones only when missing or when the computed `RunCount` is higher, so pruning never shrinks history.

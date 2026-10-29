@@ -18,17 +18,18 @@ namespace Hawk.Web.Services.Monitoring;
 /// <param name="State">Configuration state (active, paused, disabled).</param>
 /// <param name="Failing">True when it is in the failing list (<see cref="MonitorStatusService.IsInFailingGroup"/>).</param>
 /// <param name="Pending">True when it has no completed run yet.</param>
+/// <param name="Overdue">True when checks or pings stopped arriving (<see cref="MonitorHealth.Overdue"/>).</param>
 /// <param name="Strip">The 24 h strip.</param>
 /// <param name="LastMs">Average response time of the newest interval with runs (null for none and for heartbeats).</param>
 public sealed record BoardRow(
-    MonitorEntity Monitor, MonitorState State, bool Failing, bool Pending, StatusStripModel Strip, int? LastMs)
+    MonitorEntity Monitor, MonitorState State, bool Failing, bool Pending, bool Overdue, StatusStripModel Strip, int? LastMs)
 {
     /// <summary>Status word shown next to the colored mark, so state never relies on color alone.</summary>
     public string StatusLabel => Failing ? "Down" : State switch
     {
         MonitorState.Disabled => "Disabled",
         MonitorState.Paused => "Paused",
-        _ => Pending ? "Pending" : "Up",
+        _ => Overdue ? "Overdue" : Pending ? "Pending" : "Up",
     };
 }
 
@@ -57,8 +58,11 @@ public static class BoardHeadline
     /// <summary>
     /// Sentence for the overview. <paramref name="down"/> counts failing monitors, <paramref name="inactive"/> paused or
     /// disabled ones (a failing monitor may be among both); <paramref name="longest"/> is the longest running outage.
+    /// <paramref name="overdue"/> and <paramref name="pending"/> count active, not failing monitors that are overdue or
+    /// have no completed run yet; they are not up.
     /// </summary>
-    public static string For(int total, int down, int inactive, string? longestName, TimeSpan? longest)
+    public static string For(
+        int total, int down, int inactive, string? longestName, TimeSpan? longest, int overdue = 0, int pending = 0)
     {
         if (total == 0)
             return "No monitors yet.";
@@ -72,6 +76,19 @@ public static class BoardHeadline
         if (inactive >= total)
             return total == 1 ? "The monitor is paused or disabled." : $"All {total} monitors are paused or disabled.";
         var active = total - inactive;
+        if (overdue + pending > 0)
+        {
+            var ok = active - overdue - pending;
+            var scope = inactive == 0 ? $"{total} monitors" : $"{active} active monitors";
+            var parts = new List<string>();
+            if (overdue > 0)
+                parts.Add($"{overdue} overdue");
+            if (pending > 0)
+                parts.Add($"{pending} waiting for a first check");
+            var text = $"{ok} of {scope} {(ok == 1 ? "is" : "are")} up. {string.Join(", ", parts)}.";
+            return inactive == 0 ? text : $"{text} {inactive} paused or disabled.";
+        }
+
         var up = active == 1 ? "1 monitor is up." : $"All {active} active monitors are up.";
         if (inactive == 0)
             return total == 1 ? "The monitor is up." : $"All {total} monitors are up.";
@@ -124,7 +141,9 @@ public sealed class MonitorBoardService(ApplicationDbContext db, MonitorStatusSe
             var heartbeat = m.Type == MonitorType.Heartbeat;
             var strip = StatusStrip.Build(buckets[m.Id], now, heartbeat);
             int? lastMs = heartbeat ? null : strip.Cells.LastOrDefault(c => c.State != StripCellState.Empty)?.AverageMs;
-            return new BoardRow(m, MonitorStatusService.ComputeState(m), failingIds.Contains(m.Id), !lastRuns.ContainsKey(m.Id), strip, lastMs);
+            lastRuns.TryGetValue(m.Id, out var last);
+            var overdue = status.Health(m, last, now) == MonitorHealth.Overdue;
+            return new BoardRow(m, MonitorStatusService.ComputeState(m), failingIds.Contains(m.Id), last is null, overdue, strip, lastMs);
         });
 
         // Group case-insensitively; the section is named after the canonical (ordinal-first) spelling.
@@ -154,8 +173,11 @@ public sealed class MonitorBoardService(ApplicationDbContext db, MonitorStatusSe
 
         var inactive = monitors.Count(m => MonitorStatusService.ComputeState(m) != MonitorState.Active);
         var oldest = attention.FirstOrDefault();
+        var live = rows.Values.Where(r => r.State == MonitorState.Active && !r.Failing).ToList();
+        var overdueCount = live.Count(r => r.Overdue);
+        var pendingCount = live.Count(r => !r.Overdue && r.Pending);
         var headline = BoardHeadline.For(monitors.Count, attention.Count, inactive,
-            oldest?.Monitor.Name, oldest is null ? null : now - oldest.Since);
+            oldest?.Monitor.Name, oldest is null ? null : now - oldest.Since, overdueCount, pendingCount);
 
         return new BoardModel(headline, attention, groups, monitors.Count);
     }

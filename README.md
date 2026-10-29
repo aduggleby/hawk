@@ -382,10 +382,13 @@ Pause, resume, and run from the monitors list:
 
 ## Monitors Index
 
-The monitors index page groups monitors into two sections:
+The monitors index is a board:
 
-- **Failing** — monitors whose most recent completed run failed. These appear at the top so you can immediately see what needs attention.
-- **All monitors** — the full list below the failing group.
+- **Headline** — one sentence ("2 of 31 monitors are down. Longest outage: ...", "5 of 7 monitors are up. 1 overdue, 1 waiting for a first check.").
+- **Attention** — one card per monitor whose most recent completed run failed, longest outage first.
+- **Group rail** — links to each group (chips on mobile). Every group lists its monitors with a status word (Up, Down, Overdue, Pending, Paused, Disabled), a 24-hour strip of 15-minute cells, the latest response time and the last run.
+
+The monitor details page shows the same 24-hour strip, a response-time chart, a 90-day row and an uptime row (last 24 hours, 7 days and 30 days) built from a 15-minute rollup that survives run pruning.
 
 Batch actions apply to checked monitors. When monitors are selected, the action bar switches to: **Run now**, **Pause**, **Resume**, and **Uncheck all**. Without a selection, the bar shows **New monitor**, **Import StatusCake**, **Pause all**, and **Resume all**.
 

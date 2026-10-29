@@ -58,23 +58,23 @@ public static class StatusStrip
     public const int CellCount = 96;
 
     private const int MinHeightPercent = 25;
-    private static readonly TimeSpan CellLength = TimeSpan.FromMinutes(15);
 
     /// <summary>
     /// Start of the oldest cell for a strip ending with the interval that contains <paramref name="now"/>.
     /// Load buckets with <c>BucketStart &gt;= WindowStart(now)</c>.
     /// </summary>
     public static DateTimeOffset WindowStart(DateTimeOffset now) =>
-        RunBucketRollup.BucketStartOf(now) - CellLength * (CellCount - 1);
+        RunBucketRollup.BucketStartOf(now) - RunBucketRollup.BucketLength * (CellCount - 1);
 
     /// <summary>
-    /// Builds the strip of one monitor from its buckets (buckets outside the window are ignored).
+    /// Builds the strip of one monitor from its buckets (buckets outside the window, including future ones, are ignored).
     /// </summary>
     public static StatusStripModel Build(IEnumerable<MonitorRunBucket> buckets, DateTimeOffset now, bool heartbeat)
     {
         var start = WindowStart(now);
+        var current = RunBucketRollup.BucketStartOf(now);
         var byStart = buckets
-            .Where(b => b.BucketStart >= start && b.RunCount > 0)
+            .Where(b => b.BucketStart >= start && b.BucketStart <= current && b.RunCount > 0)
             .GroupBy(b => b.BucketStart.UtcTicks)
             .ToDictionary(g => g.Key, g => g.First());
 
@@ -84,7 +84,7 @@ public static class StatusStrip
         var cells = new List<StripCell>(CellCount);
         for (var i = 0; i < CellCount; i++)
         {
-            var cellStart = start + CellLength * i;
+            var cellStart = start + RunBucketRollup.BucketLength * i;
             if (!byStart.TryGetValue(cellStart.UtcTicks, out var b))
             {
                 cells.Add(new StripCell(cellStart, StripCellState.Empty, 0, 0, null, 0));

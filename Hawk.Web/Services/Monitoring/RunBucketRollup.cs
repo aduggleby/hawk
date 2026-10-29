@@ -4,7 +4,8 @@
 //
 // Why a rollup: run history is pruned (default 90 days, at least 1 day), but the 24 h strip and the 90-day uptime must
 // survive pruning. Every write path runs under the Hangfire distributed lock "hawk:run-buckets", so two workers never
-// insert the same (MonitorId, BucketStart) key; a busy lock skips the call because the next minute repairs any gap.
+// insert the same (MonitorId, BucketStart) key; a busy lock skips the minutely refresh because the next one repairs any gap,
+// while the one-shot jobs (recompute, backfill) wait longer and then fail so Hangfire retries them.
 // The write rule (see Merge) lets late or backfilled history fill gaps without ever shrinking stored history.
 // </summary>
 // </file>
@@ -50,18 +51,23 @@ public sealed class RunBucketRollup(
     ILogger<RunBucketRollup> logger,
     JobStorage? jobStorage = null) : IRunBucketRollup
 {
+    /// <summary>Length of one bucket.</summary>
+    public static readonly TimeSpan BucketLength = TimeSpan.FromMinutes(BucketMinutes);
+
     /// <summary>Recurring job id of <see cref="RefreshAsync"/>.</summary>
     public const string RecurringJobId = "hawk-run-buckets";
 
     private const string LockKey = "hawk:run-buckets";
     private const int BucketMinutes = 15;
-    private static readonly TimeSpan BucketLength = TimeSpan.FromMinutes(BucketMinutes);
     private static readonly TimeSpan OverwriteWindow = TimeSpan.FromHours(23);
     private static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan MaxRefreshLookBack = TimeSpan.FromDays(7);
-    private static readonly TimeSpan BackfillSpan = TimeSpan.FromDays(90);
+    private static readonly TimeSpan BackfillSpan = TimeSpan.FromDays(MonitorHistoryService.HistoryDays);
     private static readonly TimeSpan Retention = TimeSpan.FromDays(95);
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>How long the one-shot jobs (recompute, backfill) wait for the lock before failing for a retry.</summary>
+    public TimeSpan OneShotLockTimeout { get; set; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Start of the 15-minute UTC bucket containing <paramref name="time"/>.
@@ -120,9 +126,9 @@ public sealed class RunBucketRollup(
     }
 
     /// <inheritdoc />
-    [AutomaticRetry(Attempts = 0)]
+    [AutomaticRetry(Attempts = 5)]
     public Task RecomputeAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken) =>
-        RunLockedAsync(() => RecomputeCoreAsync(from, to, cancellationToken));
+        RunLockedAsync(() => RecomputeCoreAsync(from, to, cancellationToken), skipWhenBusy: false);
 
     /// <inheritdoc />
     [AutomaticRetry(Attempts = 0)]
@@ -146,15 +152,15 @@ public sealed class RunBucketRollup(
         });
 
     /// <inheritdoc />
-    [AutomaticRetry(Attempts = 0)]
+    [AutomaticRetry(Attempts = 5)]
     public Task BackfillAsync(CancellationToken cancellationToken) =>
         RunLockedAsync(() =>
         {
             var now = DateTimeOffset.UtcNow;
             return RecomputeCoreAsync(now - BackfillSpan, now, cancellationToken);
-        });
+        }, skipWhenBusy: false);
 
-    private async Task RunLockedAsync(Func<Task> work)
+    private async Task RunLockedAsync(Func<Task> work, bool skipWhenBusy = true)
     {
         // Branch: scheduling off (as MonitorScheduler.TickAsync), nothing runs on this instance.
         if (!config.GetValue("Hawk:Scheduler:Enabled", true))
@@ -172,10 +178,10 @@ public sealed class RunBucketRollup(
         try
         {
             conn = jobStorage.GetConnection();
-            distLock = conn.AcquireDistributedLock(LockKey, LockTimeout);
+            distLock = conn.AcquireDistributedLock(LockKey, skipWhenBusy ? LockTimeout : OneShotLockTimeout);
             await work();
         }
-        catch (DistributedLockTimeoutException)
+        catch (DistributedLockTimeoutException) when (skipWhenBusy)
         {
             logger.LogDebug("Run bucket rollup skipped (lock busy).");
         }
@@ -191,46 +197,45 @@ public sealed class RunBucketRollup(
         var now = DateTimeOffset.UtcNow;
         var cursor = BucketStartOf(from);
         var end = to.ToUniversalTime();
+        if (cursor >= end)
+            return;
 
-        while (cursor < end)
+        // One range query per monitor: the (MonitorId, StartedAt) index serves it, a scan over all runs would not.
+        var monitorIds = await db.Monitors.Select(m => m.Id).ToListAsync(cancellationToken);
+        foreach (var id in monitorIds)
         {
-            var dayEnd = new DateTimeOffset(cursor.UtcDateTime.Date.AddDays(1), TimeSpan.Zero);
-            var windowEnd = dayEnd < end ? dayEnd : end;
-
             var samples = await db.MonitorRuns
-                .Where(r => r.State == "completed" && r.StartedAt >= cursor && r.StartedAt < windowEnd)
+                .WhereCompleted()
+                .Where(r => r.MonitorId == id && r.StartedAt >= cursor && r.StartedAt < end)
                 .Select(r => new { r.MonitorId, r.StartedAt, r.Success, r.DurationMs })
                 .ToListAsync(cancellationToken);
             var computed = Bucket(samples.Select(r => new RunSample(r.MonitorId, r.StartedAt, r.Success, r.DurationMs)));
+            if (computed.Count == 0)
+                continue;
 
-            if (computed.Count != 0)
+            var existing = (await db.MonitorRunBuckets
+                    .Where(b => b.MonitorId == id && b.BucketStart >= cursor && b.BucketStart < end)
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(b => b.BucketStart.UtcTicks);
+
+            foreach (var bucket in computed)
             {
-                var existing = (await db.MonitorRunBuckets
-                        .Where(b => b.BucketStart >= cursor && b.BucketStart < windowEnd)
-                        .ToListAsync(cancellationToken))
-                    .ToDictionary(b => (b.MonitorId, b.BucketStart.UtcTicks));
-
-                foreach (var bucket in computed)
+                existing.TryGetValue(bucket.BucketStart.UtcTicks, out var stored);
+                switch (Merge(stored, bucket, now))
                 {
-                    existing.TryGetValue((bucket.MonitorId, bucket.BucketStart.UtcTicks), out var stored);
-                    switch (Merge(stored, bucket, now))
-                    {
-                        case RunBucketWrite.Insert:
-                            db.MonitorRunBuckets.Add(bucket);
-                            break;
-                        case RunBucketWrite.Overwrite:
-                            stored!.RunCount = bucket.RunCount;
-                            stored.FailureCount = bucket.FailureCount;
-                            stored.TotalDurationMs = bucket.TotalDurationMs;
-                            break;
-                    }
+                    case RunBucketWrite.Insert:
+                        db.MonitorRunBuckets.Add(bucket);
+                        break;
+                    case RunBucketWrite.Overwrite:
+                        stored!.RunCount = bucket.RunCount;
+                        stored.FailureCount = bucket.FailureCount;
+                        stored.TotalDurationMs = bucket.TotalDurationMs;
+                        break;
                 }
-
-                await db.SaveChangesAsync(cancellationToken);
-                db.ChangeTracker.Clear();
             }
 
-            cursor = windowEnd;
+            await db.SaveChangesAsync(cancellationToken);
+            db.ChangeTracker.Clear();
         }
     }
 

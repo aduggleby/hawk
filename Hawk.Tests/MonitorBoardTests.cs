@@ -38,6 +38,9 @@ public sealed class MonitorBoardTests
         Assert.Equal("All 4 monitors are paused or disabled.", BoardHeadline.For(4, 0, 4, null, null));
         Assert.Equal("All 3 active monitors are up. 1 paused or disabled.", BoardHeadline.For(4, 0, 1, null, null));
         Assert.Equal("1 monitor is up. 2 paused or disabled.", BoardHeadline.For(3, 0, 2, null, null));
+        Assert.Equal("5 of 7 monitors are up. 1 overdue, 1 waiting for a first check.", BoardHeadline.For(7, 0, 0, null, null, 1, 1));
+        Assert.Equal("1 of 3 monitors is up. 2 overdue.", BoardHeadline.For(3, 0, 0, null, null, 2, 0));
+        Assert.Equal("1 of 2 active monitors is up. 1 waiting for a first check. 1 paused or disabled.", BoardHeadline.For(3, 0, 1, null, null, 0, 1));
     }
 
     [Theory]
@@ -97,6 +100,26 @@ public sealed class MonitorBoardTests
     }
 
     [Fact]
+    public async Task An_overdue_heartbeat_is_not_up()
+    {
+        await using var db = NewDb();
+        var beat = Add(db, "Beat", null);
+        beat.Type = MonitorType.Heartbeat;
+        beat.NextRunAt = Now.AddMinutes(-5);
+        var ok = Add(db, "Web", null);
+        db.MonitorRuns.Add(new MonitorRun { MonitorId = beat.Id, StartedAt = Now.AddHours(-2), FinishedAt = Now.AddHours(-2), Success = true });
+        db.MonitorRuns.Add(new MonitorRun { MonitorId = ok.Id, StartedAt = Now.AddMinutes(-1), FinishedAt = Now, Success = true });
+        await db.SaveChangesAsync();
+
+        var board = await new MonitorBoardService(db, NewStatus(db)).BuildAsync(Now, default);
+
+        var rows = board.Groups.Single().Rows;
+        Assert.Equal("Overdue", rows.Single(r => r.Monitor.Id == beat.Id).StatusLabel);
+        Assert.Equal("Up", rows.Single(r => r.Monitor.Id == ok.Id).StatusLabel);
+        Assert.Equal("1 of 2 monitors is up. 1 overdue.", board.Headline);
+    }
+
+    [Fact]
     public async Task Empty_database_gives_the_empty_board()
     {
         await using var db = NewDb();
@@ -121,7 +144,7 @@ public sealed class MonitorBoardTests
         Assert.Equal(["alpha", "SHOP", null], board.Groups.Select(g => g.Name));
         Assert.Equal(["a", "b"], board.Groups[1].Rows.Select(r => r.Monitor.Name));
         Assert.All(board.Groups.SelectMany(g => g.Rows), r => Assert.Equal("Pending", r.StatusLabel));
-        Assert.Equal("All 4 monitors are up.", board.Headline);
+        Assert.Equal("0 of 4 monitors are up. 4 waiting for a first check.", board.Headline);
     }
 
     private static MonitorEntity Add(ApplicationDbContext db, string name, string? group, bool paused = false)

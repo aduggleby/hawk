@@ -15,12 +15,12 @@ public interface IRunBucketRollup
 {
     /// <summary>
     /// Recomputes the buckets of all monitors that started in <paramref name="from"/> (rounded down to 15 minutes)
-    /// up to <paramref name="to"/>, one UTC day at a time.
+    /// up to <paramref name="to"/>, one range query per monitor. Waits for the lock and fails (Hangfire retries) when it stays busy.
     /// </summary>
     /// <param name="from">Start of the range (UTC).</param>
     /// <param name="to">End of the range (UTC, exclusive).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    [AutomaticRetry(Attempts = 0)]
+    [AutomaticRetry(Attempts = 5)]
     Task RecomputeAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken);
 
     /// <summary>
@@ -31,9 +31,9 @@ public interface IRunBucketRollup
     Task RefreshAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Startup job: recomputes the last 90 days (idempotent, never shrinks history).
+    /// Startup job: recomputes the last 90 days (idempotent, never shrinks history). Waits for the lock and fails (Hangfire retries) when it stays busy.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    [AutomaticRetry(Attempts = 0)]
+    [AutomaticRetry(Attempts = 5)]
     Task BackfillAsync(CancellationToken cancellationToken);
 }

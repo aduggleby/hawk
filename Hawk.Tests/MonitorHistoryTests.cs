@@ -58,6 +58,20 @@ public sealed class MonitorHistoryTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public void Future_buckets_are_ignored_by_uptime_days_and_the_strip()
+    {
+        var future = RunRollupStart(Now).AddHours(2);
+        var buckets = new List<MonitorRunBucket> { B(RunRollupStart(Now), 4, 0), B(future, 10, 10) };
+
+        Assert.Equal(new UptimeFigures(100, 100, 100), MonitorHistoryService.Uptime(buckets, Now));
+        Assert.Equal(4, MonitorHistoryService.Days(buckets, Now).Sum(d => d.Runs));
+        Assert.Equal(0, StatusStrip.Build(buckets, Now, heartbeat: false).FailedCount);
+        Assert.Null(MonitorHistoryService.Build(Http(), buckets, Now).NewestFailingBucket);
+    }
+
+    private static DateTimeOffset RunRollupStart(DateTimeOffset t) => RunBucketRollup.BucketStartOf(t);
+
+    [Fact]
     public void There_are_always_90_day_cells_oldest_first_ending_today()
     {
         foreach (var buckets in new[] { new List<MonitorRunBucket>(), [B(Day(0), 1, 0)] })
