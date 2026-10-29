@@ -15,6 +15,7 @@ using Hangfire;
 using Hangfire.Common;
 using Hangfire.States;
 using Hangfire.Storage;
+using SettingsModel = Hawk.Web.Areas.Identity.Pages.Account.Manage.SettingsModel;
 using Hawk.Web.Data;
 using Hawk.Web.Data.ApiKeys;
 using Hawk.Web.Infrastructure;
@@ -174,11 +175,9 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
 
         await using (var scope = app.Services.CreateAsyncScope())
         {
-            var index = new IndexModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), new RecordingJobClient())
-            {
-                SelectedMonitorIds = [id],
-                BatchAction = "pause",
-            };
+            var index = NewIndex(scope, new RecordingJobClient());
+            index.SelectedMonitorIds = [id];
+            index.BatchAction = "pause";
             InitPage(index);
             await index.OnPostBatchAsync(CancellationToken.None);
         }
@@ -313,7 +312,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
 
         await using (var scope = app.Services.CreateAsyncScope())
         {
-            var index = new IndexModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), new RecordingJobClient());
+            var index = NewIndex(scope, new RecordingJobClient());
             InitPage(index);
             await index.OnGetAsync(CancellationToken.None);
 
@@ -433,11 +432,9 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         // Batch resume of one heartbeat, then Resume all for the rest.
         await using (var scope = app.Services.CreateAsyncScope())
         {
-            var index = new IndexModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), new RecordingJobClient())
-            {
-                SelectedMonitorIds = [neverPinged],
-                BatchAction = "resume",
-            };
+            var index = NewIndex(scope, new RecordingJobClient());
+            index.SelectedMonitorIds = [neverPinged];
+            index.BatchAction = "resume";
             InitPage(index);
             await index.OnPostBatchAsync(CancellationToken.None);
         }
@@ -448,7 +445,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
 
         await using (var scope = app.Services.CreateAsyncScope())
         {
-            var index = new IndexModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), new RecordingJobClient());
+            var index = NewIndex(scope, new RecordingJobClient());
             InitPage(index);
             await index.OnPostResumeAllAsync(CancellationToken.None);
         }
@@ -706,11 +703,9 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
 
         await using var scope = app.Services.CreateAsyncScope();
         var jobs = new RecordingJobClient();
-        var index = new IndexModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), jobs)
-        {
-            SelectedMonitorIds = [http, hb],
-            BatchAction = "run",
-        };
+        var index = NewIndex(scope, jobs);
+        index.SelectedMonitorIds = [http, hb];
+        index.BatchAction = "run";
         InitPage(index);
         await index.OnPostBatchAsync(CancellationToken.None);
 
@@ -729,7 +724,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         await using (var scope = app.Services.CreateAsyncScope())
         {
             var jobs = new RecordingJobClient();
-            var details = new DetailsModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), jobs);
+            var details = new DetailsModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), NewCommands(scope, jobs));
             InitPage(details);
             Assert.IsType<RedirectToPageResult>(await details.OnPostRunNowAsync(id, CancellationToken.None));
             Assert.Empty(jobs.EnqueuedMonitorIds());
@@ -939,6 +934,390 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         Assert.Empty(await keys.ListAsync(userId));
     }
 
+    [SkippableFact]
+    public async Task Index_failing_group_follows_the_latest_completed_run_and_ignores_unfinished_ones()
+    {
+        await using var app = await CreateAppAsync();
+        var failing = await AddMonitorAsync(app);
+        var recovered = await AddMonitorAsync(app);
+        var neverRan = await AddMonitorAsync(app);
+        await ExecuteAsync(app, failing, HttpStatusCode.InternalServerError);
+        await ExecuteAsync(app, recovered, HttpStatusCode.InternalServerError);
+        await ExecuteAsync(app, recovered, HttpStatusCode.OK);
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            // A failed run that never completed (queued "Run now") must not count, and a failed run without LastRunAt is not "failing".
+            db.MonitorRuns.Add(new MonitorRun { MonitorId = failing, State = "queued", Success = true, StartedAt = DateTimeOffset.UtcNow.AddMinutes(1), FinishedAt = DateTimeOffset.UtcNow });
+            db.MonitorRuns.Add(new MonitorRun { MonitorId = neverRan, State = "completed", Success = false, StartedAt = DateTimeOffset.UtcNow, FinishedAt = DateTimeOffset.UtcNow });
+            await db.SaveChangesAsync();
+        }
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var index = NewIndex(scope);
+            InitPage(index);
+            await index.OnGetAsync(CancellationToken.None);
+
+            Assert.Equal([failing], index.FailingMonitors.Select(m => m.Id));
+            Assert.Equal(2, index.OtherMonitors.Count);
+        }
+    }
+
+    [SkippableFact]
+    public async Task Pause_all_and_resume_all_skip_disabled_monitors_and_renew_the_stamp()
+    {
+        await using var app = await CreateAppAsync();
+        var active = await AddMonitorAsync(app);
+        var disabled = await AddMonitorAsync(app);
+        await using (var scope = app.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors
+                .Where(m => m.Id == disabled).ExecuteUpdateAsync(s => s.SetProperty(m => m.Enabled, false));
+        var activeStamp = (await GetMonitorAsync(app, active)).ConcurrencyStamp;
+        var disabledStamp = (await GetMonitorAsync(app, disabled)).ConcurrencyStamp;
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var index = NewIndex(scope);
+            InitPage(index);
+            await index.OnPostPauseAllAsync(CancellationToken.None);
+            Assert.Equal("Paused 1 monitor(s).", index.TempData["FlashInfo"]);
+        }
+        var paused = await GetMonitorAsync(app, active);
+        Assert.True(paused.IsPaused);
+        Assert.NotEqual(activeStamp, paused.ConcurrencyStamp);
+        Assert.Equal(disabledStamp, (await GetMonitorAsync(app, disabled)).ConcurrencyStamp);
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var index = NewIndex(scope);
+            InitPage(index);
+            await index.OnPostResumeAllAsync(CancellationToken.None);
+            Assert.Equal("Resumed 1 monitor(s).", index.TempData["FlashInfo"]);
+        }
+        var resumed = await GetMonitorAsync(app, active);
+        Assert.False(resumed.IsPaused);
+        Assert.NotEqual(paused.ConcurrencyStamp, resumed.ConcurrencyStamp);
+        Assert.Equal(disabledStamp, (await GetMonitorAsync(app, disabled)).ConcurrencyStamp);
+    }
+
+    [SkippableFact]
+    public async Task Pause_one_renews_the_stamp_and_a_repeat_changes_nothing()
+    {
+        await using var app = await CreateAppAsync();
+        var id = await AddMonitorAsync(app);
+        var before = (await GetMonitorAsync(app, id)).ConcurrencyStamp;
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var commands = NewCommands(scope, new RecordingJobClient());
+        Assert.Equal(PauseResumeOutcome.Changed, await commands.PauseMonitorAsync(id, CancellationToken.None));
+        var paused = await GetMonitorAsync(app, id);
+        Assert.True(paused.IsPaused);
+        Assert.NotEqual(before, paused.ConcurrencyStamp);
+
+        Assert.Equal(PauseResumeOutcome.Unchanged, await commands.PauseMonitorAsync(id, CancellationToken.None));
+        Assert.Equal(paused.ConcurrencyStamp, (await GetMonitorAsync(app, id)).ConcurrencyStamp);
+
+        Assert.Equal(PauseResumeOutcome.Changed, await commands.ResumeMonitorAsync(id, CancellationToken.None));
+        Assert.Equal(PauseResumeOutcome.Unchanged, await commands.ResumeMonitorAsync(id, CancellationToken.None));
+        Assert.Equal(PauseResumeOutcome.NotFound, await commands.PauseMonitorAsync(Guid.NewGuid(), CancellationToken.None));
+    }
+
+    [SkippableFact]
+    public async Task Resume_one_heartbeat_sets_the_deadline_in_the_same_statement()
+    {
+        await using var app = await CreateAppAsync();
+        var (id, _) = await AddHeartbeatAsync(app, period: 3600, grace: 300, nextRunAt: DateTimeOffset.UtcNow.AddMinutes(-30), paused: true);
+        var before = (await GetMonitorAsync(app, id)).ConcurrencyStamp;
+
+        await using var scope = app.Services.CreateAsyncScope();
+        Assert.Equal(PauseResumeOutcome.Changed, await NewCommands(scope, new RecordingJobClient()).ResumeMonitorAsync(id, CancellationToken.None));
+
+        var m = await GetMonitorAsync(app, id);
+        Assert.False(m.IsPaused);
+        Assert.NotEqual(before, m.ConcurrencyStamp);
+        Assert.InRange(m.NextRunAt!.Value, DateTimeOffset.UtcNow.AddSeconds(3800), DateTimeOffset.UtcNow.AddSeconds(3901));
+    }
+
+    [SkippableFact]
+    public async Task Pause_and_resume_one_report_disabled_and_change_nothing()
+    {
+        await using var app = await CreateAppAsync();
+        var disabledActive = await AddMonitorAsync(app);
+        var disabledPaused = await AddMonitorAsync(app);
+        await using (var scope = app.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors
+                .Where(m => m.Id == disabledActive || m.Id == disabledPaused)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Enabled, false));
+        await using (var scope = app.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors
+                .Where(m => m.Id == disabledPaused).ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, true));
+        var stampA = (await GetMonitorAsync(app, disabledActive)).ConcurrencyStamp;
+        var stampP = (await GetMonitorAsync(app, disabledPaused)).ConcurrencyStamp;
+
+        await using var cmdScope = app.Services.CreateAsyncScope();
+        var commands = NewCommands(cmdScope, new RecordingJobClient());
+        Assert.Equal(PauseResumeOutcome.Disabled, await commands.PauseMonitorAsync(disabledActive, CancellationToken.None));
+        Assert.Equal(PauseResumeOutcome.Disabled, await commands.ResumeMonitorAsync(disabledPaused, CancellationToken.None));
+
+        var a = await GetMonitorAsync(app, disabledActive);
+        var p = await GetMonitorAsync(app, disabledPaused);
+        Assert.False(a.IsPaused);
+        Assert.True(p.IsPaused);
+        Assert.Equal(stampA, a.ConcurrencyStamp);
+        Assert.Equal(stampP, p.ConcurrencyStamp);
+    }
+
+    [SkippableFact]
+    public async Task Queue_manual_run_creates_a_queued_run_and_one_job_and_keeps_the_stamp()
+    {
+        await using var app = await CreateAppAsync();
+        var id = await AddMonitorAsync(app);
+        var stamp = (await GetMonitorAsync(app, id)).ConcurrencyStamp;
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var jobs = new RecordingJobClient();
+        var result = await NewCommands(scope, jobs).QueueManualRunAsync(id, reuseInFlight: false, rejectDisabled: false, CancellationToken.None);
+
+        Assert.Equal(ManualRunOutcome.Queued, result.Outcome);
+        var run = Assert.Single(await RunsAsync(app, id));
+        Assert.Equal(result.RunId, run.Id);
+        Assert.Equal("queued", run.State);
+        Assert.Equal("manual", run.Reason);
+        Assert.Equal([id], jobs.EnqueuedMonitorIds());
+        Assert.Equal(stamp, (await GetMonitorAsync(app, id)).ConcurrencyStamp);
+    }
+
+    [SkippableFact]
+    public async Task Queue_manual_run_reuses_a_recent_in_flight_run_only_when_asked()
+    {
+        await using var app = await CreateAppAsync();
+        var id = await AddMonitorAsync(app); // timeout 15 s, so the reuse window is 75 s
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var jobs = new RecordingJobClient();
+        var commands = NewCommands(scope, jobs);
+        var first = await commands.QueueManualRunAsync(id, reuseInFlight: true, rejectDisabled: true, CancellationToken.None);
+        var second = await commands.QueueManualRunAsync(id, reuseInFlight: true, rejectDisabled: true, CancellationToken.None);
+        Assert.Equal(ManualRunOutcome.Queued, first.Outcome);
+        Assert.Equal(ManualRunOutcome.AlreadyInFlight, second.Outcome);
+        Assert.Equal(first.RunId, second.RunId);
+        Assert.Single(await RunsAsync(app, id));
+        Assert.Single(jobs.EnqueuedMonitorIds());
+
+        // Without reuse (Details page) a second call queues a second run.
+        var third = await commands.QueueManualRunAsync(id, reuseInFlight: false, rejectDisabled: false, CancellationToken.None);
+        Assert.Equal(ManualRunOutcome.Queued, third.Outcome);
+        Assert.NotEqual(first.RunId, third.RunId);
+        Assert.Equal(2, (await RunsAsync(app, id)).Count);
+
+        // A running manual run counts as in flight too, but one older than timeout + 60 s is treated as lost.
+        await using (var db = app.Services.CreateAsyncScope())
+            await db.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorRuns
+                .Where(r => r.MonitorId == id).ExecuteUpdateAsync(s => s
+                    .SetProperty(r => r.State, "running")
+                    .SetProperty(r => r.StartedAt, DateTimeOffset.UtcNow.AddSeconds(-74)));
+        Assert.Equal(ManualRunOutcome.AlreadyInFlight, (await commands.QueueManualRunAsync(id, true, true, CancellationToken.None)).Outcome);
+
+        await using (var db = app.Services.CreateAsyncScope())
+            await db.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorRuns
+                .Where(r => r.MonitorId == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.StartedAt, DateTimeOffset.UtcNow.AddSeconds(-76)));
+        var fresh = await commands.QueueManualRunAsync(id, true, true, CancellationToken.None);
+        Assert.Equal(ManualRunOutcome.Queued, fresh.Outcome);
+        Assert.DoesNotContain(fresh.RunId, (await RunsAsync(app, id)).Where(r => r.State == "running").Select(r => (Guid?)r.Id));
+    }
+
+    [SkippableFact]
+    public async Task Queue_manual_run_reports_heartbeat_disabled_and_not_found()
+    {
+        await using var app = await CreateAppAsync();
+        var (hb, _) = await AddHeartbeatAsync(app);
+        var disabled = await AddMonitorAsync(app);
+        await using (var scope = app.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors
+                .Where(m => m.Id == disabled).ExecuteUpdateAsync(s => s.SetProperty(m => m.Enabled, false));
+
+        await using var cmdScope = app.Services.CreateAsyncScope();
+        var jobs = new RecordingJobClient();
+        var commands = NewCommands(cmdScope, jobs);
+        Assert.Equal(ManualRunOutcome.Heartbeat, (await commands.QueueManualRunAsync(hb, true, true, CancellationToken.None)).Outcome);
+        Assert.Equal(ManualRunOutcome.NotFound, (await commands.QueueManualRunAsync(Guid.NewGuid(), true, true, CancellationToken.None)).Outcome);
+        Assert.Equal(ManualRunOutcome.Disabled, (await commands.QueueManualRunAsync(disabled, true, true, CancellationToken.None)).Outcome);
+        Assert.Empty(jobs.EnqueuedMonitorIds());
+        Assert.Empty(await RunsAsync(app, disabled));
+
+        // The Details page still queues disabled monitors.
+        Assert.Equal(ManualRunOutcome.Queued, (await commands.QueueManualRunAsync(disabled, false, false, CancellationToken.None)).Outcome);
+    }
+
+    [SkippableFact]
+    public async Task Update_alerting_changes_only_the_given_fields_renews_the_stamp_and_conflicts_with_an_open_edit_form()
+    {
+        await using var app = await CreateAppAsync();
+        var id = await AddMonitorAsync(app); // threshold 1, override alerts@example.com
+        var form = await LoadEditFormAsync(app, id);
+        var stamp = (await GetMonitorAsync(app, id)).ConcurrencyStamp;
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var commands = NewCommands(scope, new RecordingJobClient());
+
+        Assert.True(await commands.UpdateAlertingAsync(id, 3, null, false, CancellationToken.None));
+        var afterThreshold = await GetMonitorAsync(app, id);
+        Assert.Equal(3, afterThreshold.AlertAfterConsecutiveFailures);
+        Assert.Equal("alerts@example.com", afterThreshold.AlertEmailOverride);
+        Assert.NotEqual(stamp, afterThreshold.ConcurrencyStamp);
+
+        Assert.True(await commands.UpdateAlertingAsync(id, null, "  ops@example.com ", false, CancellationToken.None));
+        var afterEmail = await GetMonitorAsync(app, id);
+        Assert.Equal(3, afterEmail.AlertAfterConsecutiveFailures);
+        Assert.Equal("ops@example.com", afterEmail.AlertEmailOverride);
+        Assert.NotEqual(afterThreshold.ConcurrencyStamp, afterEmail.ConcurrencyStamp);
+
+        Assert.True(await commands.UpdateAlertingAsync(id, null, null, true, CancellationToken.None));
+        var cleared = await GetMonitorAsync(app, id);
+        Assert.Null(cleared.AlertEmailOverride);
+        Assert.Equal(3, cleared.AlertAfterConsecutiveFailures);
+        Assert.NotEqual(afterEmail.ConcurrencyStamp, cleared.ConcurrencyStamp);
+
+        Assert.False(await commands.UpdateAlertingAsync(Guid.NewGuid(), 2, null, false, CancellationToken.None));
+
+        // The Edit form loaded before the change now conflicts.
+        form.Name = "Edited after API change";
+        var (post, flash) = await PostEditAsync(app, id, form);
+        Assert.Equal("/Monitors/Edit", Assert.IsType<RedirectToPageResult>(post).PageName);
+        Assert.NotNull(flash);
+    }
+
+    [SkippableFact]
+    public async Task Status_service_reports_state_health_and_failure_summary_for_many_monitors()
+    {
+        await using var app = await CreateAppAsync();
+        var failing = await AddMonitorAsync(app);
+        var healthy = await AddMonitorAsync(app);
+        var queuedOnly = await AddMonitorAsync(app);
+        var (overdueHeartbeat, _) = await AddHeartbeatAsync(app, nextRunAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+        await ExecuteAsync(app, failing, HttpStatusCode.OK);
+        await ExecuteAsync(app, failing, HttpStatusCode.InternalServerError);
+        await ExecuteAsync(app, failing, HttpStatusCode.InternalServerError);
+        await ExecuteAsync(app, healthy, HttpStatusCode.OK);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.MonitorRuns.Add(new MonitorRun { MonitorId = queuedOnly, State = "queued", StartedAt = DateTimeOffset.UtcNow, FinishedAt = DateTimeOffset.UtcNow });
+            await db.SaveChangesAsync();
+            await db.Monitors.Where(m => m.Id == failing).ExecuteUpdateAsync(s => s.SetProperty(m => m.IsPaused, true));
+        }
+
+        await using var statusScope = app.Services.CreateAsyncScope();
+        var monitors = await statusScope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.AsNoTracking().ToListAsync();
+        var statuses = await NewStatus(statusScope).GetStatusesAsync(monitors, CancellationToken.None);
+
+        var f = statuses[failing];
+        Assert.Equal(MonitorState.Paused, f.State);
+        Assert.Equal(MonitorHealth.Failing, f.Health);
+        Assert.Equal(2, f.Failure!.ConsecutiveFailures);
+        Assert.Equal(500, f.Failure.StatusCode);
+        Assert.NotNull(f.Failure.FailingSince);
+        Assert.Equal(MonitorHealth.Ok, statuses[healthy].Health);
+        Assert.Null(statuses[healthy].Failure);
+        Assert.Equal(MonitorHealth.Unknown, statuses[queuedOnly].Health);
+        Assert.Equal(MonitorHealth.Overdue, statuses[overdueHeartbeat].Health);
+    }
+
+    [SkippableFact]
+    public async Task Recipient_resolver_returns_addresses_with_the_rule_that_picked_them()
+    {
+        await using var app = await CreateAppAsync();
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+        var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+        var withAccount = new IdentityUser { UserName = "acct@example.com", Email = "acct@example.com" };
+        var plain = new IdentityUser { UserName = "plain@example.com", Email = "plain@example.com" };
+        var admin = new IdentityUser { UserName = "admin@example.com", Email = "admin@example.com" };
+        foreach (var u in new[] { withAccount, plain, admin })
+            Assert.True((await users.CreateAsync(u, "password123")).Succeeded);
+        Assert.True((await roles.CreateAsync(new IdentityRole("Admin"))).Succeeded);
+        Assert.True((await users.AddToRoleAsync(admin, "Admin")).Succeeded);
+        await new AccountAlertSettings(db).SetEmailAsync(withAccount.Id, " account@example.com ", CancellationToken.None);
+
+        var resolver = new AlertRecipientResolver(db, users);
+        async Task<AlertRecipients> Resolve(string? overrideEmail, string? owner) =>
+            await resolver.ResolveAsync(new MonitorEntity { Name = "m", Url = "u", Method = "GET", AlertEmailOverride = overrideEmail, CreatedByUserId = owner }, CancellationToken.None);
+
+        var monitor = await Resolve(" ops@example.com ", withAccount.Id);
+        Assert.Equal(AlertRecipientSource.Monitor, monitor.Source);
+        Assert.Equal(["ops@example.com"], monitor.Addresses);
+
+        var account = await Resolve(null, withAccount.Id);
+        Assert.Equal(AlertRecipientSource.Account, account.Source);
+        Assert.Equal(["account@example.com"], account.Addresses);
+
+        var owner = await Resolve(null, plain.Id);
+        Assert.Equal(AlertRecipientSource.Owner, owner.Source);
+        Assert.Equal(["plain@example.com"], owner.Addresses);
+
+        // No owner, or an owner without an email, falls back to all admins.
+        var noOwner = await Resolve(null, null);
+        Assert.Equal(AlertRecipientSource.Admins, noOwner.Source);
+        Assert.Equal(["admin@example.com"], noOwner.Addresses);
+        plain.Email = null;
+        await users.UpdateAsync(plain);
+        Assert.Equal(AlertRecipientSource.Admins, (await Resolve(null, plain.Id)).Source);
+    }
+
+    [SkippableFact]
+    public async Task Account_alert_email_is_saved_trimmed_replaced_and_cleared()
+    {
+        await using var app = await CreateAppAsync();
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+        var user = new IdentityUser { UserName = "u@example.com", Email = "u@example.com" };
+        Assert.True((await users.CreateAsync(user, "password123")).Succeeded);
+
+        var settings = new AccountAlertSettings(db);
+        await settings.SetEmailAsync(user.Id, " first@example.com ", CancellationToken.None);
+        Assert.Equal("first@example.com", await settings.GetEmailAsync(user.Id, CancellationToken.None));
+        await settings.SetEmailAsync(user.Id, "second@example.com", CancellationToken.None);
+        Assert.Equal("second@example.com", await settings.GetEmailAsync(user.Id, CancellationToken.None));
+        Assert.Equal(1, await db.UserAlertSettings.CountAsync());
+        await settings.SetEmailAsync(user.Id, "  ", CancellationToken.None);
+        Assert.Null(await settings.GetEmailAsync(user.Id, CancellationToken.None));
+        Assert.Equal(0, await db.UserAlertSettings.CountAsync());
+    }
+
+    [SkippableFact]
+    public async Task Settings_page_saves_and_clears_the_account_alert_email_through_the_shared_service()
+    {
+        await using var app = await CreateAppAsync();
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+        var user = new IdentityUser { UserName = "u@example.com", Email = "u@example.com" };
+        Assert.True((await users.CreateAsync(user, "password123")).Succeeded);
+
+        SettingsModel NewPage(string? email)
+        {
+            var page = new SettingsModel(db, users, new ConfigurationBuilder().Build(), new AccountAlertSettings(db)) { AlertEmail = email };
+            InitPage(page);
+            page.PageContext.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(
+                new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, user.Id)], "test"));
+            return page;
+        }
+
+        Assert.IsType<RedirectToPageResult>(await NewPage(" me@example.com ").OnPostAsync(CancellationToken.None));
+        Assert.Equal("me@example.com", await db.UserAlertSettings.Where(x => x.UserId == user.Id).Select(x => x.AlertEmail).SingleAsync());
+
+        var get = NewPage(null);
+        Assert.IsType<PageResult>(await get.OnGetAsync(CancellationToken.None));
+        Assert.Equal("me@example.com", get.AlertEmail);
+
+        Assert.IsType<RedirectToPageResult>(await NewPage("").OnPostAsync(CancellationToken.None));
+        Assert.Empty(await db.UserAlertSettings.Where(x => x.UserId == user.Id).ToListAsync());
+    }
+
     // ---- helpers ----
 
     private sealed class TestApp(ServiceProvider services, string connectionString) : IAsyncDisposable
@@ -1142,7 +1521,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
             new FixedUrlChecker(status, snippet),
             emails,
             app.Services.GetRequiredService<JobStorage>(),
-            scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>(),
+            new AlertRecipientResolver(db ?? scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>()),
             NullLogger<MonitorExecutor>.Instance,
             app.Services.GetRequiredService<IConfiguration>());
 
@@ -1154,6 +1533,18 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
             .Select(s => s.ConcurrencyStamp)
             .SingleAsync();
     }
+
+    private static IndexModel NewIndex(AsyncServiceScope scope, IBackgroundJobClient? jobs = null)
+    {
+        jobs ??= new RecordingJobClient();
+        return new(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), jobs, NewStatus(scope), NewCommands(scope, jobs));
+    }
+
+    private static MonitorCommands NewCommands(AsyncServiceScope scope, IBackgroundJobClient jobs) =>
+        new(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), jobs);
+
+    private static MonitorStatusService NewStatus(AsyncServiceScope scope) =>
+        new(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), new ConfigurationBuilder().Build(), Production);
 
     private static void InitPage(PageModel page)
     {

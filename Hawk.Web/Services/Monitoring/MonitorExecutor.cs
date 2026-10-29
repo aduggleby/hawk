@@ -71,7 +71,7 @@ public sealed class MonitorExecutor(
     IUrlChecker urlChecker,
     IEmailSender emailSender,
     JobStorage jobStorage,
-    UserManager<IdentityUser> userManager,
+    AlertRecipientResolver recipientResolver,
     ILogger<MonitorExecutor> logger,
     IConfiguration config) : IMonitorExecutor
 {
@@ -827,38 +827,8 @@ public sealed class MonitorExecutor(
         }
     }
 
-    private async Task<string[]> ResolveRecipientsAsync(MonitorEntity monitor, CancellationToken cancellationToken)
-    {
-        // 1) Per-monitor override.
-        if (!string.IsNullOrWhiteSpace(monitor.AlertEmailOverride))
-            return [monitor.AlertEmailOverride.Trim()];
-
-        // 2) Account-wide override for the monitor owner.
-        if (!string.IsNullOrWhiteSpace(monitor.CreatedByUserId))
-        {
-            var accountOverride = await db.UserAlertSettings
-                .Where(x => x.UserId == monitor.CreatedByUserId)
-                .Select(x => x.AlertEmail)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (!string.IsNullOrWhiteSpace(accountOverride))
-                return [accountOverride.Trim()];
-
-            // 3) Owner's Identity email.
-            var owner = await userManager.FindByIdAsync(monitor.CreatedByUserId);
-            if (!string.IsNullOrWhiteSpace(owner?.Email))
-                return [owner!.Email!];
-        }
-
-        // Fallback: previous v1 behavior, email all Admin users.
-        var admins = await userManager.GetUsersInRoleAsync("Admin");
-        return admins
-            .Select(a => a.Email)
-            .Where(e => !string.IsNullOrWhiteSpace(e))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(e => e!)
-            .ToArray();
-    }
+    private async Task<string[]> ResolveRecipientsAsync(MonitorEntity monitor, CancellationToken cancellationToken) =>
+        (await recipientResolver.ResolveAsync(monitor, cancellationToken)).Addresses;
 
     private static string SerializeHeaders(IReadOnlyDictionary<string, string>? headers)
     {

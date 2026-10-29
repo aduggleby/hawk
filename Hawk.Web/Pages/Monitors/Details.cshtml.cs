@@ -4,7 +4,6 @@
 // </summary>
 // </file>
 
-using Hangfire;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -20,7 +19,7 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Monitor details page model.
 /// </summary>
-public class DetailsModel(ApplicationDbContext db, IBackgroundJobClient jobs) : PageModel
+public class DetailsModel(ApplicationDbContext db, MonitorCommands commands) : PageModel
 {
     /// <summary>
     /// Loaded monitor.
@@ -67,46 +66,17 @@ public class DetailsModel(ApplicationDbContext db, IBackgroundJobClient jobs) : 
     /// </summary>
     public async Task<IActionResult> OnPostRunNowAsync(Guid id, CancellationToken cancellationToken)
     {
-        var monitor = await db.Monitors
-            .AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
-        if (monitor is null)
-            return NotFound();
-
-        // Heartbeats have nothing to run: they wait for the client to call the ping URL.
-        if (monitor.Type == MonitorType.Heartbeat)
+        var result = await commands.QueueManualRunAsync(id, reuseInFlight: false, rejectDisabled: false, cancellationToken);
+        switch (result.Outcome)
         {
-            TempData["FlashError"] = "Heartbeat monitors cannot be run manually. They wait for a ping.";
-            return RedirectToPage(new { id });
+            case ManualRunOutcome.NotFound:
+                return NotFound();
+            case ManualRunOutcome.Heartbeat:
+                TempData["FlashError"] = "Heartbeat monitors cannot be run manually. They wait for a ping.";
+                return RedirectToPage(new { id });
+            default:
+                return RedirectToPage("/Monitors/Runs/Details", new { monitorId = id, runId = result.RunId });
         }
-
-        // Create a run record up front so we can redirect to diagnostics immediately.
-        var run = new MonitorRun
-        {
-            Id = Guid.NewGuid(),
-            MonitorId = id,
-            State = "queued",
-            StartedAt = DateTimeOffset.UtcNow,
-            FinishedAt = DateTimeOffset.UtcNow,
-            DurationMs = 0,
-            StatusCode = null,
-            Success = false,
-            ErrorMessage = "Queued",
-            Reason = "manual",
-            RequestUrl = monitor.Url,
-            RequestMethod = monitor.Method,
-            RequestContentType = monitor.ContentType,
-            RequestTimeoutMs = (int)Math.Clamp(monitor.TimeoutSeconds * 1000, 0, int.MaxValue),
-            MatchResultsJson = "[]",
-            RequestHeadersJson = "{}",
-            ResponseHeadersJson = "{}",
-        };
-
-        db.MonitorRuns.Add(run);
-        await db.SaveChangesAsync(cancellationToken);
-
-        jobs.Enqueue<IMonitorRunner>(r => r.RunAsync(id, "manual", CancellationToken.None, run.Id));
-        return RedirectToPage("/Monitors/Runs/Details", new { monitorId = id, runId = run.Id });
     }
 
     /// <summary>

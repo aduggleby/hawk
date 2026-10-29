@@ -30,6 +30,12 @@ public sealed class MonitorScheduler(
 {
     private const string LockKey = "hawk:scheduler:tick";
 
+    /// <summary>
+    /// Seconds between scheduler ticks (default 30, or 5 in Testing), clamped to 1..300.
+    /// </summary>
+    public static int ResolveTickSeconds(IConfiguration config, IHostEnvironment env) =>
+        Math.Clamp(config.GetValue("Hawk:Scheduler:TickSeconds", env.IsEnvironment("Testing") ? 5 : 30), 1, 300);
+
     private sealed record DueMonitor(Guid Id, int IntervalSeconds, MonitorType Type);
 
     /// <inheritdoc />
@@ -40,8 +46,7 @@ public sealed class MonitorScheduler(
         if (!enabled)
             return;
 
-        var tickSeconds = config.GetValue("Hawk:Scheduler:TickSeconds", env.IsEnvironment("Testing") ? 5 : 30);
-        tickSeconds = Math.Clamp(tickSeconds, 1, 300);
+        var tickSeconds = ResolveTickSeconds(config, env);
 
         // Acquire a distributed lock so multiple enqueued Tick jobs can't stampede.
         // Branch: if we cannot acquire the lock, we exit without scheduling the next tick (the lock holder will do it).

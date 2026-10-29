@@ -4,9 +4,7 @@
 @{
     ViewData["Title"] = "Monitors";
     bool IsFailing(Hawk.Web.Data.Monitoring.Monitor m) =>
-        m.LastRunAt is not null &&
-        Model.LastRunSuccessByMonitor.TryGetValue(m.Id, out var lastOk) &&
-        !lastOk;
+        Hawk.Web.Services.Monitoring.MonitorStatusService.IsInFailingGroup(m, Model.LastRunByMonitor);
     static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
 }
 

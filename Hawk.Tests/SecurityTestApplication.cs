@@ -70,6 +70,9 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
         builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.UI.Services.IEmailSender>(services => services.GetRequiredService<TestEmailSender>());
         builder.Services.AddSingleton<TestExecutor>();
         builder.Services.AddSingleton<IMonitorExecutor>(services => services.GetRequiredService<TestExecutor>());
+        builder.Services.AddScoped<MonitorStatusService>();
+        builder.Services.AddScoped<MonitorCommands>();
+        builder.Services.AddScoped<AccountAlertSettings>();
         builder.Services.AddRazorPages(options =>
         {
             options.Conventions.AuthorizeFolder("/");

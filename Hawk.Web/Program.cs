@@ -151,6 +151,10 @@ builder.Services.AddRazorPages(options =>
 builder.Services.AddScoped<IMonitorRunner, MonitorRunner>();
 builder.Services.AddScoped<IMonitorExecutor, MonitorExecutor>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
+builder.Services.AddScoped<MonitorStatusService>();
+builder.Services.AddScoped<MonitorCommands>();
+builder.Services.AddScoped<AlertRecipientResolver>();
+builder.Services.AddScoped<AccountAlertSettings>();
 builder.Services.AddScoped<StatusCakeImporter>();
 builder.Services.AddScoped<MonitorTransferService>();
 builder.Services.AddScoped<Hawk.Web.Services.ApiKeys.ApiKeyService>();

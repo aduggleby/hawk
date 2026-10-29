@@ -169,23 +169,20 @@ public sealed class MonitorForm
                 yield return new ValidationResult("Interval is not allowed in this environment.", [nameof(IntervalSeconds)]);
         }
 
-        if (AlertAfterConsecutiveFailures < 1 || AlertAfterConsecutiveFailures > 20)
-            yield return new ValidationResult("Alert threshold must be between 1 and 20.", [nameof(AlertAfterConsecutiveFailures)]);
+        if (AlertSettingsValidator.ValidateThreshold(AlertAfterConsecutiveFailures) is { } thresholdError)
+            yield return new ValidationResult(thresholdError, [nameof(AlertAfterConsecutiveFailures)]);
 
-        if (!string.IsNullOrWhiteSpace(AlertEmailOverride))
-        {
-            var emailAttr = new EmailAddressAttribute();
-            if (!emailAttr.IsValid(AlertEmailOverride))
-                yield return new ValidationResult("Alert email override must be a valid email address.", [nameof(AlertEmailOverride)]);
-        }
+        if (AlertSettingsValidator.ValidateEmail(AlertEmailOverride) is { } emailError)
+            yield return new ValidationResult(emailError, [nameof(AlertEmailOverride)]);
 
         if (RunRetentionDays is < 1 or > 3650)
             yield return new ValidationResult("Run retention override must be between 1 and 3650 days.", [nameof(RunRetentionDays)]);
 
         // PostgreSQL text columns reject NUL characters (SQL Server accepts them); refuse them on every provider.
+        // The alert email is checked by AlertSettingsValidator above.
         string?[] texts = heartbeat
-            ? [Name, AlertEmailOverride]
-            : [Name, Url, Method, ContentType, Body, AlertEmailOverride, AllowedStatusCodes, .. HeaderNames, .. HeaderValues, .. MatchPatterns];
+            ? [Name]
+            : [Name, Url, Method, ContentType, Body, AllowedStatusCodes, .. HeaderNames, .. HeaderValues, .. MatchPatterns];
         if (texts.Any(t => t is not null && t.Contains('\0')))
             yield return new ValidationResult("Fields must not contain NUL characters.", [string.Empty]);
 

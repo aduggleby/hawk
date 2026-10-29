@@ -18,7 +18,11 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Monitors list page model.
 /// </summary>
-public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : PageModel
+public class IndexModel(
+    ApplicationDbContext db,
+    IBackgroundJobClient jobs,
+    MonitorStatusService status,
+    MonitorCommands commands) : PageModel
 {
     /// <summary>
     /// Monitors to display.
@@ -36,9 +40,9 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
     public List<MonitorEntity> OtherMonitors { get; private set; } = [];
 
     /// <summary>
-    /// Latest run success state by monitor id.
+    /// Latest completed run by monitor id.
     /// </summary>
-    public Dictionary<Guid, bool> LastRunSuccessByMonitor { get; private set; } = [];
+    public Dictionary<Guid, LastCompletedRun> LastRunByMonitor { get; private set; } = [];
 
     [BindProperty]
     public List<Guid> SelectedMonitorIds { get; set; } = [];
@@ -59,21 +63,10 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
             .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        LastRunSuccessByMonitor = await db.MonitorRuns
-            .AsNoTracking()
-            .Where(r => r.State == "completed" || r.State == "")
-            .GroupBy(r => r.MonitorId)
-            .Select(g => g
-                .OrderByDescending(r => r.StartedAt)
-                .ThenByDescending(r => r.Id)
-                .Select(r => new { r.MonitorId, r.Success })
-                .First())
-            .ToDictionaryAsync(x => x.MonitorId, x => x.Success, cancellationToken);
+        LastRunByMonitor = await status.GetLastCompletedRunsAsync(null, cancellationToken);
 
         FailingMonitors = Monitors
-            .Where(m => m.LastRunAt is not null &&
-                        LastRunSuccessByMonitor.TryGetValue(m.Id, out var lastOk) &&
-                        !lastOk)
+            .Where(m => MonitorStatusService.IsInFailingGroup(m, LastRunByMonitor))
             .ToList();
 
         var failingIds = FailingMonitors.Select(m => m.Id).ToHashSet();
@@ -82,12 +75,7 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
 
     public async Task<IActionResult> OnPostPauseAllAsync(CancellationToken cancellationToken)
     {
-        var stamp = Guid.NewGuid();
-        var updated = await db.Monitors
-            .Where(m => m.Enabled && !m.IsPaused)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(m => m.IsPaused, true)
-                .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
+        var updated = await commands.PauseAsync(db.Monitors, cancellationToken);
 
         TempData["FlashInfo"] = $"Paused {updated} monitor(s).";
         return RedirectToPage();
@@ -95,50 +83,10 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
 
     public async Task<IActionResult> OnPostResumeAllAsync(CancellationToken cancellationToken)
     {
-        var updated = await ResumeAsync(db.Monitors, cancellationToken);
+        var updated = await commands.ResumeAsync(db.Monitors, cancellationToken);
 
         TempData["FlashInfo"] = $"Resumed {updated} monitor(s).";
         return RedirectToPage();
-    }
-
-    /// <summary>
-    /// Resumes paused, enabled monitors. Heartbeats get a fresh deadline (a full period plus grace) in the same
-    /// statement that unpauses them, so the scheduler can never see a resumed heartbeat with a stale past deadline.
-    /// Heartbeats are updated first, grouped by (period, grace) with a precomputed UTC deadline; the generic update afterwards
-    /// only touches HTTP monitors.
-    /// </summary>
-    private async Task<int> ResumeAsync(IQueryable<MonitorEntity> monitors, CancellationToken cancellationToken)
-    {
-        var stamp = Guid.NewGuid();
-        var now = DateTimeOffset.UtcNow;
-        var paused = monitors.Where(m => m.Enabled && m.IsPaused);
-        var updated = 0;
-
-        var groups = await paused
-            .Where(m => m.Type == MonitorType.Heartbeat)
-            .Select(m => new { m.IntervalSeconds, m.HeartbeatGraceSeconds })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        foreach (var group in groups)
-        {
-            var period = group.IntervalSeconds;
-            var grace = group.HeartbeatGraceSeconds;
-            var deadline = HeartbeatTokens.InitialDeadline(now, period, grace);
-            updated += await paused
-                .Where(m => m.Type == MonitorType.Heartbeat && m.IntervalSeconds == period && m.HeartbeatGraceSeconds == grace)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(m => m.IsPaused, false)
-                    .SetProperty(m => m.NextRunAt, deadline)
-                    .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
-        }
-
-        // HTTP monitors only: a heartbeat paused after the group query stays paused rather than resuming without a deadline.
-        updated += await paused
-            .Where(m => m.Type == MonitorType.Http)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(m => m.IsPaused, false)
-                .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
-        return updated;
     }
 
     public async Task<IActionResult> OnPostBatchAsync(CancellationToken cancellationToken)
@@ -181,16 +129,11 @@ public class IndexModel(ApplicationDbContext db, IBackgroundJobClient jobs) : Pa
         int updated;
         if (action == "pause")
         {
-            var stamp = Guid.NewGuid();
-            updated = await query
-                .Where(m => m.Enabled && !m.IsPaused)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(m => m.IsPaused, true)
-                    .SetProperty(m => m.ConcurrencyStamp, stamp), cancellationToken);
+            updated = await commands.PauseAsync(query, cancellationToken);
         }
         else
         {
-            updated = await ResumeAsync(query, cancellationToken);
+            updated = await commands.ResumeAsync(query, cancellationToken);
         }
 
         TempData["FlashInfo"] = $"{(action == "pause" ? "Paused" : "Resumed")} {updated} monitor(s).";

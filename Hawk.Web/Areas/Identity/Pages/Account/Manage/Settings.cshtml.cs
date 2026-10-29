@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Hawk.Web.Data;
-using Hawk.Web.Data.Alerting;
 using Hawk.Web.Data.Monitoring;
+using Hawk.Web.Services.Monitoring;
 using Hawk.Web.Data.UrlChecks;
 using Hawk.Web.Services.UrlChecks;
 using Microsoft.AspNetCore.Authorization;
@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Hawk.Web.Areas.Identity.Pages.Account.Manage;
 
 [Authorize]
-public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityUser> userManager, IConfiguration config) : PageModel
+public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityUser> userManager, IConfiguration config, AccountAlertSettings alertSettings) : PageModel
 {
     [BindProperty]
     [Display(Name = "Alert email (account-wide override)")]
@@ -57,10 +57,7 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
 
         LoadPresets();
 
-        AlertEmail = await db.UserAlertSettings
-            .Where(x => x.UserId == userId)
-            .Select(x => x.AlertEmail)
-            .FirstOrDefaultAsync(cancellationToken);
+        AlertEmail = await alertSettings.GetEmailAsync(userId, cancellationToken);
 
         UserAgent = await db.UserUrlCheckSettings
             .Where(x => x.UserId == userId)
@@ -86,29 +83,9 @@ public sealed class SettingsModel(ApplicationDbContext db, UserManager<IdentityU
         if (!ModelState.IsValid)
             return Page();
 
-        var email = string.IsNullOrWhiteSpace(AlertEmail) ? null : AlertEmail.Trim();
         var ua = string.IsNullOrWhiteSpace(UserAgent) ? null : UserAgent.Trim();
 
-        var alertSettings = await db.UserAlertSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
-        if (email is null)
-        {
-            if (alertSettings is not null)
-                db.UserAlertSettings.Remove(alertSettings);
-        }
-        else if (alertSettings is null)
-        {
-            db.UserAlertSettings.Add(new UserAlertSettings
-            {
-                UserId = userId,
-                AlertEmail = email,
-                UpdatedAt = DateTimeOffset.UtcNow
-            });
-        }
-        else
-        {
-            alertSettings.AlertEmail = email;
-            alertSettings.UpdatedAt = DateTimeOffset.UtcNow;
-        }
+        await alertSettings.StageEmailAsync(userId, AlertEmail, cancellationToken);
 
         var crawlerSettings = await db.UserUrlCheckSettings.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (ua is null)
