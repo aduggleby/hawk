@@ -1,7 +1,7 @@
 ---
 title: UI polish from design review
 type: feat
-status: active
+status: completed
 date: 2026-10-29
 product_contract_source: ce-plan-bootstrap
 target_version: 0.16.0
@@ -46,3 +46,10 @@ Additions from the reviews: menus close on Escape and outside click (`site.js`, 
 
 - Code review (independent): E2E break on the removed back link (fixed), `{}` bodies hidden as "None" (fixed), parse/format coupling for the heartbeat time (shared helper + test), email colours, single-alert shell, menu Escape/outside click, docs (all fixed).
 - Design re-check: all 14 items done; fixed the off-screen mobile More panel, clipped chart label, repeated facts in the email block and wrapping run times.
+
+## Deployment record
+
+- 2026-10-29: 0.16.0 deployed to prod1 (`registry.dualconsult.net/dualconsult/hawk@sha256:8c40bc5121bf6004bef9918efc95717bbbece6ac795c5d59f7d39a8b6877d4d0`, app commit `a738091`, infra pin `fd08911`). No schema change.
+- Backup before deploy: `/srv/dualconsult/backups/hawk/hawk-pre-0.16.0-20261029-141624.dump` on `dc-prod1-db`.
+- Checks: footer v0.16.0, `/live` 200, `/api/v1/monitors` 401, 0 restarts, no errors in the log.
+- Rollback: pin 0.15.0 (`sha256:47bc9e29bc4e7ff098e925d66119c49fdfadf6744790e83c651dae495819c1e7`) and redeploy; no data step needed.
