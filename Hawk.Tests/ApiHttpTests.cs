@@ -615,4 +615,156 @@ public class ApiHttpTests
         var saved = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.AsNoTracking().SingleAsync(x => x.Id == m.Id);
         Assert.Equal(m.ConcurrencyStamp, saved.ConcurrencyStamp);
     }
+
+    private static MonitorEntity Grouped(string name, string? group, string? owner = null, bool paused = false)
+    {
+        var m = Http(name, owner, paused);
+        m.GroupName = group;
+        return m;
+    }
+
+    [Fact]
+    public async Task List_and_detail_carry_the_group_and_the_list_filters_it_case_insensitively()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, userId) = await CreateKeyAsync(app, ApiKeyScope.Read);
+        var webId = await SeedAsync(app, db =>
+        {
+            var web = Grouped("a-web", "Prod", userId);
+            db.Monitors.AddRange(web, Grouped("b-api", "prod"), Grouped("c-stage", "Staging"), Grouped("d-none", null));
+            return Task.FromResult(web.Id);
+        });
+
+        async Task<string[]> NamesAsync(string query)
+        {
+            using var response = await SendAsync(app, key, HttpMethod.Get, "/api/v1/monitors" + query);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return (await JsonAsync(response)).GetProperty("monitors").EnumerateArray().Select(m => m.GetProperty("name").GetString()!).ToArray();
+        }
+
+        Assert.Equal(["a-web", "b-api"], await NamesAsync("?group=PROD"));
+        Assert.Equal(["c-stage"], await NamesAsync("?group=staging"));
+        Assert.Equal(["d-none"], await NamesAsync("?group="));
+        Assert.Empty(await NamesAsync("?group=nope"));
+        Assert.Equal(4, (await NamesAsync(string.Empty)).Length);
+
+        using var list = await SendAsync(app, key, HttpMethod.Get, "/api/v1/monitors");
+        var items = (await JsonAsync(list)).GetProperty("monitors").EnumerateArray().ToDictionary(m => m.GetProperty("name").GetString()!);
+        Assert.Equal("Prod", items["a-web"].GetProperty("group").GetString());
+        Assert.Equal(JsonValueKind.Null, items["d-none"].GetProperty("group").ValueKind);
+
+        using var detail = await SendAsync(app, key, HttpMethod.Get, $"/api/v1/monitors/{webId}");
+        Assert.Equal("Prod", (await JsonAsync(detail)).GetProperty("group").GetString());
+    }
+
+    [Fact]
+    public async Task Groups_lists_counts_with_failing_by_last_run_even_when_overdue_and_paused_by_state()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, _) = await CreateKeyAsync(app, ApiKeyScope.Read);
+        var now = DateTimeOffset.UtcNow;
+        await SeedAsync(app, db =>
+        {
+            var failing = Grouped("failing", "Prod");
+            failing.LastRunAt = now.AddSeconds(-30);
+            // Last run failed but checks stopped long ago: Health is overdue, yet Failure is set (the Index "failing" rule).
+            var overdue = Grouped("overdue", "prod");
+            overdue.LastRunAt = now.AddDays(-1);
+            var ok = Grouped("ok", "Prod", paused: true);
+            ok.LastRunAt = now.AddSeconds(-30);
+            var other = Grouped("other", "alpha");
+            db.Monitors.AddRange(failing, overdue, ok, other, Grouped("none", null));
+            db.MonitorRuns.AddRange(Run(failing.Id, now.AddSeconds(-30), false), Run(overdue.Id, now.AddDays(-1), false), Run(ok.Id, now.AddSeconds(-30), true));
+            return Task.FromResult(0);
+        });
+
+        using var response = await SendAsync(app, key, HttpMethod.Get, "/api/v1/groups");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var groups = (await JsonAsync(response)).GetProperty("groups").EnumerateArray().ToList();
+        Assert.Equal(["alpha", "Prod"], groups.Select(g => g.GetProperty("name").GetString()).ToArray());
+        Assert.Equal((1, 0, 0), (groups[0].GetProperty("monitorCount").GetInt32(), groups[0].GetProperty("failingCount").GetInt32(), groups[0].GetProperty("pausedCount").GetInt32()));
+        Assert.Equal((3, 2, 1), (groups[1].GetProperty("monitorCount").GetInt32(), groups[1].GetProperty("failingCount").GetInt32(), groups[1].GetProperty("pausedCount").GetInt32()));
+    }
+
+    [Theory]
+    [InlineData("pause")]
+    [InlineData("resume")]
+    [InlineData("run")]
+    [InlineData("rename")]
+    public async Task Group_endpoints_reject_read_keys_unknown_groups_and_bad_bodies(string action)
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (readKey, _) = await CreateKeyAsync(app, ApiKeyScope.Read);
+        var (writeKey, _) = await CreateKeyAsync(app, ApiKeyScope.Write);
+        await SeedAsync(app, db =>
+        {
+            db.Monitors.Add(Grouped("web", "Prod"));
+            return Task.FromResult(0);
+        });
+        var path = $"/api/v1/groups/{action}";
+        var extra = action == "rename" ? ",\"newName\":\"New\"" : string.Empty;
+
+        using (var forbidden = await SendAsync(app, readKey, HttpMethod.Post, path, $"{{\"group\":\"Prod\"{extra}}}"))
+            await AssertProblemAsync(forbidden, HttpStatusCode.Forbidden, "insufficient_scope");
+        using (var anonymous = await app.Client.PostAsync(path, new StringContent("{}", Encoding.UTF8, "application/json")))
+            Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        using (var unknown = await SendAsync(app, writeKey, HttpMethod.Post, path, $"{{\"group\":\"Nope\"{extra}}}"))
+            await AssertProblemAsync(unknown, HttpStatusCode.NotFound, "not_found");
+
+        foreach (var bad in new[] { "{}", "{\"group\":\"\"}", "{\"group\":\"  \"}", "{\"group\":null}", "{\"group\":5}", "{\"group\":[\"Prod\"]}" })
+        {
+            using var response = await SendAsync(app, writeKey, HttpMethod.Post, path, bad);
+            await AssertProblemAsync(response, HttpStatusCode.BadRequest, "validation_failed");
+            Assert.True((await JsonAsync(response)).GetProperty("errors").TryGetProperty("group", out _), bad);
+        }
+
+        using (var unknownField = await SendAsync(app, writeKey, HttpMethod.Post, path, $"{{\"group\":\"Prod\",\"bogus\":1{extra}}}"))
+        {
+            await AssertProblemAsync(unknownField, HttpStatusCode.BadRequest, "validation_failed");
+            Assert.True((await JsonAsync(unknownField)).GetProperty("errors").TryGetProperty("bogus", out _));
+        }
+
+        using var notJson = await SendAsync(app, writeKey, HttpMethod.Post, path, "[]");
+        await AssertProblemAsync(notJson, HttpStatusCode.BadRequest, "validation_failed");
+    }
+
+    [Fact]
+    public async Task Rename_validates_new_name_and_only_rename_accepts_it()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (writeKey, _) = await CreateKeyAsync(app, ApiKeyScope.Write);
+        await SeedAsync(app, db =>
+        {
+            db.Monitors.Add(Grouped("web", "Prod"));
+            return Task.FromResult(0);
+        });
+
+        foreach (var newName in new[] { "\"" + new string('x', 101) + "\"", "\"a\\u0000b\"", "\"  \"", "null", "\"\"", "7" })
+        {
+            using var response = await SendAsync(app, writeKey, HttpMethod.Post, "/api/v1/groups/rename", $"{{\"group\":\"Prod\",\"newName\":{newName}}}");
+            await AssertProblemAsync(response, HttpStatusCode.BadRequest, "validation_failed");
+            Assert.True((await JsonAsync(response)).GetProperty("errors").TryGetProperty("newName", out _), newName);
+        }
+
+        using var missing = await SendAsync(app, writeKey, HttpMethod.Post, "/api/v1/groups/rename", "{\"group\":\"Prod\"}");
+        await AssertProblemAsync(missing, HttpStatusCode.BadRequest, "validation_failed");
+        Assert.True((await JsonAsync(missing)).GetProperty("errors").TryGetProperty("newName", out _));
+
+        using var notAllowed = await SendAsync(app, writeKey, HttpMethod.Post, "/api/v1/groups/pause", "{\"group\":\"Prod\",\"newName\":\"X\"}");
+        await AssertProblemAsync(notAllowed, HttpStatusCode.BadRequest, "validation_failed");
+    }
+
+    [Fact]
+    public async Task Index_lists_the_group_endpoints()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, _) = await CreateKeyAsync(app, ApiKeyScope.Read);
+        using var response = await SendAsync(app, key, HttpMethod.Get, "/api/v1");
+        var endpoints = (await JsonAsync(response)).GetProperty("endpoints").EnumerateArray()
+            .Select(e => $"{e.GetProperty("method").GetString()} {e.GetProperty("path").GetString()}").ToList();
+        foreach (var expected in new[] { "GET /api/v1/groups", "POST /api/v1/groups/pause", "POST /api/v1/groups/resume", "POST /api/v1/groups/run", "POST /api/v1/groups/rename" })
+            Assert.Contains(expected, endpoints);
+    }
 }

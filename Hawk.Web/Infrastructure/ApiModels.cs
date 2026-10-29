@@ -39,6 +39,7 @@ public sealed record ApiFailureSummary(
 public sealed record ApiMonitorListItem(
     Guid Id,
     string Name,
+    string? Group,
     MonitorType Type,
     string? Url,
     MonitorState State,
@@ -68,6 +69,7 @@ public sealed record ApiAlertRecipients(AlertRecipientSource Source, IReadOnlyLi
 public sealed record ApiMonitorDetail(
     Guid Id,
     string Name,
+    string? Group,
     MonitorType Type,
     string? Url,
     MonitorState State,
@@ -143,3 +145,13 @@ public sealed record ApiAccountAlerting(string? AlertEmail, string AppliesTo);
 public sealed record ApiPauseResumeResponse(bool Changed, MonitorState State);
 
 public sealed record ApiRunQueued(Guid RunId, string RunUrl, string PollAdvice);
+
+public sealed record ApiGroupSummary(string Name, int MonitorCount, int FailingCount, int PausedCount);
+
+public sealed record ApiGroupList(IReadOnlyList<ApiGroupSummary> Groups);
+
+public sealed record ApiGroupChanged(int Changed);
+
+public sealed record ApiGroupRun(int Queued, int AlreadyInFlight, int Skipped);
+
+public sealed record ApiGroupRenamed(int Renamed, string Group);

@@ -695,4 +695,187 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture) : IClassFixtur
         (status, _) = await SendAsync(host, host.WriteKey, HttpMethod.Post, $"/api/v1/monitors/{Guid.NewGuid()}/run");
         Assert.Equal(HttpStatusCode.NotFound, status);
     }
+
+    private static MonitorEntity InGroup(string name, string? group, bool paused = false, bool enabled = true)
+    {
+        var m = Http();
+        m.Name = name;
+        m.GroupName = group;
+        m.IsPaused = paused;
+        m.Enabled = enabled;
+        return m;
+    }
+
+    [SkippableFact]
+    public async Task Create_and_patch_handle_the_group_with_merge_patch_semantics_AE3()
+    {
+        await using var host = await CreateHostAsync();
+        await AddAsync(host, InGroup("existing", "Prod"));
+
+        // Create takes the spelling of an existing group (case-insensitive) and trims.
+        var (status, json, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors",
+            "{\"name\":\"w\",\"url\":\"https://example.com/\",\"intervalSeconds\":60,\"group\":\"  prod \"}");
+        Assert.Equal(HttpStatusCode.Created, status);
+        Assert.Equal("Prod", json.GetProperty("group").GetString());
+        var id = json.GetProperty("id").GetGuid();
+        Assert.Equal("Prod", (await GetAsync(host, id)).GroupName);
+
+        // Absent keeps it.
+        (status, json, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"name\":\"renamed\"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("Prod", json.GetProperty("group").GetString());
+
+        // A new spelling of another existing group canonicalizes; an unknown name is stored as given.
+        (_, json, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"group\":\"PROD\"}");
+        Assert.Equal("Prod", json.GetProperty("group").GetString());
+        (_, json, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"group\":\"Staging\"}");
+        Assert.Equal("Staging", json.GetProperty("group").GetString());
+
+        // null and blank clear it.
+        (_, json, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"group\":null}");
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("group").ValueKind);
+        Assert.Null((await GetAsync(host, id)).GroupName);
+        await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"group\":\"Staging\"}");
+        (_, json, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"group\":\"   \"}");
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("group").ValueKind);
+
+        // Validation errors are keyed by the JSON field and change nothing.
+        await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"group\":\"Staging\"}");
+        foreach (var bad in new[] { "\"" + new string('g', 101) + "\"", "\"a\\u0000b\"", "5", "true" })
+        {
+            (status, json, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", $"{{\"group\":{bad}}}");
+            Assert.Equal(HttpStatusCode.BadRequest, status);
+            Assert.True(json.GetProperty("errors").TryGetProperty("group", out _), bad);
+        }
+
+        (status, json, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors",
+            "{\"name\":\"bad\",\"url\":\"https://example.com/\",\"intervalSeconds\":60,\"group\":\"" + new string('g', 101) + "\"}");
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(json.GetProperty("errors").TryGetProperty("group", out _));
+        Assert.Equal("Staging", (await GetAsync(host, id)).GroupName);
+    }
+
+    [SkippableFact]
+    public async Task Group_pause_and_resume_change_only_that_group_case_insensitively_and_renew_stamps()
+    {
+        await using var host = await CreateHostAsync();
+        var a = await AddAsync(host, InGroup("a", "Prod"));
+        var b = await AddAsync(host, InGroup("b", "prod"));
+        var already = await AddAsync(host, InGroup("c", "Prod", paused: true));
+        var disabled = await AddAsync(host, InGroup("d", "Prod", enabled: false));
+        var other = await AddAsync(host, InGroup("e", "Staging"));
+        var none = await AddAsync(host, InGroup("f", null));
+
+        var (status, json) = await SendAsync(host, host.WriteKey, HttpMethod.Post, "/api/v1/groups/pause", "{\"group\":\"PROD\"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(2, json.GetProperty("changed").GetInt32());
+        Assert.True((await GetAsync(host, a.Id)).IsPaused);
+        Assert.NotEqual(a.ConcurrencyStamp, (await GetAsync(host, a.Id)).ConcurrencyStamp);
+        Assert.True((await GetAsync(host, b.Id)).IsPaused);
+        Assert.False((await GetAsync(host, disabled.Id)).IsPaused);
+        Assert.False((await GetAsync(host, other.Id)).IsPaused);
+        Assert.False((await GetAsync(host, none.Id)).IsPaused);
+
+        (_, json) = await SendAsync(host, host.WriteKey, HttpMethod.Post, "/api/v1/groups/pause", "{\"group\":\"Prod\"}");
+        Assert.Equal(0, json.GetProperty("changed").GetInt32());
+
+        (status, json) = await SendAsync(host, host.WriteKey, HttpMethod.Post, "/api/v1/groups/resume", "{\"group\":\"prod\"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(3, json.GetProperty("changed").GetInt32());
+        Assert.False((await GetAsync(host, already.Id)).IsPaused);
+        Assert.False((await GetAsync(host, a.Id)).IsPaused);
+    }
+
+    [SkippableFact]
+    public async Task Group_rename_returns_the_count_merges_and_changes_casing_AE3()
+    {
+        await using var host = await CreateHostAsync();
+        var a = await AddAsync(host, InGroup("a", "Old"));
+        await AddAsync(host, InGroup("b", "old"));
+        var target = await AddAsync(host, InGroup("t", "Target"));
+        var none = await AddAsync(host, InGroup("n", null));
+
+        var (status, json) = await SendAsync(host, host.WriteKey, HttpMethod.Post, "/api/v1/groups/rename", "{\"group\":\"OLD\",\"newName\":\"  Fresh \"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(2, json.GetProperty("renamed").GetInt32());
+        Assert.Equal("Fresh", json.GetProperty("group").GetString());
+        var renamed = await GetAsync(host, a.Id);
+        Assert.Equal("Fresh", renamed.GroupName);
+        Assert.NotEqual(a.ConcurrencyStamp, renamed.ConcurrencyStamp);
+
+        // Merge into an existing group takes its spelling.
+        (_, json) = await SendAsync(host, host.WriteKey, HttpMethod.Post, "/api/v1/groups/rename", "{\"group\":\"fresh\",\"newName\":\"TARGET\"}");
+        Assert.Equal(2, json.GetProperty("renamed").GetInt32());
+        Assert.Equal("Target", json.GetProperty("group").GetString());
+        Assert.Equal("Target", (await GetAsync(host, a.Id)).GroupName);
+        Assert.Equal(target.ConcurrencyStamp, (await GetAsync(host, target.Id)).ConcurrencyStamp);
+
+        // Casing-only change of the same group stores the new spelling.
+        (_, json) = await SendAsync(host, host.WriteKey, HttpMethod.Post, "/api/v1/groups/rename", "{\"group\":\"Target\",\"newName\":\"TARGET\"}");
+        Assert.Equal(3, json.GetProperty("renamed").GetInt32());
+        Assert.Equal("TARGET", json.GetProperty("group").GetString());
+        Assert.Null((await GetAsync(host, none.Id)).GroupName);
+
+        (status, json) = await SendAsync(host, host.WriteKey, HttpMethod.Post, "/api/v1/groups/rename", "{\"group\":\"Target\",\"newName\":\"" + new string('x', 101) + "\"}");
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(json.GetProperty("errors").TryGetProperty("newName", out _));
+        Assert.Equal("TARGET", (await GetAsync(host, a.Id)).GroupName);
+    }
+
+    [SkippableFact]
+    public async Task Group_run_counts_queued_already_in_flight_and_skipped()
+    {
+        await using var host = await CreateHostAsync();
+        var inFlight = await AddAsync(host, InGroup("running", "Prod"));
+        await AddAsync(host, InGroup("fresh", "prod"));
+        await AddAsync(host, InGroup("off", "Prod", enabled: false));
+        var hb = Heartbeat(paused: false);
+        hb.GroupName = "Prod";
+        await AddAsync(host, hb);
+        await AddAsync(host, InGroup("elsewhere", "Staging"));
+
+        var (status, _) = await SendAsync(host, host.WriteKey, HttpMethod.Post, $"/api/v1/monitors/{inFlight.Id}/run");
+        Assert.Equal(HttpStatusCode.Accepted, status);
+        Assert.Single(host.Jobs.Created);
+
+        (status, var json) = await SendAsync(host, host.WriteKey, HttpMethod.Post, "/api/v1/groups/run", "{\"group\":\"PROD\"}");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(1, json.GetProperty("queued").GetInt32());
+        Assert.Equal(1, json.GetProperty("alreadyInFlight").GetInt32());
+        Assert.Equal(2, json.GetProperty("skipped").GetInt32());
+        Assert.Equal(2, host.Jobs.Created.Count);
+    }
+
+    [SkippableFact]
+    public async Task Groups_endpoint_counts_failing_by_last_run_including_overdue_monitors()
+    {
+        await using var host = await CreateHostAsync();
+        var now = DateTimeOffset.UtcNow;
+        var failing = InGroup("failing", "Prod");
+        failing.LastRunAt = now.AddSeconds(-30);
+        var overdue = InGroup("overdue", "prod");
+        overdue.LastRunAt = now.AddDays(-1);
+        var okPaused = InGroup("ok", "Prod", paused: true);
+        okPaused.LastRunAt = now.AddSeconds(-30);
+        foreach (var m in new[] { failing, overdue, okPaused, InGroup("alone", "alpha"), InGroup("none", null) })
+            await AddAsync(host, m);
+        await using (var scope = host.App.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            foreach (var (m, ok, at) in new[] { (failing, false, now.AddSeconds(-30)), (overdue, false, now.AddDays(-1)), (okPaused, true, now.AddSeconds(-30)) })
+                db.MonitorRuns.Add(new MonitorRun { MonitorId = m.Id, StartedAt = at, FinishedAt = at, State = "completed", Success = ok, StatusCode = ok ? 200 : 500, Reason = "schedule", RequestUrl = "https://example.com/", RequestMethod = "GET" });
+            await db.SaveChangesAsync();
+        }
+
+        var (status, json) = await SendAsync(host, host.ReadKey, HttpMethod.Get, "/api/v1/groups");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        var groups = json.GetProperty("groups").EnumerateArray().ToList();
+        Assert.Equal(["alpha", "Prod"], groups.Select(g => g.GetProperty("name").GetString()).ToArray());
+        var prod = groups[1];
+        Assert.Equal(3, prod.GetProperty("monitorCount").GetInt32());
+        Assert.Equal(2, prod.GetProperty("failingCount").GetInt32());
+        Assert.Equal(1, prod.GetProperty("pausedCount").GetInt32());
+    }
 }

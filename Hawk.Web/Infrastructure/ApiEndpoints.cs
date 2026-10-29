@@ -34,7 +34,7 @@ public static class ApiEndpoints
     private static readonly ApiEndpointInfo[] EndpointList =
     [
         new("GET", Prefix, "read", "The caller, the API key and this endpoint list."),
-        new("GET", Prefix + "/monitors", "read", "All monitors with state, health and failure summary."),
+        new("GET", Prefix + "/monitors?group=", "read", "All monitors with state, health, group and failure summary; group= filters case-insensitively (empty = ungrouped)."),
         new("GET", Prefix + "/monitors/{id}", "read", "One monitor: configuration, alert state and alert recipients."),
         new("GET", Prefix + "/monitors/{id}/runs?limit=", "read", "Recent runs, newest first (default 25, max 100)."),
         new("GET", Prefix + "/monitors/{id}/runs/{runId}", "read", "One run with request and response diagnostics."),
@@ -47,6 +47,11 @@ public static class ApiEndpoints
         new("POST", Prefix + "/monitors/{id}/pause", "write", "Pause a monitor."),
         new("POST", Prefix + "/monitors/{id}/resume", "write", "Resume a paused monitor."),
         new("POST", Prefix + "/monitors/{id}/run", "write", "Queue a run now; poll the returned runUrl."),
+        new("GET", Prefix + "/groups", "read", "Monitor groups with monitorCount, failingCount and pausedCount."),
+        new("POST", Prefix + "/groups/pause", "write", "Pause every enabled monitor in a group: {\"group\": string}."),
+        new("POST", Prefix + "/groups/resume", "write", "Resume every paused monitor in a group: {\"group\": string}."),
+        new("POST", Prefix + "/groups/run", "write", "Queue a run for every HTTP monitor in a group: {\"group\": string}."),
+        new("POST", Prefix + "/groups/rename", "write", "Rename a group (merges into an existing group of that name): {\"group\": string, \"newName\": string}."),
     ];
 
     /// <summary>
@@ -63,6 +68,7 @@ public static class ApiEndpoints
 
         api.MapGet("", GetIndexAsync).RequireAuthorization(ApiKeyAuthentication.ReadPolicy);
         api.MapGet("/monitors", GetMonitorsAsync).RequireAuthorization(ApiKeyAuthentication.ReadPolicy);
+        api.MapGet("/groups", GetGroupsAsync).RequireAuthorization(ApiKeyAuthentication.ReadPolicy);
         api.MapGet("/monitors/{id:guid}", GetMonitorAsync).RequireAuthorization(ApiKeyAuthentication.ReadPolicy);
         api.MapGet("/monitors/{id:guid}/runs", GetRunsAsync).RequireAuthorization(ApiKeyAuthentication.ReadPolicy);
         api.MapGet("/monitors/{id:guid}/runs/{runId:guid}", GetRunAsync).RequireAuthorization(ApiKeyAuthentication.ReadPolicy);
@@ -78,6 +84,12 @@ public static class ApiEndpoints
         api.MapPost("/monitors/{id:guid}/resume", (Guid id, HttpContext http, MonitorCommands commands, ILoggerFactory logs, CancellationToken ct) =>
             PauseResumeAsync(id, "resume", http, commands.ResumeMonitorAsync, logs, ct)).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
         api.MapPost("/monitors/{id:guid}/run", RunAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
+        api.MapPost("/groups/pause", (HttpContext http, ApplicationDbContext db, MonitorCommands commands, ILoggerFactory logs, CancellationToken ct) =>
+            GroupChangeAsync("pause", http, db, commands.PauseAsync, logs, ct)).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
+        api.MapPost("/groups/resume", (HttpContext http, ApplicationDbContext db, MonitorCommands commands, ILoggerFactory logs, CancellationToken ct) =>
+            GroupChangeAsync("resume", http, db, commands.ResumeAsync, logs, ct)).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
+        api.MapPost("/groups/run", GroupRunAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
+        api.MapPost("/groups/rename", GroupRenameAsync).RequireAuthorization(ApiKeyAuthentication.WritePolicy);
 
         // No catch-all route: UseHawkApiErrors already turns unknown /api paths into JSON 404 and wrong methods into JSON 405,
         // and a catch-all endpoint would turn those 405s into 404s.
@@ -108,15 +120,43 @@ public static class ApiEndpoints
         HttpContext http, ApplicationDbContext db, MonitorStatusService statuses, CancellationToken ct)
     {
         var userId = UserId(http);
-        var monitors = await db.Monitors.AsNoTracking().ToListAsync(ct);
+        var query = db.Monitors.AsNoTracking();
+        if (http.Request.Query.TryGetValue("group", out var groupFilter))
+        {
+            // group= (empty) lists the ungrouped monitors; a name matches case-insensitively.
+            var group = MonitorGroups.Normalize(groupFilter.ToString());
+            query = group is null ? query.Where(m => m.GroupName == null) : MonitorGroups.InGroup(query, group);
+        }
+
+        var monitors = await query.ToListAsync(ct);
         monitors.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
         var status = await statuses.GetStatusesAsync(monitors, ct);
 
         return Json(new ApiMonitorList(monitors
             .Select(m => new ApiMonitorListItem(
-                m.Id, m.Name, m.Type, UrlOf(m), status[m.Id].State, status[m.Id].Health,
+                m.Id, m.Name, m.GroupName, m.Type, UrlOf(m), status[m.Id].State, status[m.Id].Health,
                 m.CreatedByUserId == userId, FailureOf(status[m.Id]), m.LastRunAt, m.NextRunAt))
             .ToList()));
+    }
+
+    private static async Task<IResult> GetGroupsAsync(ApplicationDbContext db, MonitorStatusService statuses, CancellationToken ct)
+    {
+        var monitors = await db.Monitors.AsNoTracking().Where(m => m.GroupName != null).ToListAsync(ct);
+        var status = await statuses.GetStatusesAsync(monitors, ct);
+
+        // Group in memory ignoring case (database collations differ); the display spelling is the first stored one in ordinal order.
+        var groups = monitors
+            .GroupBy(m => m.GroupName!, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ApiGroupSummary(
+                g.Select(m => m.GroupName!).Min(StringComparer.Ordinal)!,
+                g.Count(),
+                // The Index rule: the last completed run failed, even when the monitor is also overdue.
+                g.Count(m => status[m.Id].Failure is not null),
+                g.Count(m => status[m.Id].State == MonitorState.Paused)))
+            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(g => g.Name, StringComparer.Ordinal)
+            .ToList();
+        return Json(new ApiGroupList(groups));
     }
 
     private static async Task<IResult> GetMonitorAsync(
@@ -139,7 +179,7 @@ public static class ApiEndpoints
         http.Response.Headers.ETag = ETagOf(m.ConcurrencyStamp);
 
         return Json(new ApiMonitorDetail(
-            m.Id, m.Name, m.Type, UrlOf(m), status.State, status.Health, m.CreatedByUserId == UserId(http), FailureOf(status),
+            m.Id, m.Name, m.GroupName, m.Type, UrlOf(m), status.State, status.Health, m.CreatedByUserId == UserId(http), FailureOf(status),
             m.LastRunAt, m.NextRunAt, m.Method, m.IntervalSeconds, m.TimeoutSeconds, m.AllowedStatusCodes,
             heartbeat ? null : m.FollowRedirects,
             m.AlertAfterConsecutiveFailures, m.AlertEmailOverride, m.RunRetentionDays,
@@ -458,6 +498,80 @@ public static class ApiEndpoints
         http.Response.Headers.Location = runUrl;
         return Json(new ApiRunQueued(runId, runUrl, PollAdvice), StatusCodes.Status202Accepted);
     }
+
+    // ---- groups ----
+
+    /// <summary>Reads the group name of a group endpoint body, rejecting unknown fields; <paramref name="extra"/> are the other allowed fields.</summary>
+    private static async Task<(JsonElement Body, string? Group, IResult? Error)> ReadGroupBodyAsync(
+        HttpContext http, ApplicationDbContext db, string? extra, CancellationToken ct)
+    {
+        var (body, bodyError) = await ReadBodyAsync(http, ct);
+        if (bodyError is not null) return (default, null, bodyError);
+
+        var errors = new Dictionary<string, string[]>();
+        foreach (var property in body.EnumerateObject())
+            if (property.Name != "group" && property.Name != extra)
+                errors[property.Name] = ["Unknown property."];
+
+        string? group = null;
+        if (!body.TryGetProperty("group", out var value) || value.ValueKind != JsonValueKind.String ||
+            MonitorGroups.Normalize(group = value.GetString()) is null)
+            errors["group"] = ["Required: the name of an existing group, as a non-empty string."];
+        else
+            group = MonitorGroups.Normalize(group);
+
+        if (errors.Count > 0)
+            return (default, null, Problem(StatusCodes.Status400BadRequest, "validation_failed", "The request is not valid", errors: errors));
+        if (!await MonitorGroups.InGroup(db.Monitors, group!).AnyAsync(ct))
+            return (default, null, Problem(StatusCodes.Status404NotFound, "not_found", "Group not found"));
+        return (body, group, null);
+    }
+
+    private static async Task<IResult> GroupChangeAsync(
+        string action, HttpContext http, ApplicationDbContext db, Func<IQueryable<MonitorEntity>, CancellationToken, Task<int>> command,
+        ILoggerFactory logs, CancellationToken ct)
+    {
+        var (_, group, error) = await ReadGroupBodyAsync(http, db, extra: null, ct);
+        if (error is not null) return error;
+
+        var changed = await command(MonitorGroups.InGroup(db.Monitors, group!), ct);
+        LogGroupWrite(http, logs, group!, $"group.{action}", changed);
+        return Json(new ApiGroupChanged(changed));
+    }
+
+    private static async Task<IResult> GroupRunAsync(
+        HttpContext http, ApplicationDbContext db, MonitorCommands commands, ILoggerFactory logs, CancellationToken ct)
+    {
+        var (_, group, error) = await ReadGroupBodyAsync(http, db, extra: null, ct);
+        if (error is not null) return error;
+
+        var result = await commands.QueueGroupRunAsync(group!, ct);
+        LogGroupWrite(http, logs, group!, "group.run", result.Queued);
+        return Json(new ApiGroupRun(result.Queued, result.AlreadyInFlight, result.Skipped));
+    }
+
+    private static async Task<IResult> GroupRenameAsync(
+        HttpContext http, ApplicationDbContext db, MonitorCommands commands, ILoggerFactory logs, CancellationToken ct)
+    {
+        var (body, group, error) = await ReadGroupBodyAsync(http, db, extra: "newName", ct);
+        if (error is not null) return error;
+
+        if (!body.TryGetProperty("newName", out var value) || value.ValueKind != JsonValueKind.String)
+            return Problem(StatusCodes.Status400BadRequest, "validation_failed", "The request is not valid",
+                errors: Errors("newName", "Required: the new group name, as a non-empty string."));
+
+        var result = await commands.RenameGroupAsync(group!, value.GetString()!, ct);
+        if (result.Error is not null)
+            return Problem(StatusCodes.Status400BadRequest, "validation_failed", "The request is not valid", errors: Errors("newName", result.Error));
+
+        LogGroupWrite(http, logs, group!, "group.rename", result.Renamed);
+        return Json(new ApiGroupRenamed(result.Renamed, result.NewName!));
+    }
+
+    private static void LogGroupWrite(HttpContext http, ILoggerFactory logs, string group, string action, int count) =>
+        logs.CreateLogger("Hawk.Api").LogInformation(
+            "API write: user {UserId} key {KeyId} group {Group} action {Action} count {Count}",
+            UserId(http), http.User.FindFirstValue(ApiKeyAuthentication.KeyIdClaim), group, action, count);
 
     // ---- helpers ----
 

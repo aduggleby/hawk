@@ -37,7 +37,7 @@ Every `/api/*` error is `application/problem+json` with a stable `code`:
 | 400 | `validation_failed` | Bad body, wrong content type, unknown property, invalid value, bad `limit`. `errors` lists fields where applicable. |
 | 401 | `unauthorized` | Missing, malformed, unknown or revoked key. Has `WWW-Authenticate: Bearer`, never a redirect. |
 | 403 | `insufficient_scope` | A read key on a write endpoint. |
-| 404 | `not_found` | Unknown monitor or run, or an unknown `/api` path. |
+| 404 | `not_found` | Unknown monitor, run or group (a group with no monitors), or an unknown `/api` path. |
 | 405 | `method_not_allowed` | Wrong method for the path. |
 | 409 | `monitor_disabled` | The monitor is disabled (enable it in the UI). |
 | 409 | `heartbeat_not_runnable` | Run requested for a heartbeat monitor. |
@@ -62,6 +62,7 @@ Fixed one-minute windows. Per key: `Hawk__Security__ApiRequestsPerMinute` (defau
   A paused monitor whose last run failed is `state: paused, health: failing`.
 - Right after resuming (or re-enabling) an HTTP monitor that was paused longer than the overdue window, `health` may briefly read `overdue` until its next scheduled run.
 - `failure` (null unless the last completed run failed): `{ lastRunAt, statusCode, error, consecutiveFailures, failingSince }`.
+- `group` (string or null): the monitor's optional group, free text of at most 100 characters (the UI groups the monitors list by it). Group names compare case-insensitively; a name that matches an existing group takes that group's spelling. A group exists while at least one monitor uses it.
 
 ## Endpoints
 
@@ -75,12 +76,12 @@ The caller, the key and the endpoint list.
   "endpoints": [ { "method": "GET", "path": "/api/v1", "scope": "read", "description": "…" } ] }
 ```
 
-### GET /api/v1/monitors (read)
+### GET /api/v1/monitors?group= (read)
 
-All monitors, sorted by name (case-insensitive), in one call.
+All monitors, sorted by name (case-insensitive), in one call. `?group=Production` returns only the monitors in that group (case-insensitive); `?group=` (empty) returns the ungrouped monitors; an unknown group returns an empty list.
 
 ```json
-{ "monitors": [ { "id": "…", "name": "Web", "type": "http", "url": "https://example.com",
+{ "monitors": [ { "id": "…", "name": "Web", "group": "Production", "type": "http", "url": "https://example.com",
   "state": "active", "health": "failing", "ownedByCaller": true,
   "failure": { "lastRunAt": "2026-10-29T08:00:00+00:00", "statusCode": 500, "error": null, "consecutiveFailures": 3, "failingSince": "2026-10-29T07:58:00+00:00" },
   "lastRunAt": "…", "nextRunAt": "…" } ] }
@@ -90,7 +91,7 @@ All monitors, sorted by name (case-insensitive), in one call.
 
 ### GET /api/v1/monitors/{id} (read)
 
-The list entry plus configuration, alert state and effective alert recipients. The heartbeat ping token is never returned. Extra fields: `concurrencyStamp` (also the `ETag` response header, quoted), `pingUrl` (always null here), `method`, `intervalSeconds`, `timeoutSeconds`, `allowedStatusCodes`, `followRedirects` (HTTP only, null for heartbeats), `alertAfterConsecutiveFailures`, `alertEmailOverride`, `runRetentionDays`, `heartbeatGraceSeconds` (heartbeats only), `lastPingAt`, `createdAt`, `alertState` (`consecutiveFailures`, `failureIncidentOpenedAt`, `lastFailureAlertSentAt`, `lastFailureAlertError`, `pendingRecoveryAlert`, `lastRecoveryAlertSentAt`, `lastRecoveryAlertError`) and `alertRecipients` (`{ "source": "monitor|account|owner|admins", "addresses": [...] }`), `headers` (`[{ "name", "value" }]`) and `matchRules` (`[{ "type": "contains|regex", "pattern" }]`), both as the Details page shows them, sorted deterministically and empty for heartbeats. A rule's mode is reported as `type`; write requests call it `mode` (and also accept `type`, so a value read from here can be sent back unchanged).
+The list entry (including `group`) plus configuration, alert state and effective alert recipients. The heartbeat ping token is never returned. Extra fields: `concurrencyStamp` (also the `ETag` response header, quoted), `pingUrl` (always null here), `method`, `intervalSeconds`, `timeoutSeconds`, `allowedStatusCodes`, `followRedirects` (HTTP only, null for heartbeats), `alertAfterConsecutiveFailures`, `alertEmailOverride`, `runRetentionDays`, `heartbeatGraceSeconds` (heartbeats only), `lastPingAt`, `createdAt`, `alertState` (`consecutiveFailures`, `failureIncidentOpenedAt`, `lastFailureAlertSentAt`, `lastFailureAlertError`, `pendingRecoveryAlert`, `lastRecoveryAlertSentAt`, `lastRecoveryAlertError`) and `alertRecipients` (`{ "source": "monitor|account|owner|admins", "addresses": [...] }`), `headers` (`[{ "name", "value" }]`) and `matchRules` (`[{ "type": "contains|regex", "pattern" }]`), both as the Details page shows them, sorted deterministically and empty for heartbeats. A rule's mode is reported as `type`; write requests call it `mode` (and also accept `type`, so a value read from here can be sent back unchanged).
 
 Errors: 404 `not_found`.
 
@@ -113,7 +114,7 @@ One run with diagnostics: the summary fields plus `requestUrl`, `requestMethod`,
 
 Creates an HTTP or heartbeat monitor owned by the key's user (enabled by default, not paused). Returns 201 with a `Location` header, an `ETag` header and the monitor detail. The body is validated exactly like the Create form: field rules, environment-dependent intervals, regular expressions, NUL characters, and the header and pattern length limits of bulk import. Errors are 400 `validation_failed` with `errors` keyed by the field names below (`headers[0].name`, `matchRules[1].pattern`; `request` for a problem with the whole body).
 
-Fields (names as in the monitor JSON export): `name` (required), `type` (`http` default, or `heartbeat`), `url` (HTTP, required), `method` (`GET` default, or `POST`), `enabled` (default true), `timeoutSeconds` (default 15), `intervalSeconds` (default 60; the allowed values are the UI's: 1 min, 5 min, 15 min or 1 h for HTTP, 1 min to 7 days for a heartbeat period, grace 1 min to 1 day), `heartbeatGraceSeconds` (heartbeat, default 300), `alertAfterConsecutiveFailures` (default 1), `alertEmailOverride`, `allowedStatusCodes` (for example `"404,429"`), `followRedirects` (default true), `runRetentionDays`, `contentType` (default `application/json`, required for POST), `body` (required for POST, may be empty), `headers` (`[{ "name", "value" }]`, at most 5) and `matchRules` (`[{ "mode": "contains|regex", "pattern" }]`, at most 5; the Create and Edit forms have 5 slots of each and would silently drop more, so more return 400). A blank `alertEmailOverride` clears it. The defaults are the Create form's. HTTP-only fields on a heartbeat, and `heartbeatGraceSeconds` on an HTTP monitor, return 400. `heartbeatToken`, `ownerEmail` and `isPaused` are always rejected: the server issues tokens, the caller is the owner, and pause and resume have their own endpoints. Unknown properties return 400.
+Fields (names as in the monitor JSON export): `name` (required), `group` (optional string; blank or null means no group), `type` (`http` default, or `heartbeat`), `url` (HTTP, required), `method` (`GET` default, or `POST`), `enabled` (default true), `timeoutSeconds` (default 15), `intervalSeconds` (default 60; the allowed values are the UI's: 1 min, 5 min, 15 min or 1 h for HTTP, 1 min to 7 days for a heartbeat period, grace 1 min to 1 day), `heartbeatGraceSeconds` (heartbeat, default 300), `alertAfterConsecutiveFailures` (default 1), `alertEmailOverride`, `allowedStatusCodes` (for example `"404,429"`), `followRedirects` (default true), `runRetentionDays`, `contentType` (default `application/json`, required for POST), `body` (required for POST, may be empty), `headers` (`[{ "name", "value" }]`, at most 5) and `matchRules` (`[{ "mode": "contains|regex", "pattern" }]`, at most 5; the Create and Edit forms have 5 slots of each and would silently drop more, so more return 400). A blank `alertEmailOverride` clears it. The defaults are the Create form's. HTTP-only fields on a heartbeat, and `heartbeatGraceSeconds` on an HTTP monitor, return 400. `heartbeatToken`, `ownerEmail` and `isPaused` are always rejected: the server issues tokens, the caller is the owner, and pause and resume have their own endpoints. Unknown properties return 400.
 
 ```bash
 curl -fsS -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
@@ -132,7 +133,7 @@ curl -fsS -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/
 
 ### PATCH /api/v1/monitors/{id} (write)
 
-Edits a monitor with merge-patch semantics: an absent field is unchanged, `null` clears `alertEmailOverride`, `allowedStatusCodes`, `contentType`, `body` and `runRetentionDays`. `headers` and `matchRules` replace the whole list when present and are untouched when absent. `type` cannot change: sending a different one returns 400 (the same value is accepted). Validation is the same as for create, applied to the merged result; nothing changes on an error. Returns 200 with the updated detail and the new `ETag`.
+Edits a monitor with merge-patch semantics: an absent field is unchanged, `null` clears `group` (a blank string does too), `alertEmailOverride`, `allowedStatusCodes`, `contentType`, `body` and `runRetentionDays`. `headers` and `matchRules` replace the whole list when present and are untouched when absent. `type` cannot change: sending a different one returns 400 (the same value is accepted). Validation is the same as for create, applied to the merged result; nothing changes on an error. Returns 200 with the updated detail and the new `ETag`.
 
 - Like the Edit page, saving an HTTP monitor schedules its next run one interval from now. A heartbeat's deadline moves only when the period, the grace or `enabled` (false to true) changes.
 - Every successful edit renews `concurrencyStamp`, so an open Edit form in the UI reports a conflict.
@@ -213,6 +214,29 @@ Queues a run like the UI's **Run now** (reason `manual`) and returns 202 with a 
 RUN=$(curl -fsS -X POST -H "Authorization: Bearer $KEY" $HAWK/api/v1/monitors/$ID/run | jq -r .runUrl)
 until [ "$(curl -fsS -H "Authorization: Bearer $KEY" $HAWK$RUN | jq -r .state)" = completed ]; do sleep 2; done
 curl -fsS -H "Authorization: Bearer $KEY" $HAWK$RUN | jq '{success, statusCode, error}'
+```
+
+### GET /api/v1/groups (read)
+
+The groups in use, sorted by name (case-insensitive), with the spelling stored on the monitors. Ungrouped monitors are not listed. `failingCount` counts monitors whose last completed run failed (the monitors list's `failure` is set; this includes a monitor whose `health` is `overdue`), `pausedCount` those with `state: paused`.
+
+```json
+{ "groups": [ { "name": "Production", "monitorCount": 4, "failingCount": 1, "pausedCount": 0 } ] }
+```
+
+### POST /api/v1/groups/pause, /resume, /run and /rename (write)
+
+Act on every monitor in a group. The group name is sent in the JSON body, not in the URL: `{"group": "Production"}` (rename also takes `"newName"`). `group` is required and must be a non-empty string, matched case-insensitively; unknown properties return 400, and a group with no monitors returns 404 `not_found`. The group is acted on as a whole; other groups are untouched.
+
+- `pause` and `resume` work like the single-monitor endpoints for every enabled monitor in the group (disabled monitors are left alone; resuming sets heartbeat deadlines). Response: `{ "changed": 3 }`, the number of monitors that changed state.
+- `run` queues a manual run for every enabled HTTP monitor, like the single-monitor run endpoint (a run already in flight is reused). Response: `{ "queued": 2, "alreadyInFlight": 1, "skipped": 1 }`; heartbeats and disabled monitors are `skipped`. Poll the individual runs through `GET /api/v1/monitors/{id}/runs`.
+- `rename` moves every monitor to `newName` (trimmed, at most 100 characters, no NUL). When `newName` matches another existing group ignoring case, the monitors merge into it and take its spelling; a casing-only change of the same group stores the new spelling. Each monitor's `concurrencyStamp` changes. Response: `{ "renamed": 3, "group": "Prod" }` with the stored spelling. An invalid or missing `newName` returns 400 with `errors.newName`.
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"group":"Production"}' $HAWK/api/v1/groups/pause
+curl -fsS -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"group":"Production","newName":"Prod"}' $HAWK/api/v1/groups/rename
 ```
 
 ## Typical agent flow

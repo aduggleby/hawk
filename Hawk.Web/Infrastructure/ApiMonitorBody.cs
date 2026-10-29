@@ -117,6 +117,8 @@ internal static partial class ApiMonitorBody
             switch (name)
             {
                 case "name": form.Name = String(errors, name, value, out s) ? s ?? string.Empty : form.Name; break;
+                // Blank clears the group, like null.
+                case "group": form.Group = String(errors, name, value, out s) ? s : form.Group; break;
                 case "url": form.Url = String(errors, name, value, out s) ? s : form.Url; break;
                 case "method": form.Method = String(errors, name, value, out s) ? s ?? string.Empty : form.Method; break;
                 case "alertEmailOverride":

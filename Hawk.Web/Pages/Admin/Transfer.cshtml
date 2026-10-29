@@ -52,6 +52,22 @@
                 Owners: <b>@plan.OwnersMatched</b> matched an existing user by email, <b>@plan.OwnersAssignedToAdmin</b> will be assigned to you.
             </p>
 
+            @if (plan.ValidCount > 0)
+            {
+                <details>
+                    <summary class="text-xs font-semibold text-zinc-600 cursor-pointer">Monitors that will be created (@plan.ValidCount)</summary>
+                    <table class="text-xs mt-1 w-full" data-testid="preview-monitors">
+                        <thead><tr class="text-left text-zinc-500"><th class="pr-4 font-normal">Name</th><th class="font-normal">Group</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in plan.Items.Where(i => i.Status == MonitorImportStatus.Valid))
+                            {
+                                <tr><td class="pr-4 font-mono">@item.Name</td><td data-testid="preview-group">@(item.Group ?? "-")</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </details>
+            }
+
             @if (plan.InvalidCount > 0)
             {
                 <div>

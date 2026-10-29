@@ -428,6 +428,100 @@ public sealed class MonitorTransferTests
         Assert.Empty(form.Validate(new FakeEnv("Production")));
     }
 
+    [Fact]
+    public async Task Group_is_exported_and_survives_a_bulk_round_trip_AE4()
+    {
+        var (db, svc) = Create();
+        var grouped = SampleMonitor("Grouped", "https://example.com/g");
+        grouped.GroupName = "Prod";
+        db.Monitors.AddRange(grouped, SampleMonitor("Plain", "https://example.com/p"));
+        await db.SaveChangesAsync();
+
+        var json = await svc.ExportAllJsonAsync(CancellationToken.None);
+
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(json, "\"group\"").Count);
+        Assert.Contains("\"group\": \"Prod\"", json);
+        Assert.True(MonitorJsonPort.TryParse(json, out var parsed, out var error), error);
+        Assert.Equal(["Prod", null], parsed!.Monitors.Select(m => m.Group).ToArray());
+
+        var (_, target) = Create();
+        var result = await target.ImportAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+        Assert.Equal(2, result.Imported);
+        Assert.Equal(["Prod", null], result.Plan.Items.Select(i => i.Group).ToArray());
+    }
+
+    [Fact]
+    public void Single_monitor_envelope_and_create_carry_the_group_and_blank_means_none()
+    {
+        var source = SampleMonitor("G", "https://example.com/g");
+        source.GroupName = "Prod";
+        Assert.Equal("Prod", MonitorJsonPort.ToEnvelope(source).Monitors.Single().Group);
+
+        var model = MonitorJsonPort.ToModel(source) with { Group = "  Staging " };
+        Assert.True(MonitorJsonPort.TryCreateMonitor(model, null, new FakeEnv("Production"), out var created, out var error), error);
+        Assert.Equal("Staging", created.GroupName);
+        Assert.True(MonitorJsonPort.TryCreateMonitor(model with { Group = "   " }, null, new FakeEnv("Production"), out created, out error), error);
+        Assert.Null(created.GroupName);
+
+        Assert.False(MonitorJsonPort.TryCreateMonitor(model with { Group = new string('g', 101) }, null, new FakeEnv("Production"), out _, out error));
+        Assert.Contains("100", error);
+        Assert.False(MonitorJsonPort.TryCreateMonitor(model with { Group = "a\0b" }, null, new FakeEnv("Production"), out _, out error));
+    }
+
+    [Fact]
+    public async Task A_v3_file_without_group_imports_with_no_group_AE4()
+    {
+        var (db, svc) = Create();
+        const string json = "{\"version\":3,\"monitors\":[{\"name\":\"old\",\"url\":\"https://example.com\",\"intervalSeconds\":60}]}";
+
+        var result = await svc.ImportAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+
+        Assert.Equal(1, result.Imported);
+        Assert.Null((await db.Monitors.SingleAsync()).GroupName);
+        Assert.Null(result.Plan.Items.Single().Group);
+    }
+
+    [Fact]
+    public async Task Import_canonicalizes_groups_against_existing_groups_and_earlier_file_entries()
+    {
+        var (db, svc) = Create();
+        var existing = SampleMonitor("Existing", "https://example.com/e");
+        existing.GroupName = "Prod";
+        db.Monitors.Add(existing);
+        await db.SaveChangesAsync();
+        static string Entry(string name, string? group) =>
+            $"{{\"name\":\"{name}\",\"url\":\"https://example.com/{name}\",\"intervalSeconds\":60{(group is null ? "" : $",\"group\":\"{group}\"")}}}";
+        var json = $"{{\"version\":3,\"monitors\":[{Entry("a", "prod")},{Entry("b", "STAGING")},{Entry("c", "staging")},{Entry("d", " Staging ")},{Entry("e", null)},{Entry("f", "")}]}}";
+
+        var plan = await svc.PlanAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+
+        Assert.True(plan.CanImport);
+        Assert.Equal(["Prod", "STAGING", "STAGING", "STAGING", null, null], plan.Items.Select(i => i.Group).ToArray());
+        Assert.Equal(plan.Items.Select(i => i.Group).ToArray(), plan.Items.Select(i => i.Monitor!.GroupName).ToArray());
+
+        await svc.ImportAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+        var stored = await db.Monitors.Where(m => m.GroupName != null).Select(m => m.GroupName!).ToListAsync();
+        Assert.Equal(["Prod", "Prod", "STAGING", "STAGING", "STAGING"], stored.OrderBy(g => g, StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public async Task Import_rejects_an_invalid_group_and_duplicate_detection_ignores_the_group()
+    {
+        var (db, svc) = Create();
+        var existing = SampleMonitor("Same", "https://example.com/s");
+        existing.GroupName = "Prod";
+        db.Monitors.Add(existing);
+        await db.SaveChangesAsync();
+        var json = "{\"version\":3,\"monitors\":[" +
+            "{\"name\":\"Same\",\"url\":\"https://example.com/s\",\"intervalSeconds\":60,\"group\":\"Other\"}," +
+            "{\"name\":\"long\",\"url\":\"https://example.com/l\",\"intervalSeconds\":60,\"group\":\"" + new string('g', 101) + "\"}]}";
+
+        var plan = await svc.PlanAsync(json, "admin-1", createPaused: true, CancellationToken.None);
+
+        Assert.Equal([MonitorImportStatus.Duplicate, MonitorImportStatus.Invalid], plan.Items.Select(i => i.Status).ToArray());
+        Assert.False(plan.CanImport);
+    }
+
     private static MonitorEntity SampleMonitor(string name, string url)
     {
         var m = new MonitorEntity { Name = name, Url = url, Method = "GET" };

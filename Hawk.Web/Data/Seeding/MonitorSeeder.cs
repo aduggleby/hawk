@@ -51,6 +51,7 @@ public static class MonitorSeeder
             new MonitorEntity
             {
                 Name = "[Seed] Mock GET Contains",
+                GroupName = "Seed",
                 Url = JoinUrl(mockBaseUrl, "/ok"),
                 Method = "GET",
                 Enabled = true,
@@ -64,6 +65,7 @@ public static class MonitorSeeder
             new MonitorEntity
             {
                 Name = "[Seed] Mock GET Regex",
+                GroupName = "Seed",
                 Url = JoinUrl(mockBaseUrl, "/ok"),
                 Method = "GET",
                 Enabled = true,
@@ -77,6 +79,7 @@ public static class MonitorSeeder
             new MonitorEntity
             {
                 Name = "[Seed] Mock POST Echo",
+                GroupName = "Seed",
                 Url = JoinUrl(mockBaseUrl, "/echo"),
                 Method = "POST",
                 Enabled = true,
@@ -100,6 +103,7 @@ public static class MonitorSeeder
             new MonitorEntity
             {
                 Name = "[Seed] Mock HTTP 500",
+                GroupName = "Seed",
                 Url = JoinUrl(mockBaseUrl, "/error"),
                 Method = "GET",
                 Enabled = true,
@@ -112,6 +116,7 @@ public static class MonitorSeeder
             new MonitorEntity
             {
                 Name = "[Seed] Mock Timeout",
+                GroupName = "Seed",
                 Url = JoinUrl(mockBaseUrl, "/slow"),
                 Method = "GET",
                 Enabled = true,
@@ -124,6 +129,7 @@ public static class MonitorSeeder
             new MonitorEntity
             {
                 Name = "[Seed] Mock Flaky (Intermittent)",
+                GroupName = "Seed",
                 Url = JoinUrl(mockBaseUrl, "/flaky"),
                 Method = "GET",
                 Enabled = true,
@@ -136,6 +142,7 @@ public static class MonitorSeeder
             new MonitorEntity
             {
                 Name = "[Seed] External DNS Failure",
+                GroupName = "Seed",
                 // Intentionally not a mock endpoint to exercise upstream resolution/connection failures.
                 Url = "http://nonexistent.hawk.invalid/health",
                 Method = "GET",
@@ -149,6 +156,7 @@ public static class MonitorSeeder
             new MonitorEntity
             {
                 Name = "[Seed] Heartbeat",
+                GroupName = "Seed",
                 Type = MonitorType.Heartbeat,
                 Url = string.Empty,
                 Method = "GET",

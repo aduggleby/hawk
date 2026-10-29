@@ -49,6 +49,7 @@ public enum MonitorImportStatus
 /// <param name="PausedOrDisabledAtSource">True when the source monitor was paused or disabled.</param>
 /// <param name="Monitor">Entity to insert (only for valid monitors).</param>
 /// <param name="Warnings">Non-blocking problems (for example an unparsable regex).</param>
+/// <param name="Group">Group the monitor will be in: canonicalized for valid monitors, normalized from the file otherwise.</param>
 public sealed record PlannedMonitor(
     string Name,
     string Url,
@@ -58,7 +59,8 @@ public sealed record PlannedMonitor(
     bool OwnerMatched,
     bool PausedOrDisabledAtSource,
     MonitorEntity? Monitor,
-    IReadOnlyList<string>? Warnings = null);
+    IReadOnlyList<string>? Warnings = null,
+    string? Group = null);
 
 /// <summary>
 /// Result of planning an import file. Contains no database side effects.
@@ -168,8 +170,9 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
 
         var existing = await db.Monitors
             .AsNoTracking()
-            .Select(m => new { m.Name, m.Url, m.HeartbeatToken })
+            .Select(m => new { m.Name, m.Url, m.HeartbeatToken, m.GroupName })
             .ToListAsync(cancellationToken);
+        var existingGroups = existing.Select(m => m.GroupName).OfType<string>().Distinct().ToList();
         var existingKeys = existing
             .Select(m => DuplicateKey(m.Name, m.Url))
             .Concat(existing.Where(m => m.HeartbeatToken is not null).Select(m => TokenKey(m.HeartbeatToken!)));
@@ -185,7 +188,7 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
                 userIdsByEmail.TryAdd(u.Email.Trim(), u.Id);
         }
 
-        return Plan(json, existingKeys, userIdsByEmail, adminUserId, createPaused, env);
+        return Plan(json, existingKeys, userIdsByEmail, adminUserId, createPaused, env, existingGroups);
     }
 
     /// <summary>
@@ -234,19 +237,26 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
     /// <param name="adminUserId">Fallback owner.</param>
     /// <param name="createPaused">Force imported monitors to be paused.</param>
     /// <param name="env">Host environment used by form validation.</param>
+    /// <param name="existingGroups">Group names already used by existing monitors; imported groups take their spelling (ignoring case).</param>
     public static MonitorImportPlan Plan(
         string json,
         IEnumerable<string> existingKeys,
         IReadOnlyDictionary<string, string> userIdsByEmail,
         string? adminUserId,
         bool createPaused,
-        IHostEnvironment env)
+        IHostEnvironment env,
+        IEnumerable<string>? existingGroups = null)
     {
         if (!MonitorJsonPort.TryParse(json, out var envelope, out var parseError) || envelope is null)
             return new MonitorImportPlan { ParseError = parseError ?? "Invalid monitor JSON." };
 
         var seen = new HashSet<string>(existingKeys, StringComparer.OrdinalIgnoreCase);
         var items = new List<PlannedMonitor>(envelope.Monitors.Count);
+
+        // Group spellings by lower-cased name: existing groups first (ordinal-first spelling wins), then the first valid file entry.
+        var groupSpellings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var g in (existingGroups ?? []).OrderBy(g => g, StringComparer.Ordinal))
+            groupSpellings.TryAdd(g, g);
 
         foreach (var model in envelope.Monitors)
         {
@@ -267,7 +277,7 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
 
             if (!isNew)
             {
-                items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Duplicate, null, ownerEmail, false, pausedOrDisabled, null));
+                items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Duplicate, null, ownerEmail, false, pausedOrDisabled, null, Group: MonitorGroups.Normalize(model.Group)));
                 continue;
             }
 
@@ -277,11 +287,14 @@ public sealed class MonitorTransferService(ApplicationDbContext db, IHostEnviron
 
             if (!MonitorJsonPort.TryCreateMonitor(model, ownerId ?? adminUserId, env, out var monitor, out var error, createPaused))
             {
-                items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Invalid, error, ownerEmail, ownerId is not null, pausedOrDisabled, null));
+                items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Invalid, error, ownerEmail, ownerId is not null, pausedOrDisabled, null, Group: MonitorGroups.Normalize(model.Group)));
                 continue;
             }
 
-            items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Valid, null, ownerEmail, ownerId is not null, pausedOrDisabled, monitor, MonitorJsonPort.GetWarnings(model)));
+            if (monitor.GroupName is { } fileGroup)
+                monitor.GroupName = groupSpellings.TryAdd(fileGroup, fileGroup) ? fileGroup : groupSpellings[fileGroup];
+
+            items.Add(new PlannedMonitor(name, url, MonitorImportStatus.Valid, null, ownerEmail, ownerId is not null, pausedOrDisabled, monitor, MonitorJsonPort.GetWarnings(model), monitor.GroupName));
         }
 
         return new MonitorImportPlan { Items = items };

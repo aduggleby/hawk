@@ -25,6 +25,9 @@ public sealed record MonitorExportEnvelope
 public sealed record MonitorExportModel
 {
     public string Name { get; init; } = string.Empty;
+
+    /// <summary>Optional monitor group; a missing value means no group (older files and Hawk versions).</summary>
+    public string? Group { get; init; }
     public MonitorType Type { get; init; } = MonitorType.Http;
     public string Url { get; init; } = string.Empty;
     public string Method { get; init; } = "GET";
@@ -92,6 +95,7 @@ public static class MonitorJsonPort
         return new MonitorExportModel
         {
             Name = monitor.Name,
+            Group = monitor.GroupName,
             Type = monitor.Type,
             Url = monitor.Url,
             Method = monitor.Method,
@@ -223,6 +227,7 @@ public static class MonitorJsonPort
         var form = new MonitorForm
         {
             Name = model.Name,
+            Group = model.Group,
             Type = model.Type,
             Url = model.Url,
             Method = model.Method,
@@ -256,6 +261,7 @@ public static class MonitorJsonPort
         monitor = new MonitorEntity
         {
             Name = (model.Name ?? string.Empty).Trim(),
+            GroupName = MonitorGroups.Normalize(model.Group),
             Type = model.Type,
             Url = heartbeat ? string.Empty : (model.Url ?? string.Empty).Trim(),
             Method = heartbeat ? "GET" : (model.Method ?? "GET").Trim().ToUpperInvariant(),

@@ -286,3 +286,58 @@ test('api: create, edit and delete an HTTP monitor and a heartbeat monitor with 
   expect(after.some(m => created.includes(m.id))).toBe(false);
   await revokeKey(page, keyName);
 });
+
+test('api: monitor groups - create with a group, filter the list, list groups, pause, rename and resume a group', async ({ page, request }) => {
+  await loginAsSeedAdmin(page);
+  const keyName = `e2e groups ${Date.now()}`;
+  const key = await createKey(page, keyName, 'Write');
+  const auth = { Authorization: `Bearer ${key}` };
+  const json = { ...auth, 'Content-Type': 'application/json' };
+  const created: string[] = [];
+  const group = `E2E Group ${Date.now()}`;
+  const renamed = `${group} renamed`;
+
+  try {
+    for (const suffix of ['a', 'b']) {
+      const create = await request.post('/api/v1/monitors', {
+        headers: json,
+        // The second request spells the group differently; it must join the first group.
+        data: { name: `e2e group ${suffix} ${Date.now()}`, url: 'http://mock:8081/ok', intervalSeconds: 300, group: suffix === 'a' ? group : group.toUpperCase() },
+      });
+      expect(create.status()).toBe(201);
+      const body = await create.json();
+      created.push(body.id);
+      expect(body.group).toBe(group);
+    }
+
+    const filtered = (await (await request.get(`/api/v1/monitors?group=${encodeURIComponent(group.toLowerCase())}`, { headers: auth })).json()).monitors;
+    expect(filtered.map((m: { id: string }) => m.id).sort()).toEqual([...created].sort());
+    expect((await (await request.get('/api/v1/monitors?group=no-such-group', { headers: auth })).json()).monitors).toEqual([]);
+
+    const groups = (await (await request.get('/api/v1/groups', { headers: auth })).json()).groups as Array<{ name: string; monitorCount: number; pausedCount: number }>;
+    expect(groups.find(g => g.name === group)).toMatchObject({ monitorCount: 2, pausedCount: 0 });
+
+    const paused = await request.post('/api/v1/groups/pause', { headers: json, data: { group } });
+    expect(paused.status()).toBe(200);
+    expect(await paused.json()).toEqual({ changed: 2 });
+
+    const rename = await request.post('/api/v1/groups/rename', { headers: json, data: { group, newName: renamed } });
+    expect(rename.status()).toBe(200);
+    expect(await rename.json()).toEqual({ renamed: 2, group: renamed });
+    expect((await request.post('/api/v1/groups/pause', { headers: json, data: { group } })).status()).toBe(404);
+
+    const resumed = await request.post('/api/v1/groups/resume', { headers: json, data: { group: renamed } });
+    expect(await resumed.json()).toEqual({ changed: 2 });
+    const detail = await (await request.get(`/api/v1/monitors/${created[0]}`, { headers: auth })).json();
+    expect(detail).toMatchObject({ group: renamed, state: 'active' });
+
+    // The group is cleared with null.
+    const cleared = await request.patch(`/api/v1/monitors/${created[0]}`, { headers: json, data: { group: null } });
+    expect((await cleared.json()).group).toBeNull();
+  } finally {
+    for (const id of created)
+      await request.delete(`/api/v1/monitors/${id}`, { headers: auth });
+  }
+
+  await revokeKey(page, keyName);
+});
