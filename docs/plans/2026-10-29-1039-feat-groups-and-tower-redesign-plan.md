@@ -342,3 +342,29 @@ Release A (U1-U4) ships and is deployed before release B (U5-U9) starts. Release
 - Local-time-zone day buckets for the 90-day row.
 - Group-level alert settings.
 - Flow analysis (spec-flow) was not run separately: the flows follow the two confirmed mockups.
+
+---
+
+## Production Deployment — Release A (0.13.0), 2026-10-29
+
+- Source commit `106388a` (pushed to GitHub `main`); image `registry.dualconsult.net/dualconsult/hawk@sha256:f61f9dd7e547b3887d8a34a8d20a5d862675db94b40b666061577b2f669dbd3e`, built from `git archive HEAD` (not pushed to GHCR).
+- Backup: `/srv/dualconsult/backups/hawk/hawk-pre-0.13.0-20261029T103001Z.dump` on the db VM. Release pin: infra commit `bd3bffa`; deployed with `scripts/deploy-app.sh hawk app edge`.
+- Verification:
+  - `HAWK_REQUIRE_POSTGRES_TESTS=1 dotnet test`: 386/386.
+  - `ando run`: exit 0, 298 passed, 88 PostgreSQL tests skipped inside the ando container. All PostgreSQL test classes now share one container (`PostgresCollection`); before, each class waited about a minute for an unavailable container and the test step hit ando's 5-minute limit.
+  - E2E: 18/18 on SQL Server and 18/18 on PostgreSQL.
+- Review: correctness, security, project standards, testing, maintainability, API contract and data migration reviewers plus a Codex adversarial pass (`gpt-6-luna`, independence verified). Fixed in `399ee12`:
+  - NUL in group lookups is rejected (it caused a PostgreSQL 500).
+  - One display-spelling helper.
+  - Same-name rename is a no-op.
+  - Dead `OtherMonitors` removed.
+  - Two e2e specs fixed for the twin links of failing monitors.
+- Accepted, not changed:
+  - A stale page can act on a later group that reuses a name, which comes with name-based groups.
+  - Concurrent group runs can race the existing in-flight check, which predates this change.
+- Live checks:
+  - Migration `AddMonitorGroupName` applied; all 48 monitors have no group.
+  - The container runs v0.13.0 with 0 restarts, UID 1654 and a read-only root filesystem.
+  - `/live` returns 200 and `/ready` returns 404.
+  - `/api/v1` and `/api/v1/groups` without a key return 401 problem+json.
+- Rollback: the 0.12.0 digest `sha256:5dffc17d…` runs against the new schema (nullable column).
