@@ -5,6 +5,7 @@
 // </file>
 
 using System.ComponentModel.DataAnnotations;
+using Hawk.Web.Services.ApiKeys;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -14,7 +15,7 @@ namespace Hawk.Web.Pages.Admin.Users;
 /// <summary>
 /// Reset password page model.
 /// </summary>
-public class ResetPasswordModel(UserManager<IdentityUser> userManager) : PageModel
+public class ResetPasswordModel(UserManager<IdentityUser> userManager, ApiKeyService apiKeys) : PageModel
 {
     /// <summary>
     /// User id.
@@ -66,6 +67,9 @@ public class ResetPasswordModel(UserManager<IdentityUser> userManager) : PageMod
             Email = user.Email ?? user.UserName ?? user.Id;
             return Page();
         }
+
+        // A reset is how a compromised account is recovered, so its API keys stop working.
+        await apiKeys.RevokeAllAsync(user.Id, cancellationToken);
 
         return RedirectToPage("/Admin/Users/Index");
     }

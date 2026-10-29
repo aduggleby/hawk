@@ -52,7 +52,7 @@ public class PublicPageSecurityTests
     [Fact]
     public void Malformed_reset_token_returns_validation_page()
     {
-        var model = new ResetPasswordModel(null!);
+        var model = new ResetPasswordModel(null!, null!);
 
         var result = model.OnGet("invalid***token");
 
@@ -64,7 +64,7 @@ public class PublicPageSecurityTests
     [Fact]
     public void Valid_reset_token_still_decodes()
     {
-        var model = new ResetPasswordModel(null!);
+        var model = new ResetPasswordModel(null!, null!);
         var token = "valid+token/value=";
         var code = WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(token));
 

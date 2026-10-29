@@ -12,6 +12,8 @@ using Microsoft.EntityFrameworkCore;
 using MonitorEntity = Hawk.Web.Data.Monitoring.Monitor;
 using Hawk.Web.Data.Monitoring;
 using Hawk.Web.Data.Alerting;
+using Hawk.Web.Data.ApiKeys;
+using Microsoft.AspNetCore.Identity;
 using Hawk.Web.Data.UrlChecks;
 
 namespace Hawk.Web.Data;
@@ -77,6 +79,11 @@ public class ApplicationDbContext : IdentityDbContext
     /// </summary>
     public DbSet<UserMonitorSettings> UserMonitorSettings => Set<UserMonitorSettings>();
 
+    /// <summary>
+    /// Per-user API keys (hashed).
+    /// </summary>
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -123,6 +130,14 @@ public class ApplicationDbContext : IdentityDbContext
         builder.Entity<UserMonitorSettings>(b =>
         {
             b.HasKey(x => x.UserId);
+        });
+
+        builder.Entity<ApiKey>(b =>
+        {
+            b.Property(x => x.Scope).HasConversion<string>().HasMaxLength(16);
+            b.HasIndex(x => x.SecretHash).IsUnique();
+            b.HasIndex(x => x.UserId);
+            b.HasOne<IdentityUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -16,10 +16,12 @@ using Hangfire.Common;
 using Hangfire.States;
 using Hangfire.Storage;
 using Hawk.Web.Data;
+using Hawk.Web.Data.ApiKeys;
 using Hawk.Web.Infrastructure;
 using Hawk.Web.Pages.Monitors;
 using Hawk.Web.Services;
 using Hawk.Web.Services.Email;
+using Hawk.Web.Services.ApiKeys;
 using Hawk.Web.Services.Import;
 using Hawk.Web.Services.Monitoring;
 using Microsoft.AspNetCore.Http;
@@ -804,6 +806,139 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         Assert.Equal(TimeSpan.Zero, (await RunsAsync(app, id)).Single().StartedAt.Offset);
     }
 
+    [SkippableFact]
+    public async Task Api_keys_are_removed_when_the_user_is_deleted()
+    {
+        await using var app = await CreateAppAsync();
+        var (userId, _) = await AddUserWithKeyAsync(app, "cascade@example.com");
+        var (otherId, _) = await AddUserWithKeyAsync(app, "other@example.com");
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+        Assert.True((await users.DeleteAsync((await users.FindByIdAsync(userId))!)).Succeeded);
+
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await db.ApiKeys.Where(k => k.UserId == userId).ToListAsync());
+        Assert.Single(await db.ApiKeys.Where(k => k.UserId == otherId).ToListAsync());
+    }
+
+    [SkippableFact]
+    public async Task Api_key_touch_writes_once_within_five_minutes()
+    {
+        await using var app = await CreateAppAsync();
+        var (_, key) = await AddUserWithKeyAsync(app, "touch@example.com");
+
+        async Task<DateTimeOffset?> LastUsedAsync()
+        {
+            await using var s = app.Services.CreateAsyncScope();
+            return (await s.ServiceProvider.GetRequiredService<ApplicationDbContext>().ApiKeys.AsNoTracking().SingleAsync(k => k.Id == key.Id)).LastUsedAt;
+        }
+
+        async Task TouchAsync()
+        {
+            await using var s = app.Services.CreateAsyncScope();
+            await s.ServiceProvider.GetRequiredService<ApiKeyService>().TouchAsync(key.Id);
+        }
+
+        Assert.Null(await LastUsedAsync());
+        await TouchAsync();
+        var first = await LastUsedAsync();
+        Assert.NotNull(first);
+
+        await TouchAsync();
+        Assert.Equal(first, await LastUsedAsync());
+
+        var old = DateTimeOffset.UtcNow.AddMinutes(-6);
+        await using (var s = app.Services.CreateAsyncScope())
+            await s.ServiceProvider.GetRequiredService<ApplicationDbContext>().ApiKeys
+                .Where(k => k.Id == key.Id).ExecuteUpdateAsync(u => u.SetProperty(k => k.LastUsedAt, old));
+        await TouchAsync();
+        Assert.True(await LastUsedAsync() > first);
+    }
+
+    [SkippableFact]
+    public async Task Api_key_unique_index_rejects_a_duplicate_hash()
+    {
+        await using var app = await CreateAppAsync();
+        var (userId, key) = await AddUserWithKeyAsync(app, "unique@example.com");
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.ApiKeys.Add(new ApiKey { UserId = userId, Name = "dup", DisplayPrefix = "hawk_dup", SecretHash = key.SecretHash });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [SkippableFact]
+    public async Task Api_key_revoke_all_and_revoke_work_set_based()
+    {
+        await using var app = await CreateAppAsync();
+        var (userId, key) = await AddUserWithKeyAsync(app, "revoke@example.com");
+        var (otherId, _) = await AddUserWithKeyAsync(app, "revoke2@example.com");
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var keys = scope.ServiceProvider.GetRequiredService<ApiKeyService>();
+        Assert.False(await keys.RevokeAsync(otherId, key.Id));
+        Assert.True(await keys.RevokeAsync(userId, key.Id));
+        await keys.RevokeAllAsync(userId);
+        Assert.Empty(await keys.ListAsync(userId));
+        Assert.Single(await keys.ListAsync(otherId));
+    }
+
+    [SkippableFact]
+    public async Task Admin_password_reset_revokes_the_users_api_keys()
+    {
+        await using var app = await CreateAppAsync();
+        var (userId, _) = await AddUserWithKeyAsync(app, "admin-reset@example.com");
+        var (otherId, _) = await AddUserWithKeyAsync(app, "admin-reset-other@example.com");
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var page = new Hawk.Web.Pages.Admin.Users.ResetPasswordModel(
+            scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>(),
+            scope.ServiceProvider.GetRequiredService<ApiKeyService>())
+        {
+            Id = userId,
+            Input = new() { NewPassword = "Reset-Password-123!" },
+        };
+        InitPage(page);
+        Assert.IsType<RedirectToPageResult>(await page.OnPostAsync(CancellationToken.None));
+
+        var keys = scope.ServiceProvider.GetRequiredService<ApiKeyService>();
+        Assert.Empty(await keys.ListAsync(userId));
+        Assert.Single(await keys.ListAsync(otherId));
+    }
+
+    [SkippableFact]
+    public async Task Forgot_password_reset_revokes_keys_only_when_the_reset_succeeds()
+    {
+        await using var app = await CreateAppAsync();
+        const string email = "forgot@example.com";
+        var (userId, _) = await AddUserWithKeyAsync(app, email);
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+        var keys = scope.ServiceProvider.GetRequiredService<ApiKeyService>();
+        var user = (await users.FindByIdAsync(userId))!;
+
+        Hawk.Web.Areas.Identity.Pages.Account.ResetPasswordModel NewPage(string code, string password)
+        {
+            var p = new Hawk.Web.Areas.Identity.Pages.Account.ResetPasswordModel(users, keys)
+            {
+                Input = new() { Email = email, Password = password, ConfirmPassword = password, Code = code },
+            };
+            InitPage(p);
+            return p;
+        }
+
+        // Bad token: the reset fails and the keys keep working.
+        Assert.IsType<PageResult>(await NewPage("bad-token", "Reset-Password-123!").OnPostAsync());
+        Assert.Single(await keys.ListAsync(userId));
+
+        // Valid token: the reset succeeds and the keys are revoked.
+        var token = await users.GeneratePasswordResetTokenAsync(user);
+        Assert.IsType<RedirectToPageResult>(await NewPage(token, "Reset-Password-123!").OnPostAsync());
+        Assert.Empty(await keys.ListAsync(userId));
+    }
+
     // ---- helpers ----
 
     private sealed class TestApp(ServiceProvider services, string connectionString) : IAsyncDisposable
@@ -845,6 +980,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
         services.AddSingleton(Production);
         services.AddHawkDbContext(DatabaseProvider.Postgres, connectionString);
         services.AddHawkIdentity();
+        services.AddScoped<ApiKeyService>();
         services.AddSingleton<JobStorage>(_ => DatabaseSetup.CreatePostgreSqlStorage(connectionString));
         var sp = services.BuildServiceProvider();
 
@@ -852,6 +988,16 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture) : IClassFi
             await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.MigrateAsync();
 
         return new TestApp(sp, connectionString);
+    }
+
+    private static async Task<(string UserId, ApiKey Key)> AddUserWithKeyAsync(TestApp app, string email)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+        var user = new IdentityUser { UserName = email, Email = email };
+        Assert.True((await users.CreateAsync(user, "Password-123!")).Succeeded);
+        var created = await scope.ServiceProvider.GetRequiredService<ApiKeyService>().CreateAsync(user.Id, "test", ApiKeyScope.Read);
+        return (user.Id, created.Key);
     }
 
     private static MonitorEntity NewMonitor(string name, DateTimeOffset? nextRunAt) => new()

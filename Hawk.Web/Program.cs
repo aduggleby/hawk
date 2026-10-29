@@ -153,6 +153,7 @@ builder.Services.AddScoped<IMonitorExecutor, MonitorExecutor>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
 builder.Services.AddScoped<StatusCakeImporter>();
 builder.Services.AddScoped<MonitorTransferService>();
+builder.Services.AddScoped<Hawk.Web.Services.ApiKeys.ApiKeyService>();
 
 var app = builder.Build();
 

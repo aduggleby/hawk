@@ -6,6 +6,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 using System.Threading.Tasks;
+using Hawk.Web.Services.ApiKeys;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -17,10 +18,12 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
     public class ResetPasswordModel : PageModel
     {
         private readonly UserManager<IdentityUser> _userManager;
+        private readonly ApiKeyService _apiKeys;
 
-        public ResetPasswordModel(UserManager<IdentityUser> userManager)
+        public ResetPasswordModel(UserManager<IdentityUser> userManager, ApiKeyService apiKeys)
         {
             _userManager = userManager;
+            _apiKeys = apiKeys;
         }
 
         /// <summary>
@@ -115,6 +118,8 @@ namespace Hawk.Web.Areas.Identity.Pages.Account
             var result = await _userManager.ResetPasswordAsync(user, Input.Code, Input.Password);
             if (result.Succeeded)
             {
+                // A reset is how a compromised account is recovered, so its API keys stop working.
+                await _apiKeys.RevokeAllAsync(user.Id);
                 return RedirectToPage("./ResetPasswordConfirmation");
             }
 

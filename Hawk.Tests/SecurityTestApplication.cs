@@ -55,6 +55,7 @@ internal sealed class SecurityTestApplication(WebApplication app, HttpClient cli
         var databaseName = Guid.NewGuid().ToString();
         builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         builder.Services.AddHawkIdentity(builder.Configuration);
+        builder.Services.AddScoped<Hawk.Web.Services.ApiKeys.ApiKeyService>();
         builder.Services.AddHawkApplicationCookie(builder.Configuration);
         builder.Services.AddHawkAuthAbuseProtection(builder.Configuration);
         builder.Services.AddSingleton<CookieTestClock>();
