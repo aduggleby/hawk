@@ -116,11 +116,11 @@ test('error states: non-2xx and match failure trigger a FAIL result (and alert i
   await waitForRunDiagnosticsResult(page, 'FAIL', 30_000);
   await snap(page, '30-error-500-fail');
 
-  // Index should group this into "Failing monitors".
+  // Index shows it in the Attention strip.
   await gotoMonitors(page);
-  await expect(page.getByRole('heading', { name: /failing monitors/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^attention$/i })).toBeVisible();
   await expect(
-    page.locator('table').first().getByRole('link', { name: /get error 500/i })
+    page.getByTestId('attention').getByRole('link', { name: /get error 500/i })
   ).toBeVisible();
 
   // Email alert should be sent to the Resend-compatible mock endpoint.

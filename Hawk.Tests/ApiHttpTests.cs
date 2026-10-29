@@ -213,6 +213,46 @@ public class ApiHttpTests
     }
 
     [Fact]
+    public async Task Detail_uptime_comes_from_the_rollup_and_is_null_for_a_new_monitor()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        var (key, userId) = await CreateKeyAsync(app, ApiKeyScope.Read);
+        var now = DateTimeOffset.UtcNow;
+        var (freshId, busyId) = await SeedAsync(app, db =>
+        {
+            var fresh = Http("fresh", userId);
+            var busy = Http("busy", userId);
+            db.Monitors.AddRange(fresh, busy);
+            db.MonitorRunBuckets.AddRange(
+                new MonitorRunBucket { MonitorId = busy.Id, BucketStart = Hawk.Web.Services.Monitoring.RunBucketRollup.BucketStartOf(now.AddHours(-2)), RunCount = 4, FailureCount = 1, TotalDurationMs = 160 },
+                new MonitorRunBucket { MonitorId = busy.Id, BucketStart = Hawk.Web.Services.Monitoring.RunBucketRollup.BucketStartOf(now.AddDays(-3)), RunCount = 4, FailureCount = 0, TotalDurationMs = 160 });
+            return Task.FromResult((fresh.Id, busy.Id));
+        });
+
+        var fresh = (await JsonAsync(await SendAsync(app, key, HttpMethod.Get, $"/api/v1/monitors/{freshId}"))).GetProperty("uptime");
+        Assert.Equal(JsonValueKind.Null, fresh.GetProperty("last24h").ValueKind);
+        Assert.Equal(JsonValueKind.Null, fresh.GetProperty("last7d").ValueKind);
+        Assert.Equal(JsonValueKind.Null, fresh.GetProperty("last30d").ValueKind);
+
+        var busyJson = await JsonAsync(await SendAsync(app, key, HttpMethod.Get, $"/api/v1/monitors/{busyId}"));
+        var uptime = busyJson.GetProperty("uptime");
+        Assert.Equal(75, uptime.GetProperty("last24h").GetDouble());
+        Assert.Equal(87.5, uptime.GetProperty("last7d").GetDouble());
+        Assert.Equal(87.5, uptime.GetProperty("last30d").GetDouble());
+
+        // The service gives the same numbers; the list endpoint stays unchanged.
+        await using (var scope = app.App.Services.CreateAsyncScope())
+        {
+            var figures = await scope.ServiceProvider.GetRequiredService<Hawk.Web.Services.Monitoring.MonitorHistoryService>()
+                .GetUptimeAsync(busyId, DateTimeOffset.UtcNow, CancellationToken.None);
+            Assert.Equal(figures.Last7d, uptime.GetProperty("last7d").GetDouble());
+        }
+
+        var list = await SendAsync(app, key, HttpMethod.Get, "/api/v1/monitors");
+        Assert.DoesNotContain("uptime", await list.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Runs_default_to_25_cap_at_100_and_reject_bad_limits()
     {
         await using var app = await SecurityTestApplication.CreateAsync();

@@ -175,7 +175,7 @@ public sealed class RunBucketRollupTests
         var expected = new List<DateTimeOffset>();
         for (var s = newest; s < now; s = s.AddMinutes(15))
         {
-            AddRun(db, id, s.AddMinutes(1), true, 1);
+            AddRun(db, id, s, true, 1); // at s: s.AddMinutes(1) can lie in the future
             expected.Add(s);
         }
         await db.SaveChangesAsync();

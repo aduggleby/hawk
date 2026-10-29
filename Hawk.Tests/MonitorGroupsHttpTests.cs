@@ -96,7 +96,7 @@ public sealed class MonitorGroupsHttpTests(PostgresFixture fixture)
     }
 
     [Fact]
-    public async Task Index_renders_groups_sorted_with_ungrouped_last_and_failing_monitors_twice()
+    public async Task Index_renders_groups_sorted_with_ungrouped_last_and_failing_monitors_as_row_and_attention_card()
     {
         await using var app = await SecurityTestApplication.CreateAsync();
         await app.LoginAsync();
@@ -115,9 +115,11 @@ public sealed class MonitorGroupsHttpTests(PostgresFixture fixture)
         var beta = html.IndexOf($"id=\"{MonitorGroups.Anchor("beta")}\"", StringComparison.Ordinal);
         var none = html.IndexOf("id=\"group-none\"", StringComparison.Ordinal);
         Assert.True(alpha >= 0 && beta > alpha && none > beta, $"order alpha={alpha} beta={beta} none={none}");
+        // Once as a row in its group, once as an Attention card.
         Assert.Equal(2, CountOf(html, ">FailingOne<"));
+        Assert.Contains("data-testid=\"attention\"", html);
         Assert.Contains("Ungrouped", html);
-        Assert.Contains("1 failing", html);
+        Assert.Contains("1 down", html);
         // Ungrouped has select-all only: no group action buttons for it.
         Assert.Equal(2, CountOf(html, "handler=GroupPause"));
     }
@@ -136,8 +138,8 @@ public sealed class MonitorGroupsHttpTests(PostgresFixture fixture)
         var form = html[formStart..formEnd];
 
         // Every monitor checkbox and the group select-all and group buttons are inside the batch form.
-        Assert.Equal(CountOf(html, "<input class=\"h-4 w-4\" type=\"checkbox\" name=\"SelectedMonitorIds\""), CountOf(form, "<input class=\"h-4 w-4\" type=\"checkbox\" name=\"SelectedMonitorIds\""));
-        Assert.Equal(2, CountOf(form, "<input class=\"h-4 w-4\" type=\"checkbox\" name=\"SelectedMonitorIds\""));
+        Assert.Equal(CountOf(html, "<input class=\"hawk-check\" type=\"checkbox\" name=\"SelectedMonitorIds\""), CountOf(form, "<input class=\"hawk-check\" type=\"checkbox\" name=\"SelectedMonitorIds\""));
+        Assert.Equal(2, CountOf(form, "<input class=\"hawk-check\" type=\"checkbox\" name=\"SelectedMonitorIds\""));
         Assert.Contains("data-group-select=", form);
         Assert.Contains("handler=GroupPause", form);
 
@@ -172,7 +174,7 @@ public sealed class MonitorGroupsHttpTests(PostgresFixture fixture)
 
         var html = await app.Client.GetStringAsync("/Monitors");
         Assert.Contains($"id=\"{MonitorGroups.Anchor("Down")}\"", html);
-        Assert.Contains("1 failing", html);
+        Assert.Contains("1 down", html);
     }
 
     [SkippableFact]

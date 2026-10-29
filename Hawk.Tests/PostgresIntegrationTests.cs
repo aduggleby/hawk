@@ -330,8 +330,8 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
             InitPage(index);
             await index.OnGetAsync(CancellationToken.None);
 
-            Assert.Equal(["Alpha", "beta", "charlie"], index.Monitors.Select(m => m.Name));
-            Assert.Equal(failingId, Assert.Single(index.FailingMonitors).Id);
+            Assert.Equal(["Alpha", "beta", "charlie"], index.Board.Groups.SelectMany(g => g.Rows).Select(r => r.Monitor.Name));
+            Assert.Equal(failingId, Assert.Single(index.Board.Attention).Monitor.Id);
         }
 
         await using (var scope = app.Services.CreateAsyncScope())
@@ -738,7 +738,8 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
         await using (var scope = app.Services.CreateAsyncScope())
         {
             var jobs = new RecordingJobClient();
-            var details = new DetailsModel(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), NewCommands(scope, jobs));
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var details = new DetailsModel(db, NewCommands(scope, jobs), NewStatus(scope), new MonitorHistoryService(db));
             InitPage(details);
             Assert.IsType<RedirectToPageResult>(await details.OnPostRunNowAsync(id, CancellationToken.None));
             Assert.Empty(jobs.EnqueuedMonitorIds());
@@ -974,11 +975,11 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
             InitPage(index);
             await index.OnGetAsync(CancellationToken.None);
 
-            Assert.Equal([failing], index.FailingMonitors.Select(m => m.Id));
-            var section = Assert.Single(index.GroupSections);
+            Assert.Equal([failing], index.Board.Attention.Select(a => a.Monitor.Id));
+            var section = Assert.Single(index.Board.Groups);
             Assert.Null(section.Name);
-            Assert.Equal(3, section.Monitors.Count);
-            Assert.Equal(1, section.FailingCount);
+            Assert.Equal(3, section.Rows.Count);
+            Assert.Equal(1, section.DownCount);
         }
     }
 
@@ -1555,7 +1556,7 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
     private static IndexModel NewIndex(AsyncServiceScope scope, IBackgroundJobClient? jobs = null)
     {
         jobs ??= new RecordingJobClient();
-        return new(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), jobs, NewStatus(scope), NewCommands(scope, jobs));
+        return new(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), jobs, new MonitorBoardService(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), NewStatus(scope)), NewCommands(scope, jobs));
     }
 
     private static MonitorCommands NewCommands(AsyncServiceScope scope, IBackgroundJobClient jobs) =>

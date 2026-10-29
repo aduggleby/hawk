@@ -1,0 +1,477 @@
+/* Monitors overview (Pages/Monitors/Index.cshtml): headline, Attention strip, group rail and 35 px rows. */
+
+.hawk-board-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.hawk-board-layout:not(:has(.hawk-rail)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hawk-board-main {
+  min-width: 0;
+}
+
+/* Rail */
+.hawk-rail {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+.hawk-rail-title {
+  margin: 0 0 6px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.hawk-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hawk-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 2px;
+  color: var(--text);
+  text-decoration: none;
+  font-stretch: 68%;
+  font-size: 15px;
+}
+
+.hawk-rail-item:hover {
+  background: var(--hover);
+}
+
+.hawk-rail-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hawk-rail-count,
+.hawk-rail-down {
+  font-stretch: 100%;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hawk-rail-count {
+  color: var(--muted);
+}
+
+.hawk-rail-down {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Status squares */
+.hawk-sq {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: none;
+  background: var(--paused);
+}
+
+.hawk-sq.up { background: var(--up); }
+.hawk-sq.down { background: var(--down); }
+.hawk-sq.disabled { background: transparent; border: 1px solid var(--paused); }
+.hawk-sq.empty { background: var(--faint); }
+
+/* Head */
+.hawk-board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.hawk-board-headline {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+
+/* Attention */
+.hawk-attention {
+  margin-bottom: 18px;
+}
+
+.hawk-attention h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.hawk-attention-list {
+  display: grid;
+  gap: 6px;
+}
+
+.hawk-att {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  align-items: center;
+  padding: 10px 14px;
+  border-left: 3px solid var(--down);
+  background: var(--down-tint);
+  border-radius: 2px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.hawk-att:hover {
+  background: color-mix(in srgb, var(--down) 18%, var(--panel));
+}
+
+.hawk-att-t {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hawk-att-nm {
+  font-stretch: 68%;
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--down);
+}
+
+.hawk-att-kind {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hawk-att-reason {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.hawk-att-meta {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hawk-att-meta b {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Group sections and rows */
+.hawk-bgroup {
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--panel);
+  scroll-margin-top: 12px;
+}
+
+.hawk-bgroup-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 10px 4px 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.hawk-bgroup-head h2 {
+  margin: 0;
+  font-stretch: 68%;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.hawk-bgroup-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hawk-bgroup-down {
+  color: var(--down);
+  font-weight: 600;
+}
+
+.hawk-bgroup-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hawk-brow {
+  display: grid;
+  align-items: center;
+  column-gap: 12px;
+  grid-template-columns: 28px 82px minmax(150px, 1.1fr) minmax(200px, 2fr) 64px 100px;
+  min-height: 35px;
+  padding: 0 10px 0 8px;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.hawk-brow:first-child {
+  border-top: 0;
+}
+
+.hawk-brow-hdr {
+  min-height: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hawk-brow:not(.hawk-brow-hdr):hover {
+  background: var(--hover);
+}
+
+.hawk-brow.is-down {
+  background: var(--down-tint);
+}
+
+.hawk-brow.is-off .hawk-c-nm a,
+.hawk-brow.is-off .hawk-c-lat,
+.hawk-brow.is-off .hawk-c-when {
+  color: var(--muted);
+}
+
+.hawk-check {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--text);
+}
+
+.hawk-c-sel {
+  display: flex;
+  align-items: center;
+}
+
+.hawk-c-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.hawk-c-nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-stretch: 68%;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.hawk-c-nm a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.hawk-c-nm a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.hawk-brow.is-down .hawk-c-nm a {
+  color: var(--down);
+  font-weight: 700;
+}
+
+.hawk-kind {
+  margin-left: 8px;
+  font-stretch: 100%;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.hawk-c-sc {
+  min-width: 0;
+}
+
+.hawk-c-lat {
+  text-align: right;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.hawk-c-when {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.hawk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hawk-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 1000px) {
+  .hawk-brow {
+    grid-template-columns: 28px 82px minmax(120px, 1fr) minmax(140px, 2fr) 60px;
+  }
+
+  .hawk-c-when {
+    display: none;
+  }
+}
+
+/* Narrow: rail becomes horizontal chips. */
+@media (max-width: 759px) {
+  .hawk-board-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .hawk-rail {
+    position: static;
+    max-height: none;
+  }
+
+  .hawk-rail-title {
+    display: none;
+  }
+
+  .hawk-rail-list {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .hawk-rail-list li {
+    flex: none;
+  }
+
+  .hawk-rail-item {
+    border: 1px solid var(--line);
+    padding: 5px 10px;
+    white-space: nowrap;
+  }
+
+  .hawk-att {
+    grid-template-columns: 1fr;
+  }
+
+  .hawk-att-meta {
+    grid-column: 1;
+    grid-row: 3;
+    text-align: left;
+  }
+
+  .hawk-att-meta b {
+    display: inline;
+    margin-right: 8px;
+  }
+}
+
+/* Below 640 px a row has two lines: checkbox, status, name; then the strip. */
+@media (max-width: 639px) {
+  .hawk-brow {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    row-gap: 6px;
+    column-gap: 10px;
+    padding: 8px 10px;
+  }
+
+  .hawk-brow-hdr,
+  .hawk-kind,
+  .hawk-c-lat,
+  .hawk-c-when {
+    display: none;
+  }
+
+  .hawk-c-sc {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* Touch: 44 px targets. */
+@media (pointer: coarse) {
+  .hawk-check {
+    width: 20px;
+    height: 20px;
+  }
+
+  .hawk-c-sel,
+  .hawk-bgroup-head > .hawk-check {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .hawk-bgroup-head > .hawk-check {
+    width: 44px;
+    height: 44px;
+    padding: 12px;
+    box-sizing: border-box;
+  }
+
+  .hawk-bgroup-actions .hawk-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .hawk-brow {
+    grid-template-columns: 44px 82px minmax(150px, 1.1fr) minmax(200px, 2fr) 64px 100px;
+    padding-left: 0;
+  }
+
+  .hawk-rail-item {
+    min-height: 44px;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 1000px) {
+  .hawk-brow {
+    grid-template-columns: 44px 82px minmax(120px, 1fr) minmax(140px, 2fr) 60px;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 639px) {
+  .hawk-brow {
+    grid-template-columns: 44px auto minmax(0, 1fr);
+  }
+}

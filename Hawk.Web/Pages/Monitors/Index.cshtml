@@ -1,20 +1,47 @@
 @page
-@* <summary>Monitors list page.</summary> *@
+@* <summary>Monitors overview (Tower board): headline, Attention strip, group rail and rows with 24 h strips.</summary> *@
 @model Hawk.Web.Pages.Monitors.IndexModel
+@using Hawk.Web.Services.Monitoring
 @{
     ViewData["Title"] = "Monitors";
-    bool IsFailing(Hawk.Web.Data.Monitoring.Monitor m) =>
-        Hawk.Web.Services.Monitoring.MonitorStatusService.IsInFailingGroup(m, Model.LastRunByMonitor);
+    var board = Model.Board;
+    var now = DateTimeOffset.UtcNow;
     static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
+    static string StatusClass(MonitorState state, bool failing) =>
+        failing ? "down" : state == MonitorState.Disabled ? "disabled" : state == MonitorState.Paused ? "paused" : "up";
 }
 
-<div class="flex items-start justify-between gap-4 mb-6">
+<div class="hawk-board-layout">
+@if (board.Total > 0)
+{
+    <nav class="hawk-rail" aria-label="Groups">
+        <h2 class="hawk-rail-title">Groups</h2>
+        <ul class="hawk-rail-list">
+            @foreach (var g in board.Groups)
+            {
+                <li>
+                    <a class="hawk-rail-item" href="#@g.Anchor">
+                        <span class="hawk-rail-name">@(g.Name ?? "Ungrouped")</span>
+                        @if (g.DownCount > 0)
+                        {
+                            <span class="hawk-rail-down" title="@g.DownCount down"><i class="hawk-sq down"></i>@g.DownCount<span class="sr-only"> down</span></span>
+                        }
+                        <span class="hawk-rail-count">@g.Rows.Count</span>
+                    </a>
+                </li>
+            }
+        </ul>
+    </nav>
+}
+
+<div class="hawk-board-main">
+<div class="hawk-board-head">
     <div>
         <h1 class="text-2xl font-semibold tracking-tight">Monitors</h1>
-        <p class="text-sm text-zinc-600">Uptime and content verification checks.</p>
+        <p class="hawk-board-headline" data-testid="board-headline">@board.Headline</p>
     </div>
-    <div class="flex items-center gap-2">
-        <div id="monitors-actions-default" class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
+        <div id="monitors-actions-default" class="flex flex-wrap items-center gap-2">
             @if (User.IsInRole("Admin"))
             {
                 <a class="hawk-btn hawk-btn-ghost" asp-page="/Admin/Import/StatusCake">Import StatusCake</a>
@@ -28,8 +55,8 @@
             <a class="hawk-btn hawk-btn-primary" asp-page="/Monitors/Create">New monitor</a>
         </div>
 
-        <div id="monitors-actions-selected" class="flex items-center gap-2" hidden>
-            <div class="text-xs text-zinc-500 select-none mr-1">
+        <div id="monitors-actions-selected" class="flex flex-wrap items-center gap-2" hidden>
+            <div class="text-xs select-none mr-1" style="color: var(--muted)">
                 Selected: <span id="monitors-selected-count">0</span>
             </div>
             <button class="hawk-btn hawk-btn-ghost" type="submit" form="batch-form" name="BatchAction" value="run">Run now</button>
@@ -40,107 +67,57 @@
     </div>
 </div>
 
-@if (Model.Monitors.Count == 0)
+@if (board.Total == 0)
 {
     <div class="hawk-card">
-        <div class="text-sm text-zinc-600">No monitors yet. Create your first one.</div>
+        <div class="text-sm" style="color: var(--muted)">No monitors yet. Create your first one.</div>
     </div>
 }
 else
 {
-    <form method="post" asp-page-handler="Batch" id="batch-form">
-        @if (Model.FailingMonitors.Count != 0)
-        {
-            <div class="hawk-card p-0 overflow-hidden mb-4">
-                <div class="px-4 py-3 bg-zinc-50 border-b border-zinc-100">
-                    <h2 class="text-sm font-semibold tracking-tight">Failing monitors</h2>
-                    <div class="text-xs text-zinc-500 mt-1">Monitors whose most recent run failed.</div>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead class="bg-zinc-50 text-zinc-600">
-                        <tr>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Select</th>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Name</th>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Status</th>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Last run</th>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Next run</th>
-                        </tr>
-                        </thead>
-                        <tbody class="divide-y divide-zinc-100">
-                        @foreach (var m in Model.FailingMonitors)
-                        {
-                            <tr class="hover:bg-zinc-50/70">
-                                <td class="px-4 py-3 whitespace-nowrap">
-                                    <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" data-group="@Hawk.Web.Services.Monitoring.MonitorGroups.Anchor(m.GroupName)" />
-                                </td>
-                                <td class="px-4 py-3 font-medium whitespace-nowrap">
-                                    <a asp-page="/Monitors/Details"
-                                       asp-route-id="@m.Id"
-                                       class="no-underline text-red-700 hover:text-red-800">@m.Name</a>
-                                    @if (m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat)
-                                    {
-                                        <span class="hawk-badge ml-2">Heartbeat</span>
-                                    }
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap">
-                                    @if (!m.Enabled)
-                                    {
-                                        <span class="hawk-badge hawk-badge-danger">Disabled</span>
-                                    }
-                                    else if (m.IsPaused)
-                                    {
-                                        <span class="hawk-badge hawk-badge-warning">Paused</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="hawk-badge hawk-badge-success">Enabled</span>
-                                    }
-                                </td>
-                                <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
-                                    @if (m.LastRunAt is { } lastRunAt)
-                                    {
-                                        <time data-utc="@lastRunAt.ToString("O")" data-utc-format="short">@UtcFallback(lastRunAt)</time>
-                                    }
-                                    else
-                                    {
-                                        @:-
-                                    }
-                                    <span class="hawk-badge hawk-badge-danger ml-2">FAIL</span>
-                                </td>
-                                <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
-                                    @if (m.NextRunAt is { } nextRunAt)
-                                    {
-                                        <time data-utc="@nextRunAt.ToString("O")" data-utc-format="short">@UtcFallback(nextRunAt)</time>
-                                    }
-                                    else
-                                    {
-                                        @:-
-                                    }
-                                </td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
-                </div>
+    @if (board.Attention.Count != 0)
+    {
+        <section class="hawk-attention" aria-labelledby="attention-title" data-testid="attention">
+            <h2 id="attention-title">Attention</h2>
+            <div class="hawk-attention-list">
+                @foreach (var a in board.Attention)
+                {
+                    <a class="hawk-att" asp-page="/Monitors/Details" asp-route-id="@a.Monitor.Id">
+                        <span class="hawk-att-t">
+                            <span class="hawk-att-nm">@a.Monitor.Name</span>
+                            <span class="hawk-att-kind">@(a.Monitor.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat ? "Heartbeat" : "HTTP")@(a.State == MonitorState.Active ? "" : $" \u00b7 {a.State}")</span>
+                        </span>
+                        <span class="hawk-att-reason">@a.Reason</span>
+                        <span class="hawk-att-meta">
+                            <b>Down @BoardHeadline.Duration(now - a.Since)</b>
+                            since <time data-utc="@a.Since.ToString("O")" data-utc-format="short">@UtcFallback(a.Since)</time>
+                            @if (a.StatusCode is { } code)
+                            {
+                                <span>&middot; last status @code</span>
+                            }
+                        </span>
+                    </a>
+                }
             </div>
-        }
+        </section>
+    }
 
-        @foreach (var grp in Model.GroupSections)
+    <form method="post" asp-page-handler="Batch" id="batch-form">
+        @foreach (var grp in board.Groups)
         {
-            <div class="hawk-card p-0 overflow-hidden mb-4" id="@grp.Anchor">
-                <div class="px-4 py-3 bg-zinc-50 border-b border-zinc-100 flex flex-wrap items-center gap-3">
-                    <input class="h-4 w-4" type="checkbox" data-group-select="@grp.Anchor" aria-label="Select all in @(grp.Name ?? "Ungrouped")" />
-                    <h2 class="text-sm font-semibold tracking-tight">@(grp.Name ?? "Ungrouped")</h2>
-                    <div class="text-xs text-zinc-500">
-                        @grp.Monitors.Count monitor(s)@if (grp.FailingCount > 0)
+            <section class="hawk-bgroup" id="@grp.Anchor">
+                <div class="hawk-bgroup-head">
+                    <input class="hawk-check" type="checkbox" data-group-select="@grp.Anchor" aria-label="Select all in @(grp.Name ?? "Ungrouped")" />
+                    <h2>@(grp.Name ?? "Ungrouped")</h2>
+                    <div class="hawk-bgroup-count">
+                        @grp.Rows.Count monitor(s)@if (grp.DownCount > 0)
                         {
-                            <span class="text-red-700"> &middot; @grp.FailingCount failing</span>
+                            <span class="hawk-bgroup-down"> &middot; @grp.DownCount down</span>
                         }
                     </div>
                     @if (grp.Name is not null)
                     {
-                        <div class="ml-auto flex items-center gap-2">
+                        <div class="hawk-bgroup-actions">
                             <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupRun" name="Group" value="@grp.Name">Run</button>
                             <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupPause" name="Group" value="@grp.Name">Pause</button>
                             <button class="hawk-btn hawk-btn-ghost" type="submit" formaction="?handler=GroupResume" name="Group" value="@grp.Name">Resume</button>
@@ -148,83 +125,54 @@ else
                         </div>
                     }
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead class="bg-zinc-50 text-zinc-600">
-                        <tr>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Select</th>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Name</th>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Status</th>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Last run</th>
-                            <th class="text-left font-semibold px-4 py-3 whitespace-nowrap">Next run</th>
-                        </tr>
-                        </thead>
-                        <tbody class="divide-y divide-zinc-100">
-                        @foreach (var m in grp.Monitors)
-                        {
-                            var failing = IsFailing(m);
-                            <tr class="hover:bg-zinc-50/70">
-                                <td class="px-4 py-3 whitespace-nowrap">
-                                    <input class="h-4 w-4" type="checkbox" name="SelectedMonitorIds" value="@m.Id" data-group="@grp.Anchor" />
-                                </td>
-                                <td class="px-4 py-3 font-medium whitespace-nowrap">
-                                    <a asp-page="/Monitors/Details"
-                                       asp-route-id="@m.Id"
-                                       class="no-underline @(failing ? "text-red-700 hover:text-red-800" : "")">@m.Name</a>
-                                    @if (m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat)
-                                    {
-                                        <span class="hawk-badge ml-2">Heartbeat</span>
-                                    }
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap">
-                                    @if (!m.Enabled)
-                                    {
-                                        <span class="hawk-badge hawk-badge-danger">Disabled</span>
-                                    }
-                                    else if (m.IsPaused)
-                                    {
-                                        <span class="hawk-badge hawk-badge-warning">Paused</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="hawk-badge hawk-badge-success">Enabled</span>
-                                    }
-                                </td>
-                                <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
-                                    @if (m.LastRunAt is { } lastRunAt)
-                                    {
-                                        <time data-utc="@lastRunAt.ToString("O")" data-utc-format="short">@UtcFallback(lastRunAt)</time>
-                                    }
-                                    else
-                                    {
-                                        @:-
-                                    }
-                                    @if (failing)
-                                    {
-                                        <span class="hawk-badge hawk-badge-danger ml-2">FAIL</span>
-                                    }
-                                </td>
-                                <td class="px-4 py-3 text-zinc-700 whitespace-nowrap">
-                                    @if (m.NextRunAt is { } nextRunAt)
-                                    {
-                                        <time data-utc="@nextRunAt.ToString("O")" data-utc-format="short">@UtcFallback(nextRunAt)</time>
-                                    }
-                                    else
-                                    {
-                                        @:-
-                                    }
-                                </td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
+                <div class="hawk-brows" role="table" aria-label="@(grp.Name ?? "Ungrouped") monitors">
+                    <div class="hawk-brow hawk-brow-hdr" role="row">
+                        <span role="columnheader" class="hawk-c-sel"><span class="sr-only">Select</span></span>
+                        <span role="columnheader" class="hawk-c-st">Status</span>
+                        <span role="columnheader" class="hawk-c-nm">Name</span>
+                        <span role="columnheader" class="hawk-c-sc">Last 24 hours</span>
+                        <span role="columnheader" class="hawk-c-lat">Response</span>
+                        <span role="columnheader" class="hawk-c-when">Last run</span>
+                    </div>
+                    @foreach (var r in grp.Rows)
+                    {
+                        var m = r.Monitor;
+                        var cls = StatusClass(r.State, r.Failing);
+                        <div class="hawk-brow @(r.Failing ? "is-down" : "") @(r.State != MonitorState.Active ? "is-off" : "")" role="row">
+                            <span role="cell" class="hawk-c-sel">
+                                <input class="hawk-check" type="checkbox" name="SelectedMonitorIds" value="@m.Id" data-group="@grp.Anchor" aria-label="Select @m.Name" />
+                            </span>
+                            <span role="cell" class="hawk-c-st" data-status="@cls"><i class="hawk-sq @cls"></i>@r.StatusLabel</span>
+                            <span role="cell" class="hawk-c-nm">
+                                <a asp-page="/Monitors/Details" asp-route-id="@m.Id">@m.Name</a>
+                                <span class="hawk-kind">@(m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat ? "Heartbeat" : "HTTP")</span>
+                            </span>
+                            <span role="cell" class="hawk-c-sc"><partial name="_StatusStrip" model="r.Strip" /></span>
+                            <span role="cell" class="hawk-c-lat">@(r.LastMs is { } ms ? $"{ms} ms" : "-")</span>
+                            <span role="cell" class="hawk-c-when">
+                                @if (m.LastRunAt is { } lastRunAt)
+                                {
+                                    <time data-utc="@lastRunAt.ToString("O")" data-utc-format="short">@UtcFallback(lastRunAt)</time>
+                                }
+                                else
+                                {
+                                    @:-
+                                }
+                            </span>
+                        </div>
+                    }
                 </div>
-            </div>
+            </section>
         }
     </form>
+    <div class="hawk-legend">
+        <span>Strip: last 24 hours, bar height = response time</span>
+        <span><i class="hawk-sq down"></i> failed check</span>
+        <span><i class="hawk-sq empty"></i> no data</span>
+    </div>
 
     @* Rename lives outside batch-form: nested forms are not allowed. *@
-    <dialog id="group-rename-dialog" class="hawk-card" data-groups="@System.Text.Json.JsonSerializer.Serialize(Model.GroupSections.Where(g => g.Name is not null).Select(g => new { name = g.Name, count = g.Monitors.Count }))">
+    <dialog id="group-rename-dialog" class="hawk-card" data-groups="@System.Text.Json.JsonSerializer.Serialize(board.Groups.Where(g => g.Name is not null).Select(g => new { name = g.Name, count = g.Rows.Count }))">
         <form method="post" asp-page-handler="GroupRename" id="group-rename-form" class="space-y-3">
             <input type="hidden" name="Group" id="group-rename-old" />
             <label class="hawk-label" for="group-rename-new">New group name</label>
@@ -236,6 +184,8 @@ else
         </form>
     </dialog>
 }
+</div>
+</div>
 
 @section Scripts {
     <script>
@@ -250,7 +200,7 @@ else
             const headers = Array.from(document.querySelectorAll("input[data-group-select]"));
 
             const sync = () => {
-                // A failing monitor has a checkbox in two sections; count each monitor once.
+                // Count each monitor once (ids are unique per row).
                 const checked = new Set(boxes.filter(b => b.checked).map(b => b.value)).size;
                 defaultActions.hidden = checked > 0;
                 selectedActions.hidden = checked === 0;

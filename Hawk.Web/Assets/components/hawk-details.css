@@ -1,0 +1,155 @@
+/* Monitor details (Pages/Monitors/Details.cshtml): header, status lead, uptime figures, chart, 90-day row. */
+.hawk-d-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 12px;
+}
+
+.hawk-d-lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  margin-bottom: 8px;
+}
+
+.hawk-d-word {
+  font-weight: 800;
+  font-size: clamp(56px, 9vw, 104px);
+  line-height: 0.9;
+  letter-spacing: -0.01em;
+}
+
+.hawk-d-word.up { color: var(--up); }
+.hawk-d-word.down { color: var(--down); }
+.hawk-d-word.idle { color: var(--paused); }
+
+.hawk-d-since {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.hawk-d-since b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hawk-d-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.hawk-d-figures > div {
+  display: flex;
+  gap: 6px;
+}
+
+.hawk-d-figures dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hawk-d-sub {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.hawk-d-empty {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+.hawk-d-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.hawk-d-facts {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 4px 12px;
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.hawk-d-facts dt { color: var(--muted); }
+.hawk-d-facts dd { margin: 0; }
+
+/* Response-time chart */
+.hawk-d-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hawk-d-chart text {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.hawk-d-chart .gl { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+.hawk-d-chart .ln { fill: none; stroke: var(--chart); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.hawk-d-chart .band { fill: var(--down); opacity: 0.18; }
+.hawk-d-chart .pt { fill: var(--chart); stroke: var(--panel); stroke-width: 2; }
+.hawk-d-chart .pt.fail { fill: var(--down); }
+.hawk-d-chart .hit { fill: transparent; }
+
+/* 90-day row: one cell per UTC day */
+.hawk-d-days {
+  display: grid;
+  grid-template-columns: repeat(90, minmax(0, 1fr));
+  gap: 1px;
+  height: 32px;
+}
+
+.hawk-d-days > i,
+.hawk-d-legend i {
+  background: var(--faint);
+}
+
+.hawk-d-days > i.up,
+.hawk-d-legend i.up { background: var(--up); }
+.hawk-d-days > i.dim,
+.hawk-d-legend i.dim { background: color-mix(in srgb, var(--up) 55%, transparent); }
+.hawk-d-days > i.tint,
+.hawk-d-legend i.tint { background: color-mix(in srgb, var(--down) 45%, transparent); }
+.hawk-d-days > i.down,
+.hawk-d-legend i.down { background: var(--down); }
+
+.hawk-d-days > i:hover { outline: 1px solid var(--text); }
+
+.hawk-d-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hawk-d-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hawk-d-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+}

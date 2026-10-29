@@ -94,6 +94,7 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture)
         builder.Services.AddHawkApiAuthentication();
         builder.Services.AddScoped<ApiKeyService>();
         builder.Services.AddScoped<MonitorStatusService>();
+        builder.Services.AddScoped<MonitorHistoryService>();
         builder.Services.AddScoped<MonitorCommands>();
         builder.Services.AddScoped<MonitorEditor>();
         builder.Services.AddScoped<AlertRecipientResolver>();

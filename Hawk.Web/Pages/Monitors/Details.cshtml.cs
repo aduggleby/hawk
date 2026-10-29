@@ -19,7 +19,8 @@ namespace Hawk.Web.Pages.Monitors;
 /// <summary>
 /// Monitor details page model.
 /// </summary>
-public class DetailsModel(ApplicationDbContext db, MonitorCommands commands) : PageModel
+public class DetailsModel(
+    ApplicationDbContext db, MonitorCommands commands, MonitorStatusService statuses, MonitorHistoryService histories) : PageModel
 {
     /// <summary>
     /// Loaded monitor.
@@ -30,6 +31,16 @@ public class DetailsModel(ApplicationDbContext db, MonitorCommands commands) : P
     /// Recent runs.
     /// </summary>
     public List<MonitorRun> Runs { get; private set; } = [];
+
+    /// <summary>
+    /// Rollup data: 24 h strip and chart, 90-day row, uptime figures.
+    /// </summary>
+    public MonitorHistory? History { get; private set; }
+
+    /// <summary>
+    /// Big status word with its start time.
+    /// </summary>
+    public StatusLead? Lead { get; private set; }
 
     /// <summary>
     /// Full ping URL of a heartbeat (scheme and host as seen by the client, via forwarded headers), or null.
@@ -57,6 +68,11 @@ public class DetailsModel(ApplicationDbContext db, MonitorCommands commands) : P
             .Take(25)
             .AsNoTracking()
             .ToListAsync(cancellationToken);
+
+        var status = (await statuses.GetStatusesAsync([Monitor], cancellationToken))[id];
+        var needsUpSince = status.State == MonitorState.Active && status.Health == MonitorHealth.Ok;
+        History = await histories.GetAsync(Monitor, DateTimeOffset.UtcNow, needsUpSince, cancellationToken);
+        Lead = MonitorHistoryService.Lead(Monitor, status, History);
 
         return Page();
     }

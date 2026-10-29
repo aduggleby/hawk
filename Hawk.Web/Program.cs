@@ -165,6 +165,8 @@ builder.Services.AddScoped<IMonitorExecutor, MonitorExecutor>();
 builder.Services.AddScoped<IMonitorScheduler, MonitorScheduler>();
 builder.Services.AddScoped<IRunBucketRollup, RunBucketRollup>();
 builder.Services.AddScoped<MonitorStatusService>();
+builder.Services.AddScoped<MonitorHistoryService>();
+builder.Services.AddScoped<MonitorBoardService>();
 builder.Services.AddScoped<MonitorCommands>();
 builder.Services.AddScoped<MonitorEditor>();
 builder.Services.AddScoped<AlertRecipientResolver>();

@@ -94,7 +94,11 @@ public sealed record ApiMonitorDetail(
     IReadOnlyList<ApiHeader> Headers,
     IReadOnlyList<ApiMatchRule> MatchRules,
     Guid ConcurrencyStamp,
-    string? PingUrl);
+    string? PingUrl,
+    ApiUptime Uptime);
+
+/// <summary>Percent of passed completed runs over the last 24 hours, 7 days and 30 days (from the rollup); null without runs.</summary>
+public sealed record ApiUptime(double? Last24h, double? Last7d, double? Last30d);
 
 public sealed record ApiHeader(string Name, string Value);
 

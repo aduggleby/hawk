@@ -1,6 +1,6 @@
 // <file>
 // <summary>
-// Lists configured monitors and their last/next run timestamps.
+// The monitors overview (Tower board); data comes from MonitorBoardService.
 // </summary>
 // </file>
 
@@ -21,28 +21,13 @@ namespace Hawk.Web.Pages.Monitors;
 public class IndexModel(
     ApplicationDbContext db,
     IBackgroundJobClient jobs,
-    MonitorStatusService status,
+    MonitorBoardService board,
     MonitorCommands commands) : PageModel
 {
     /// <summary>
-    /// Monitors to display.
+    /// The board: headline, Attention list and group sections with rows.
     /// </summary>
-    public List<MonitorEntity> Monitors { get; private set; } = [];
-
-    /// <summary>
-    /// Monitors whose most recent run failed (shown at top).
-    /// </summary>
-    public List<MonitorEntity> FailingMonitors { get; private set; } = [];
-
-    /// <summary>
-    /// Latest completed run by monitor id.
-    /// </summary>
-    public Dictionary<Guid, LastCompletedRun> LastRunByMonitor { get; private set; } = [];
-
-    /// <summary>
-    /// All monitors by group (case-insensitive), sorted by name with Ungrouped last. Failing monitors are included.
-    /// </summary>
-    public List<GroupSection> GroupSections { get; private set; } = [];
+    public BoardModel Board { get; private set; } = BoardModel.Empty;
 
     [BindProperty]
     public List<Guid> SelectedMonitorIds { get; set; } = [];
@@ -51,41 +36,10 @@ public class IndexModel(
     public string? BatchAction { get; set; }
 
     /// <summary>
-    /// Loads the monitors list.
+    /// Loads the board.
     /// </summary>
-    public async Task OnGetAsync(CancellationToken cancellationToken)
-    {
-        // Sort in memory: SQL Server's default collation is case-insensitive, PostgreSQL's is not.
-        Monitors = (await db.Monitors
-            .AsNoTracking()
-            .ToListAsync(cancellationToken))
-            .OrderBy(m => !m.Enabled ? 2 : m.IsPaused ? 1 : 0)
-            .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        LastRunByMonitor = await status.GetLastCompletedRunsAsync(null, cancellationToken);
-
-        FailingMonitors = Monitors
-            .Where(m => MonitorStatusService.IsInFailingGroup(m, LastRunByMonitor))
-            .ToList();
-
-        var failingIds = FailingMonitors.Select(m => m.Id).ToHashSet();
-
-        // Group case-insensitively; the section is named after the ordinal-first spelling (the canonical one, see MonitorGroups).
-        GroupSections = Monitors
-            .GroupBy(m => MonitorGroups.Normalize(m.GroupName), StringComparer.OrdinalIgnoreCase)
-            .Select(g =>
-            {
-                var name = g.Key is null ? null : MonitorGroups.DisplayName(g.Select(m => m.GroupName!));
-                return new GroupSection(name, MonitorGroups.Anchor(name), g.ToList(), g.Count(m => failingIds.Contains(m.Id)));
-            })
-            .OrderBy(s => s.Name is null ? 1 : 0)
-            .ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    /// <summary>One group section of the index; <see cref="Name"/> is null for Ungrouped.</summary>
-    public sealed record GroupSection(string? Name, string Anchor, List<MonitorEntity> Monitors, int FailingCount);
+    public async Task OnGetAsync(CancellationToken cancellationToken) =>
+        Board = await board.BuildAsync(DateTimeOffset.UtcNow, cancellationToken);
 
     public async Task<IActionResult> OnPostGroupPauseAsync(string? group, CancellationToken cancellationToken)
     {

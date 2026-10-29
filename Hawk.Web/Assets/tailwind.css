@@ -180,6 +180,8 @@
 @import "./components/hawk-loading.css";
 @import "./components/hawk-alert.css";
 @import "./components/hawk-strip.css";
+@import "./components/hawk-details.css";
+@import "./components/hawk-board.css";
 
 /* App utilities */
 @import "./utilities/animations.css";

@@ -179,6 +179,7 @@ public static class ApiEndpoints
         var state = await db.MonitorAlertStates.AsNoTracking().FirstOrDefaultAsync(s => s.MonitorId == id, ct);
         var heartbeat = m.Type == MonitorType.Heartbeat;
         http.Response.Headers.ETag = ETagOf(m.ConcurrencyStamp);
+        var uptime = await http.RequestServices.GetRequiredService<MonitorHistoryService>().GetUptimeAsync(id, DateTimeOffset.UtcNow, ct);
 
         return Json(new ApiMonitorDetail(
             m.Id, m.Name, m.GroupName, m.Type, UrlOf(m), status.State, status.Health, m.CreatedByUserId == UserId(http), FailureOf(status),
@@ -198,7 +199,8 @@ public static class ApiEndpoints
                 .Select(r => new ApiMatchRule(r.Mode, r.Pattern)).ToList(),
             m.ConcurrencyStamp,
             // Same URL the Details page shows.
-            includePingUrl && m.HeartbeatToken is { } token ? $"{http.Request.Scheme}://{http.Request.Host}/ping/{token}" : null),
+            includePingUrl && m.HeartbeatToken is { } token ? $"{http.Request.Scheme}://{http.Request.Host}/ping/{token}" : null,
+            new ApiUptime(uptime.Last24h, uptime.Last7d, uptime.Last30d)),
             statusCode);
     }
 
