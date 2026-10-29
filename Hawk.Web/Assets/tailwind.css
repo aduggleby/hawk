@@ -182,6 +182,7 @@
 @import "./components/hawk-strip.css";
 @import "./components/hawk-details.css";
 @import "./components/hawk-board.css";
+@import "./components/hawk-run.css";
 
 /* App utilities */
 @import "./utilities/animations.css";

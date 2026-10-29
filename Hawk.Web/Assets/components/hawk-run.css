@@ -1,0 +1,36 @@
+/* Run diagnostics (Pages/Monitors/Runs/Details.cshtml): key/value grids and code blocks. */
+.hawk-r-kv {
+  display: grid;
+  grid-template-columns: minmax(90px, max-content) minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.hawk-r-kv dt { color: var(--muted); }
+
+.hawk-r-kv dd {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.hawk-r-label {
+  margin: 14px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hawk-r-pre {
+  margin: 0;
+  padding: 12px;
+  max-height: 480px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

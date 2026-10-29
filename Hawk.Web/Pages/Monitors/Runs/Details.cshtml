@@ -4,6 +4,9 @@
     ViewData["Title"] = "Run diagnostics";
     var state = string.IsNullOrWhiteSpace(Model.Run?.State) ? "completed" : Model.Run!.State;
     var isHeartbeat = Model.Monitor?.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat;
+    var isDone = string.Equals(state, "completed", StringComparison.OrdinalIgnoreCase);
+    var word = !isDone ? state.ToUpperInvariant() : Model.Run!.Success ? "OK" : "FAIL";
+    var wordClass = !isDone ? "idle" : Model.Run!.Success ? "up" : "down";
     static string UtcFallback(DateTimeOffset value) => value.UtcDateTime.ToString("g") + " UTC";
     static string UtcDetailedFallback(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
 }
@@ -16,8 +19,15 @@
     return;
 }
 
-<div class="flex items-start justify-between gap-4 mb-6" style="flex-wrap: wrap">
-    <div>
+<div class="hawk-d-head">
+    <div class="min-w-0">
+        <nav class="text-sm text-zinc-500 mb-2" aria-label="Breadcrumb">
+            <a asp-page="/Monitors/Index">Monitors</a>
+            <span class="mx-1">/</span>
+            <a asp-page="/Monitors/Details" asp-route-id="@Model.Monitor.Id">@Model.Monitor.Name</a>
+            <span class="mx-1">/</span>
+            <span>Run</span>
+        </nav>
         <h1 class="text-2xl font-semibold tracking-tight mb-1">Run diagnostics</h1>
         <div class="text-sm text-[color:var(--text-secondary)]">
             <a class="underline decoration-dotted underline-offset-2 hover:no-underline"
@@ -27,7 +37,7 @@
             <time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="short">@UtcFallback(Model.Run.StartedAt)</time>
         </div>
     </div>
-    <div class="flex items-center gap-2" style="flex-wrap: wrap">
+    <div class="flex flex-wrap items-center gap-2">
         @if (!isHeartbeat)
         {
             <form method="post" asp-page="/Monitors/Details" asp-page-handler="RunNow" asp-route-id="@Model.Monitor.Id">
@@ -37,6 +47,14 @@
         <a class="hawk-btn hawk-btn-ghost" asp-page="/Monitors/Details" asp-route-id="@Model.Monitor.Id">Back to monitor</a>
     </div>
 </div>
+
+<section class="hawk-d-lead" data-testid="status-lead" aria-label="Run result">
+    <span class="hawk-d-word @wordClass condensed" data-testid="run-result">@word</span>
+    <span class="hawk-d-since num">
+        started
+        <b><time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.StartedAt)</time></b>
+    </span>
+</section>
 
 @section Scripts {
     <script>
@@ -68,10 +86,10 @@
     <div class="lg:col-span-4 space-y-4">
         <div class="hawk-card">
             <div class="font-semibold mb-3">Run metadata</div>
-            <dl class="grid grid-cols-12 gap-y-4 text-sm">
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Result</dt>
-                <dd class="col-span-8">
-                    @if (!string.Equals(state, "completed", StringComparison.OrdinalIgnoreCase))
+            <dl class="hawk-r-kv">
+                <dt>Result</dt>
+                <dd>
+                    @if (!isDone)
                     {
                         <span class="hawk-badge hawk-badge-warning">@state.ToUpperInvariant()</span>
                     }
@@ -84,24 +102,20 @@
                         <span class="hawk-badge hawk-badge-danger">FAIL</span>
                     }
                 </dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Reason</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.Reason ?? "-")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Started</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">
-                    <time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.StartedAt)</time>
-                </dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Finished</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">
-                    <time data-utc="@Model.Run.FinishedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.FinishedAt)</time>
-                </dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Duration</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">@Model.Run.DurationMs ms</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">@(isHeartbeat ? "Response" : "HTTP status")</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.StatusCode?.ToString() ?? "NO_RESPONSE")</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Alert</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">@(Model.Run.AlertSent ? "sent" : (Model.Run.AlertError ?? "not sent"))</dd>
-                <dt class="col-span-4 text-[color:var(--text-secondary)] pt-1">Error</dt>
-                <dd class="col-span-8 font-mono text-xs break-words py-1">@(string.IsNullOrWhiteSpace(Model.Run.ErrorMessage) ? "-" : Model.Run.ErrorMessage)</dd>
+                <dt>Reason</dt>
+                <dd>@(Model.Run.Reason ?? "-")</dd>
+                <dt>Started</dt>
+                <dd><time data-utc="@Model.Run.StartedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.StartedAt)</time></dd>
+                <dt>Finished</dt>
+                <dd><time data-utc="@Model.Run.FinishedAt.ToString("O")" data-utc-format="detailed">@UtcDetailedFallback(Model.Run.FinishedAt)</time></dd>
+                <dt>Duration</dt>
+                <dd>@Model.Run.DurationMs ms</dd>
+                <dt>@(isHeartbeat ? "Response" : "HTTP status")</dt>
+                <dd>@(Model.Run.StatusCode?.ToString() ?? "NO_RESPONSE")</dd>
+                <dt>Alert</dt>
+                <dd>@(Model.Run.AlertSent ? "sent" : (Model.Run.AlertError ?? "not sent"))</dd>
+                <dt>Error</dt>
+                <dd>@(string.IsNullOrWhiteSpace(Model.Run.ErrorMessage) ? "-" : Model.Run.ErrorMessage)</dd>
             </dl>
         </div>
     </div>
@@ -109,62 +123,52 @@
     <div class="lg:col-span-8 space-y-4">
         <div class="hawk-card">
             <div class="font-semibold mb-3">@(isHeartbeat ? "Ping" : "Request")</div>
-            <div class="space-y-2 text-xs font-mono">
-                <div class="break-words"><span class="text-[color:var(--text-secondary)]">@(isHeartbeat ? "Path:" : "URL:")</span> @(Model.Run.RequestUrl ?? "-")</div>
-                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Method:</span> @(Model.Run.RequestMethod ?? "-")</div>
-                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Content-Type:</span> @(Model.Run.RequestContentType ?? "-")</div>
+            <dl class="hawk-r-kv">
+                <dt>@(isHeartbeat ? "Path" : "URL")</dt><dd>@(Model.Run.RequestUrl ?? "-")</dd>
+                <dt>Method</dt><dd>@(Model.Run.RequestMethod ?? "-")</dd>
+                <dt>Content-Type</dt><dd>@(Model.Run.RequestContentType ?? "-")</dd>
                 @if (!isHeartbeat)
                 {
-                    <div class="break-words"><span class="text-[color:var(--text-secondary)]">Timeout:</span> @(Model.Run.RequestTimeoutMs?.ToString() ?? "-") ms</div>
+                    <dt>Timeout</dt><dd>@(Model.Run.RequestTimeoutMs?.ToString() ?? "-") ms</dd>
                 }
-                <div>
-                    <div class="text-[color:var(--text-secondary)] mb-1">@(isHeartbeat ? "Source (client IP, User-Agent)" : "Headers")</div>
-                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@((string.IsNullOrWhiteSpace(Model.Run.RequestHeadersJson) ? "{}" : Model.Run.RequestHeadersJson))</pre>
-                </div>
-                @if (!isHeartbeat)
-                {
-                    <div>
-                        <div class="text-[color:var(--text-secondary)] mb-1">Body snippet</div>
-                        <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@(string.IsNullOrWhiteSpace(Model.Run.RequestBodySnippet) ? "-" : Model.Run.RequestBodySnippet)</pre>
-                    </div>
-                }
-            </div>
+            </dl>
+            <div class="hawk-r-label">@(isHeartbeat ? "Source (client IP, User-Agent)" : "Headers")</div>
+            <pre class="hawk-r-pre">@((string.IsNullOrWhiteSpace(Model.Run.RequestHeadersJson) ? "{}" : Model.Run.RequestHeadersJson))</pre>
+            @if (!isHeartbeat)
+            {
+                <div class="hawk-r-label">Body snippet</div>
+                <pre class="hawk-r-pre">@(string.IsNullOrWhiteSpace(Model.Run.RequestBodySnippet) ? "-" : Model.Run.RequestBodySnippet)</pre>
+            }
         </div>
 
         @if (!isHeartbeat)
         {
-        <div class="hawk-card">
-            <div class="font-semibold mb-3">Response</div>
-            <div class="space-y-2 text-xs font-mono">
-                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Content-Type:</span> @(Model.Run.ResponseContentType ?? "-")</div>
-                <div class="break-words"><span class="text-[color:var(--text-secondary)]">Content-Length:</span> @(Model.Run.ResponseContentLength?.ToString() ?? "-")</div>
-                <div>
-                    <div class="text-[color:var(--text-secondary)] mb-1">Headers</div>
-                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@Model.FormatJson(Model.Run.ResponseHeadersJson, "{}")</pre>
-                </div>
-                <div>
-                    <div class="text-[color:var(--text-secondary)] mb-1">Response snippet</div>
-                    @{
-                        var snippet = string.IsNullOrWhiteSpace(Model.Run.ResponseSnippet) ? "-" : Model.Run.ResponseSnippet!;
-                        const int previewLimit = 600;
-                        var hasMore = snippet.Length > previewLimit;
-                        var preview = hasMore ? snippet[..previewLimit] + "..." : snippet;
-                    }
-                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@preview</pre>
-                    @if (hasMore)
-                    {
-                        <details class="mt-2">
-                            <summary class="cursor-pointer select-none text-[color:var(--text-secondary)]">Show full response snippet</summary>
-                            <pre class="mt-2 p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@snippet</pre>
-                        </details>
-                    }
-                </div>
-                <div>
-                    <div class="text-[color:var(--text-secondary)] mb-1">Match results</div>
-                    <pre class="p-3 bg-[color:var(--bg-secondary)] border border-[color:var(--border-primary)] overflow-x-auto whitespace-pre-wrap break-words">@((string.IsNullOrWhiteSpace(Model.Run.MatchResultsJson) ? "[]" : Model.Run.MatchResultsJson))</pre>
-                </div>
+            <div class="hawk-card">
+                <div class="font-semibold mb-3">Response</div>
+                <dl class="hawk-r-kv">
+                    <dt>Content-Type</dt><dd>@(Model.Run.ResponseContentType ?? "-")</dd>
+                    <dt>Content-Length</dt><dd>@(Model.Run.ResponseContentLength?.ToString() ?? "-")</dd>
+                </dl>
+                <div class="hawk-r-label">Headers</div>
+                <pre class="hawk-r-pre">@Model.FormatJson(Model.Run.ResponseHeadersJson, "{}")</pre>
+                <div class="hawk-r-label">Response snippet</div>
+                @{
+                    var snippet = string.IsNullOrWhiteSpace(Model.Run.ResponseSnippet) ? "-" : Model.Run.ResponseSnippet!;
+                    const int previewLimit = 600;
+                    var hasMore = snippet.Length > previewLimit;
+                    var preview = hasMore ? snippet[..previewLimit] + "..." : snippet;
+                }
+                <pre class="hawk-r-pre">@preview</pre>
+                @if (hasMore)
+                {
+                    <details class="mt-2">
+                        <summary class="cursor-pointer select-none text-[color:var(--text-secondary)]">Show full response snippet</summary>
+                        <pre class="hawk-r-pre" style="margin-top: 8px">@snippet</pre>
+                    </details>
+                }
+                <div class="hawk-r-label">Match results</div>
+                <pre class="hawk-r-pre">@((string.IsNullOrWhiteSpace(Model.Run.MatchResultsJson) ? "[]" : Model.Run.MatchResultsJson))</pre>
             </div>
-        </div>
         }
     </div>
 </div>

@@ -34,7 +34,7 @@ async function openSection(page, title: string) {
 
 async function waitForRunDiagnosticsResult(page, expected: 'OK' | 'FAIL', timeoutMs = 60_000) {
   await expect(page.getByRole('heading', { name: /run diagnostics/i })).toBeVisible();
-  const badge = page.locator('dl .hawk-badge').first();
+  const badge = page.getByTestId('run-result');
 
   await expect.poll(
     async () => (await badge.textContent())?.trim() ?? '',
