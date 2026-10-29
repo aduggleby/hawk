@@ -6,6 +6,14 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-29
+
+### Added
+
+- Monitor **groups**: an optional group name per monitor (Create/Edit field with suggestions; names match ignoring case and take an existing group's spelling). The monitors index lists monitors by group under the Failing section (failing monitors appear in both), with per-group select-all, Pause, Resume, Run and Rename (rename into another group merges after a confirmation). Details shows a group breadcrumb.
+- Agent API: `group` on monitor list, detail, create and `PATCH`; `GET /api/v1/monitors?group=`; `GET /api/v1/groups` with counts; `POST /api/v1/groups/pause`, `/resume`, `/run` and `/rename`. See `docs/agent-api.md`.
+- JSON export/import and the Admin bulk transfer carry `group` (still format version 3; a missing field means no group). Adds an additive schema migration (`AddMonitorGroupName`; back up before upgrading).
+
 ## [0.12.0] - 2026-10-29
 
 ### Added

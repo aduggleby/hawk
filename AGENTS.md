@@ -13,7 +13,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.12.0`
+- Version: `0.13.0`
 
 ## Ports
 
@@ -339,9 +339,17 @@ Alert recipient resolution (in order):
 
 ## Monitors Index — Failing Group
 
-- The monitors index page groups monitors into two sections: **Failing** (most recent run failed) and **All monitors**.
-- Failing monitors are queried separately using a join on the most recent `MonitorRun` where `Success == false`.
-- Failing monitors appear at the top in a distinct section so operators can immediately see what needs attention.
+- The monitors index page shows a **Failing** section (most recent completed run failed, `MonitorStatusService.IsInFailingGroup`) at the top, then every monitor by group (see "Monitor Groups"). A failing monitor appears in both places, so its link and checkbox exist twice on the page (e2e locators must be scoped; the batch handler de-duplicates IDs and the JS keeps the twin checkboxes in sync).
+
+## Monitor Groups
+
+- `Monitor.GroupName` (`[MaxLength(100)]`, nullable, no index; migration `AddMonitorGroupName` in both sets). Free text; a group exists while any monitor uses it (no group entity). API/JSON field name is `group`. Plan: `docs/plans/2026-10-29-1039-feat-groups-and-tower-redesign-plan.md` (0.13.0 = release A).
+- `Services/Monitoring/MonitorGroups.cs` is the one place for group rules: `Normalize` (trim, blank = null), `Validate` (≤100 chars, no NUL; also run on every lookup input, because PostgreSQL rejects NUL in queries), `CanonicalizeAsync` (case-insensitive match against other monitors' groups, in memory; takes the existing spelling), `DisplayName` (ordinal-first spelling among case-insensitively equal names), `InGroup` (`GroupName.ToLower() == name` filter, translates on both providers), `Anchor` (`group-<slug>-<6 hex of SHA-256>`, ungrouped `group-none`) and `ListAsync`.
+- `MonitorEditor.CreateAsync/UpdateAsync` normalize + canonicalize (update excludes the edited monitor, so the only member can change the casing). The Edit page and `ApiMonitorBody.FromEntity` copy `GroupName` into the form; dropping that would clear groups on save.
+- Group commands in `MonitorCommands`: pause/resume = existing `PauseAsync/ResumeAsync(MonitorGroups.InGroup(...))` (stamps + heartbeat deadlines unchanged); `QueueGroupRunAsync` = `QueueManualRunAsync(reuseInFlight: true, rejectDisabled: true)` per HTTP monitor (queued / already in flight / skipped heartbeats and disabled); `RenameGroupAsync` = validate, canonicalize against other groups (a case-only rename stores the new spelling; same name = no-op), set-based update that renews stamps. The page and the API call the same methods.
+- Index: group headers sit inside `batch-form`, so group buttons use `formaction` + `name="Group"` (no nested forms); the rename dialog is a separate form outside it and confirms a merge into another existing group. Ungrouped has select-all only.
+- API: `group` on list/detail/create/PATCH (merge patch: absent keeps, null/blank clears), `GET /api/v1/monitors?group=` (case-insensitive; empty = ungrouped), `GET /api/v1/groups` (`failingCount` = last completed run failed, same rule as the Index), `POST /api/v1/groups/{pause,resume,run,rename}` with a JSON body `{group[, newName]}` (unknown group 404).
+- JSON export writes `group` (format still v3; missing = no group); single import prefills it; bulk transfer canonicalizes against existing groups and earlier file entries and shows a Group column. Seeded monitors are in group `Seed`.
 
 ## Monitors Index — Batch Actions
 
