@@ -388,3 +388,21 @@ stateDiagram-v2
    - Neither the app log nor the Caddy access log contains the key.
 7. Rollback: restore the 0.10.0 pin (`sha256:e111226e121f82ad7953d6f7a24ba8f08e706ca3aa2dfb42386ef12a5c584c5c`) and redeploy. The migration only adds a table, so 0.10.0 still runs against the migrated schema. Restore the `pg_dump` only if data is damaged.
 8. Record the deployment in this plan's Release section.
+
+## Production Deployment — 2026-10-29
+
+- Version **0.11.0**; source commit `397a407` (pushed to GitHub `main`).
+- Image `registry.dualconsult.net/dualconsult/hawk@sha256:a72cc40f95a6ff8a8c480f5968255305a974f89a66022cb0c6476d6d93c2c6ed`, built from `git archive HEAD` (not pushed to GHCR).
+- Backup before the deploy: `pg_dump -Fc` at `/srv/dualconsult/backups/hawk/hawk-pre-0.11.0-20261029T063948Z.dump` on the db VM (85 MB, readable by `pg_restore -l`).
+- Release pin: infra commit `13cdfeb`. Deployed with `scripts/deploy-app.sh hawk app edge`.
+- Verification before the deploy:
+  - `HAWK_REQUIRE_POSTGRES_TESTS=1 dotnet test`: 258/258 passed.
+  - E2E: 15/15 on SQL Server and 15/15 on PostgreSQL, rerun after the review fixes.
+  - Reviews: a ten-reviewer `ce-code-review` pass and a separate Codex review of `21f3d36..4a09442`. The six findings were fixed in `9f88a90`..`397a407`, and a Codex re-review of the fixes found no defects. Deferred: an index for the last-completed-run query, the API DTO duplication and the `QueueManualRunAsync` flag parameters.
+- Live checks:
+  - Migration `20261029060657_AddApiKeys` applied on PostgreSQL.
+  - The container runs v0.11.0 with 0 restarts, UID 1654 and a read-only root filesystem.
+  - `/live` returns 200; public `/ready` returns 404.
+  - `/api/v1` without a key returns 401 and with an unknown key returns 401. `/api/nope` returns 404. All three responses are `application/problem+json`.
+  - A dummy `hawk_` key sent as Bearer does not appear in the app logs (file and console). Caddy logs `Authorization` as `REDACTED`, and no `hawk_` key pattern appears in its access log.
+- Not done by the agent: creating a real key in the UI, listing monitors with it and revoking it. That check needs the production admin login.
