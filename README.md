@@ -17,10 +17,42 @@ ASP.NET Razor Pages uptime checker and URL verifier with Hangfire scheduling, SQ
 
 ## Screenshots
 
-- [All screenshots](screenshots/)
-- [Monitor details screenshot](screenshots/13-monitor-details-with-runs.png)
+Demo data, Hawk 0.15.0.
 
-![Monitor details](screenshots/13-monitor-details-with-runs.png)
+**Monitors board** — a headline, an Attention list of what is down and since when, and every group with a 24-hour strip per monitor (bar height = response time, red = a failed check).
+
+![Monitors board (dark)](docs/readme/monitors-board-dark.png)
+
+<details>
+<summary>Light theme and mobile</summary>
+
+![Monitors board (light)](docs/readme/monitors-board-light.png)
+
+<img src="docs/readme/monitors-board-mobile.png" alt="Monitors board on a phone" width="390">
+
+</details>
+
+**Monitor details** — status and since when, 24h/7d/30d uptime, a 24-hour response-time chart, a 90-day uptime row and the recent runs.
+
+![Failing monitor](docs/readme/monitor-down-details.png)
+
+<details>
+<summary>Healthy monitor, heartbeat monitor, run diagnostics, create form</summary>
+
+![Healthy monitor (light)](docs/readme/monitor-up-details.png)
+
+![Heartbeat monitor](docs/readme/heartbeat-details.png)
+
+![Run diagnostics](docs/readme/run-diagnostics.png)
+
+![Create monitor](docs/readme/monitor-create.png)
+
+</details>
+
+**Grouped alert email** — three monitors failing in the same minute arrive as one summary.
+
+<img src="docs/readme/alert-summary-email.png" alt="Alert summary email" width="600">
+
 
 ## Local Dev Scripts
 
