@@ -56,3 +56,23 @@ Extends the agent API (`docs/plans/2026-10-29-0654-feat-agent-api-plan.md`, ship
 - E2E green on SQL Server and PostgreSQL.
 - Code review (Opus reviewers plus Codex), with fixes applied.
 - Deploy per the 0.11.0 Release section: push, image from `git archive HEAD`, `pg_dump`, `release.env` pin, `deploy-app.sh hawk app edge`, live checks, record the deployment here.
+
+## Production Deployment — 2026-10-29
+
+- Version **0.12.0**; source commit `2363627` (pushed to GitHub `main`).
+- Image `registry.dualconsult.net/dualconsult/hawk@sha256:5dffc17d83d4d67c01a60dcff4b6bda09a99cdb1ae7beffc6bb0baa6d8c5c282`, built from `git archive HEAD` (not pushed to GHCR).
+- Backup: `/srv/dualconsult/backups/hawk/hawk-pre-0.12.0-20261029T073833Z.dump` on the db VM.
+- Release pin: infra commit `995a130`. Deployed with `scripts/deploy-app.sh hawk app edge`.
+- Verification:
+  - `HAWK_REQUIRE_POSTGRES_TESTS=1 dotnet test`: 330/330 passed.
+  - `ando run` (DIND is now enabled in `ando.config`): exit 0, 264 passed, 66 Postgres tests skipped inside the ando container.
+  - E2E: 16/16 on SQL Server and 16/16 on PostgreSQL.
+- Reviews:
+  - The monitor CRUD commits got five reviewers plus Codex. Fixed in `2363627`: the API caps headers and match rules at 5, and PATCH returns 409 instead of re-applying a stale snapshot. A blank `alertEmailOverride` now clears the override.
+  - The redirect commit got Codex and an Opus reviewer: no defects.
+  - Deferred: bulk JSON import still accepts more than 5 headers or match rules (pre-existing). Saving an HTTP monitor still postpones its next run by one interval, as the Edit page does.
+- Live checks:
+  - Migration `AddMonitorFollowRedirects` applied; all 32 existing monitors have `FollowRedirects = true`.
+  - The container runs v0.12.0 with 0 restarts, UID 1654 and a read-only root filesystem.
+  - `/live` returns 200 and `/ready` returns 404.
+  - `/api/v1`, POST `/api/v1/monitors` and DELETE without a key return 401; `/api/nope` returns 404. These are problem+json, except the DELETE, whose content type was not captured.
