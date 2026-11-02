@@ -27,6 +27,11 @@ public sealed class DatabaseHealthCheck(ApplicationDbContext db) : IHealthCheck
                 ? HealthCheckResult.Healthy("Database reachable.")
                 : HealthCheckResult.Unhealthy("Database not reachable.");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The probe hung up (e.g. the edge reloaded); not a database failure, so do not report Unhealthy (logged at Error).
+            return HealthCheckResult.Degraded("Health check canceled: request aborted.");
+        }
         catch (Exception ex)
         {
             return HealthCheckResult.Unhealthy("Database check failed.", ex);

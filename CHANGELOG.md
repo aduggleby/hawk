@@ -6,6 +6,12 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-02
+
+### Fixed
+
+- `/live` and `/ready` probes that the client hangs up on (for example the edge proxy reloading during a deploy) now end with status 499 and no longer log errors (`Unhealthy` database check, 500 with `TaskCanceledException`, 503). Real failures still return 503 and log at Error.
+
 ## [0.16.0] - 2026-10-29
 
 ### Changed

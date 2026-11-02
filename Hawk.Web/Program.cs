@@ -245,12 +245,7 @@ if (!app.Configuration.GetValue("Hawk:DisableHttpsRedirection", false))
 app.UseSerilogRequestLogging(options =>
 {
     // Health probes run every few seconds; keep them out of the default log output.
-    options.GetLevel = (httpContext, _, ex) =>
-        ex is null && httpContext.Response.StatusCode < 500 && IsHealthPath(httpContext.Request.Path)
-            ? LogEventLevel.Verbose
-            : ex is not null || httpContext.Response.StatusCode >= 500
-                ? LogEventLevel.Error
-                : LogEventLevel.Information;
+    options.GetLevel = (httpContext, _, ex) => HealthRequestAbort.GetLevel(httpContext, ex);
 
     // The ping token is a bearer secret: never write it to the log.
     options.GetMessageTemplateProperties = (httpContext, path, elapsedMs, statusCode) =>
@@ -261,6 +256,9 @@ app.UseSerilogRequestLogging(options =>
         new LogEventProperty("Elapsed", new ScalarValue(elapsedMs)),
     ];
 });
+
+// Probes the edge proxy hangs up on (reload during a deploy) end as 499, not as errors.
+app.UseHawkHealthRequestAbort();
 
 // Preserve exception details in HttpContext.Items so /Error can render diagnostics
 // even if the exception feature is not populated by upstream middleware.
@@ -302,9 +300,6 @@ app.MapRazorPages()
    .WithStaticAssets();
 
 app.Run();
-
-static bool IsHealthPath(PathString path) =>
-    path.Equals("/live", StringComparison.OrdinalIgnoreCase) || path.Equals("/ready", StringComparison.OrdinalIgnoreCase);
 
 static bool AreKeyFilesReadable(string path)
 {
