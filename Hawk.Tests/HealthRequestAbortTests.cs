@@ -76,13 +76,30 @@ public class HealthRequestAbortTests
     {
         await using var provider = HealthProvider([]);
         using var scope = provider.CreateScope();
-        var check = new DatabaseHealthCheck(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
+        var accessor = new HttpContextAccessor { HttpContext = NewContext("/ready", cts.Token) };
+        var check = new DatabaseHealthCheck(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), accessor);
 
         var result = await check.CheckHealthAsync(new HealthCheckContext(), cts.Token);
 
         Assert.NotEqual(HealthStatus.Unhealthy, result.Status);
+    }
+
+    [Fact]
+    public async Task Database_check_is_unhealthy_when_it_times_out_without_a_client_abort()
+    {
+        await using var provider = HealthProvider([]);
+        using var scope = provider.CreateScope();
+        // The registration's timeout cancels the check's token while the request is still open.
+        var accessor = new HttpContextAccessor { HttpContext = NewContext("/ready", CancellationToken.None) };
+        var check = new DatabaseHealthCheck(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), accessor);
+        using var timeout = new CancellationTokenSource();
+        await timeout.CancelAsync();
+
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), timeout.Token);
+
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
     }
 
     [Fact]

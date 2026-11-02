@@ -61,6 +61,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 var databaseProvider = DatabaseSetup.GetProvider(builder.Configuration);
 builder.Services.AddHawkDbContext(databaseProvider, connectionString);
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+builder.Services.AddHttpContextAccessor(); // DatabaseHealthCheck tells a client abort from its own timeout
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: [DatabaseHealthCheck.ReadyTag], timeout: TimeSpan.FromSeconds(5));
 

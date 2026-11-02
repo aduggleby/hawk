@@ -6,6 +6,12 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-11-02
+
+### Fixed
+
+- The database readiness check reports `Degraded` only when the client really hung up. If its own 5 s timeout fires (a hung database), it stays `Unhealthy`, so `/ready` returns 503 instead of 200.
+
 ## [0.16.1] - 2026-11-02
 
 ### Fixed

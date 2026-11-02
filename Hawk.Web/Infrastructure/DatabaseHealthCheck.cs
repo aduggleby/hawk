@@ -6,6 +6,7 @@
 // </file>
 
 using Hawk.Web.Data;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Hawk.Web.Infrastructure;
@@ -13,7 +14,7 @@ namespace Hawk.Web.Infrastructure;
 /// <summary>
 /// Reports whether the application database is reachable.
 /// </summary>
-public sealed class DatabaseHealthCheck(ApplicationDbContext db) : IHealthCheck
+public sealed class DatabaseHealthCheck(ApplicationDbContext db, IHttpContextAccessor? httpContextAccessor = null) : IHealthCheck
 {
     /// <summary>Tag used to select this check for /ready.</summary>
     public const string ReadyTag = "ready";
@@ -27,9 +28,11 @@ public sealed class DatabaseHealthCheck(ApplicationDbContext db) : IHealthCheck
                 ? HealthCheckResult.Healthy("Database reachable.")
                 : HealthCheckResult.Unhealthy("Database not reachable.");
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (httpContextAccessor?.HttpContext?.RequestAborted.IsCancellationRequested == true)
         {
             // The probe hung up (e.g. the edge reloaded); not a database failure, so do not report Unhealthy (logged at Error).
+            // Only a client abort counts: the registration's timeout cancels the same token, and a hung
+            // database must stay Unhealthy (503), not Degraded (200).
             return HealthCheckResult.Degraded("Health check canceled: request aborted.");
         }
         catch (Exception ex)
