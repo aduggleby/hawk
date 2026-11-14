@@ -6,6 +6,17 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-11-14
+
+### Added
+
+- Each request log line now records the request ID, client IP and user ID. The edge proxy's `X-Request-Id` becomes the request ID, so one ID finds a request in both Hawk's log and the edge access log. The error page shows the same ID.
+- Requests slower than `Hawk:Logging:SlowRequestMs` (default 1000) and EF queries slower than `Hawk:Logging:SlowSqlMs` (default 500, logged with their SQL text) are logged as warnings.
+
+### Fixed
+
+- Page loads the browser abandons are logged as status 499 at Information level, no longer as 500 errors with a stack trace.
+
 ## [0.16.3] - 2026-11-14
 
 ### Fixed

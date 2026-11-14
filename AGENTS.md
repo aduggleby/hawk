@@ -13,7 +13,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), "Tower" design (0.14.0, polished in 0.16.0, see "Tower Design"), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.16.3`
+- Version: `0.16.4`
 
 ## Ports
 
@@ -90,7 +90,7 @@ dotnet ef migrations add <Name> --project Hawk.Web --context PostgresApplication
 
 - `GET /live`: process up, runs no checks (no DB). Always `200 Healthy`.
 - `GET /ready`: `DatabaseHealthCheck` (`db.Database.CanConnectAsync`, 5s timeout); `200 Healthy` or `503 Unhealthy`.
-- Both are mapped with `MapHealthChecks(...).AllowAnonymous()` in `Program.cs`; request logging for them is at `Verbose` so probes don't flood the log.
+- Both are mapped with `MapHealthChecks(...).AllowAnonymous()` in `Program.cs`; request logging for them is at `Verbose` so probes don't flood the log; a probe the client hung up on ends as 499 (`RequestAbort`).
 - Plain-HTTP probes need `Hawk__DisableHttpsRedirection=true` (otherwise they get a redirect). The app server's Caddy health-checks `/ready` and blocks `/ready` and `/health/*` publicly.
 
 ## Allowed Status Codes
@@ -521,6 +521,12 @@ Implementation:
 - Startup logs `Database provider: ... File logging: ...`.
 - `Microsoft.EntityFrameworkCore.Database.Command` is at `Warning` in `appsettings.json` (Serilog `MinimumLevel.Override`), so per-tick scheduler queries are not logged; failed commands still log at `Error`.
 
+Debugging aids (0.16.4):
+- **Request id across edge and app**: Caddy (`apps/hawk/site.caddy` in the infra repo) adds `request_id` ({http.request.uuid}) to its JSON access log (`/var/log/caddy/access.log` on the edge VM, ~30 days, all sites) and sends it as `X-Request-Id`. `RequestCorrelation.UseHawkRequestCorrelation` makes a valid id (`[A-Za-z0-9._:-]{1,64}`) the request's `TraceIdentifier` (also the Request ID on the error page). Request log line: `HTTP GET /monitors responded 200 in 12.3 ms (req <id>, ip <client ip>, user <user id>)`. Find a request in both logs: `sudo grep <id> /srv/dualconsult/data/hawk/logs/hawk-YYYYMMDD.log` (apps VM) and `sudo grep <id> /var/log/caddy/access.log` (edge VM). The access log also holds what Hawk does not log: user agent, `Sec-Fetch-User` (`?1` = a real click or Enter, not a script), protocol, Referer.
+- **Client aborts**: `RequestAbort.UseHawkRequestAbort` (all paths) turns the cancellation of a request the client hung up on into status 499 logged at Information (an abandoned page load used to log as ERR 500 "Query was cancelled"). Caddy logs the same requests as 499.
+- **Slow requests**: request log lines slower than `Hawk:Logging:SlowRequestMs` (default 1000, 0 = off) are `WRN`; health probes stay `Verbose`.
+- **Slow SQL**: `SlowSqlInterceptor` (one shared instance; a new one per context would make EF build a new internal service provider and model each time) logs EF commands slower than `Hawk:Logging:SlowSqlMs` (default 500, 0 = off) as `WRN Slow SQL (<ms> ms, <context>): <sql>` with the parameterized SQL only. Readers are timed until the first row; Hangfire's storage queries are not covered.
+
 ## DataProtection Keys (Docker)
 
 Problem:
@@ -575,6 +581,7 @@ Upgrading an existing deployment to `0.9.27`+ (non-root image): the `hawk_dpkeys
   - `Hawk__Logging__File__Path` (default `logs`), `Hawk__Logging__File__RetainedDays` (default 30)
   - `Hawk__DataProtection__KeysPath` (default `/var/lib/hawk/dpkeys` in containers)
 - Health: `GET /live` (no DB), `GET /ready` (DB reachable, else 503)
+- Debug logging: `Hawk__Logging__SlowRequestMs` (default 1000, 0 = off), `Hawk__Logging__SlowSqlMs` (default 500, 0 = off)
 - Scheduler:
   - `Hawk__Scheduler__Enabled` (default true)
   - `Hawk__Scheduler__TickSeconds` (default 30, or 5 in Testing unless overridden)
