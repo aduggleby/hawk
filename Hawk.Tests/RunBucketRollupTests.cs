@@ -483,6 +483,26 @@ public sealed class RunBucketRollupPostgresTests(PostgresFixture fixture)
         Assert.False(Exists());
     }
 
+    [SkippableFact]
+    public async Task Startup_registers_the_scheduler_watchdog_or_removes_it_when_scheduling_is_off()
+    {
+        await using var app = await CreateAppAsync();
+        var storage = app.Services.GetRequiredService<JobStorage>();
+        var recurring = new RecurringJobManager(storage);
+
+        bool Exists()
+        {
+            using var conn = storage.GetConnection();
+            return conn.GetRecurringJobs().Any(j => j.Id == MonitorScheduler.WatchdogJobId);
+        }
+
+        MonitorScheduler.EnsureWatchdog(recurring, schedulerEnabled: true);
+        Assert.True(Exists());
+
+        MonitorScheduler.EnsureWatchdog(recurring, schedulerEnabled: false);
+        Assert.False(Exists());
+    }
+
     // ---- helpers ----
 
     private sealed class TestApp(ServiceProvider services) : IAsyncDisposable

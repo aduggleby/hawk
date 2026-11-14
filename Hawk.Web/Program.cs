@@ -210,6 +210,9 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     // Start the scheduler loop.
     await scope.ServiceProvider.GetRequiredService<IMonitorScheduler>().EnsureStartedAsync(CancellationToken.None);
+    MonitorScheduler.EnsureWatchdog(
+        scope.ServiceProvider.GetRequiredService<IRecurringJobManager>(),
+        app.Configuration.GetValue("Hawk:Scheduler:Enabled", true));
 
     // Run-bucket rollup: recurring refresh plus a startup backfill, or removal when scheduling is off.
     RunBucketRollup.EnsureStarted(

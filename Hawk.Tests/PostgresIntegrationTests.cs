@@ -616,6 +616,59 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
     }
 
     [SkippableFact]
+    public async Task Duplicate_scheduler_chains_collapse_and_a_busy_lock_never_waits()
+    {
+        await using var app = await CreateAppAsync();
+        var http = await AddMonitorAsync(app);
+
+        // First tick continues the chain.
+        var first = await TickSchedulerAsync(app);
+        Assert.Equal(1, first.ScheduledTicks());
+        Assert.Contains(http, first.EnqueuedMonitorIds());
+
+        // A second chain ticking right after ends at once: no work, no successor.
+        await SetMonitorNextRunAtAsync(app, http, null);
+        var duplicate = await TickSchedulerAsync(app);
+        Assert.Equal(0, duplicate.ScheduledTicks());
+        Assert.Empty(duplicate.EnqueuedMonitorIds());
+
+        // The duplicate did not record itself: a tick one interval after the first continues the chain.
+        var storage = app.Services.GetRequiredService<JobStorage>();
+        AgeLastTick(app);
+        Assert.Equal(1, (await TickSchedulerAsync(app)).ScheduledTicks());
+
+        // Lock held elsewhere: the tick exits at once, without work or successor (no Thread.Sleep polling).
+        using (var conn = storage.GetConnection())
+        using (conn.AcquireDistributedLock("hawk:scheduler:tick", TimeSpan.FromSeconds(5)))
+        {
+            AgeLastTick(app);
+            await SetMonitorNextRunAtAsync(app, http, null);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var busy = await TickSchedulerAsync(app);
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1), $"Busy tick waited {watch.Elapsed}.");
+            Assert.Equal(0, busy.ScheduledTicks());
+            Assert.Empty(busy.EnqueuedMonitorIds());
+        }
+    }
+
+    [SkippableFact]
+    public async Task Scheduler_watchdog_restarts_a_dead_chain_only()
+    {
+        await using var app = await CreateAppAsync();
+
+        // Never ticked: stale, a tick is enqueued.
+        Assert.Equal(1, (await RunWatchdogAsync(app)).EnqueuedTicks());
+
+        // Live chain (just ticked): nothing.
+        await TickSchedulerAsync(app);
+        Assert.Equal(0, (await RunWatchdogAsync(app)).EnqueuedTicks());
+
+        // Last tick older than 3 intervals + 60 s: restarted.
+        AgeLastTick(app, seconds: 151);
+        Assert.Equal(1, (await RunWatchdogAsync(app)).EnqueuedTicks());
+    }
+
+    [SkippableFact]
     public async Task Scheduler_enqueues_overdue_heartbeats_but_never_writes_their_deadline()
     {
         await using var app = await CreateAppAsync();
@@ -632,7 +685,8 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
         Assert.Equal(deadlineBefore, (await GetMonitorAsync(app, id)).NextRunAt);
         Assert.NotNull((await GetMonitorAsync(app, http)).NextRunAt);
 
-        // Still overdue on the next tick: enqueued again (duplicates are harmless), still untouched.
+        // Still overdue on the next tick (one interval later): enqueued again (duplicates are harmless), still untouched.
+        AgeLastTick(app);
         Assert.Contains(id, (await TickSchedulerAsync(app)).EnqueuedMonitorIds());
         Assert.Equal(deadlineBefore, (await GetMonitorAsync(app, id)).NextRunAt);
     }
@@ -1529,6 +1583,14 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
         AlertEmailOverride = "alerts@example.com",
     };
 
+    private static async Task SetMonitorNextRunAtAsync(TestApp app, Guid id, DateTimeOffset? nextRunAt)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors
+            .Where(m => m.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.NextRunAt, nextRunAt));
+    }
+
     private static async Task<Guid> AddMonitorAsync(TestApp app)
     {
         await using var scope = app.Services.CreateAsyncScope();
@@ -1634,6 +1696,29 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
         return (result, page.TempData["FlashError"] as string);
     }
 
+    /// <summary>Moves the scheduler's last recorded tick into the past (default: one 30 s interval and a bit).</summary>
+    private static void AgeLastTick(TestApp app, int seconds = 31)
+    {
+        using var conn = app.Services.GetRequiredService<JobStorage>().GetConnection();
+        conn.SetRangeInHash("hawk:scheduler", [new KeyValuePair<string, string>("lastTickAt", DateTimeOffset.UtcNow.AddSeconds(-seconds).ToString("O"))]);
+    }
+
+    private static async Task<RecordingJobClient> RunWatchdogAsync(TestApp app)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var jobs = new RecordingJobClient();
+        await NewScheduler(app, scope, jobs).WatchdogAsync(CancellationToken.None);
+        return jobs;
+    }
+
+    private static MonitorScheduler NewScheduler(TestApp app, AsyncServiceScope scope, RecordingJobClient jobs) => new(
+        scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+        jobs,
+        app.Services.GetRequiredService<JobStorage>(),
+        NullLogger<MonitorScheduler>.Instance,
+        Production,
+        app.Services.GetRequiredService<IConfiguration>());
+
     private static async Task<RecordingJobClient> TickSchedulerAsync(TestApp app)
     {
         await using var scope = app.Services.CreateAsyncScope();
@@ -1713,6 +1798,10 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
         }
 
         public bool ChangeState(string jobId, IState state, string expectedState) => true;
+
+        public int EnqueuedTicks() => _created.Count(c => c.State is EnqueuedState && c.Job.Method.Name == nameof(IMonitorScheduler.TickAsync));
+
+        public int ScheduledTicks() => _created.Count(c => c.State is ScheduledState && c.Job.Method.Name == nameof(IMonitorScheduler.TickAsync));
 
         public IReadOnlyList<Guid> EnqueuedMonitorIds() => _created
             .Where(c => c.State is EnqueuedState && c.Job.Method.Name == nameof(IMonitorRunner.RunAsync))

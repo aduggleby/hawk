@@ -21,5 +21,10 @@ public interface IMonitorScheduler
     /// Ensures the scheduler loop is started.
     /// </summary>
     Task EnsureStartedAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Minutely safety net: enqueues a tick when the tick chain looks dead.
+    /// </summary>
+    Task WatchdogAsync(CancellationToken cancellationToken);
 }
 
