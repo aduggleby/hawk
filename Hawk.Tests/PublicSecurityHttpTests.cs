@@ -122,6 +122,44 @@ public class PublicSecurityHttpTests
     }
 
     [Fact]
+    public async Task Repeated_login_post_after_sign_in_redirects_instead_of_400()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        const string path = "/Identity/Account/Login?returnUrl=%2Fmonitors";
+        using var form = await app.Client.GetAsync(path);
+        var values = new Dictionary<string, string>
+        {
+            ["Input.Email"] = SecurityTestApplication.UserEmail,
+            ["Input.Password"] = SecurityTestApplication.Password,
+            ["__RequestVerificationToken"] = SecurityTestApplication.AntiforgeryToken(await form.Content.ReadAsStringAsync())
+        };
+
+        using var first = await app.Client.PostAsync(path, new FormUrlEncodedContent(values));
+        Assert.Equal(HttpStatusCode.Redirect, first.StatusCode);
+
+        // Same form again (stale anonymous token, now with the auth cookie): the browser lands on the return URL.
+        using var second = await app.Client.PostAsync(path, new FormUrlEncodedContent(values));
+        Assert.Equal(HttpStatusCode.Redirect, second.StatusCode);
+        Assert.Equal("/monitors", second.Headers.Location!.OriginalString);
+
+        // A foreign return URL is not followed.
+        using var foreign = await app.Client.PostAsync("/Identity/Account/Login?returnUrl=https%3A%2F%2Fevil.example",
+            new FormUrlEncodedContent(values));
+        Assert.Equal(HttpStatusCode.Redirect, foreign.StatusCode);
+        Assert.Equal("/", foreign.Headers.Location!.OriginalString);
+
+        // Anonymous POST without a valid token is still rejected.
+        await using var anonymous = await SecurityTestApplication.CreateAsync();
+        using var bad = await anonymous.Client.PostAsync(path, new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["Input.Email"] = SecurityTestApplication.UserEmail,
+            ["Input.Password"] = SecurityTestApplication.Password,
+            ["__RequestVerificationToken"] = "invalid"
+        }));
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
+
+    [Fact]
     public async Task Email_actions_share_account_cooldown_and_sender_failures_are_generic()
     {
         await using var app = await SecurityTestApplication.CreateAsync();

@@ -74,4 +74,18 @@
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        // Block a second submit while the first one signs in and the next page loads. A repeat would carry a stale
+        // antiforgery token (the server redirects it, see SignedInLoginRepostAttribute). Disabled only after
+        // client validation let the submit through, and re-enabled when the page is restored from the back/forward cache.
+        (() => {
+            const form = document.getElementById("account");
+            const btn = document.getElementById("login-submit");
+            if (!form || !btn) return;
+            form.addEventListener("submit", (e) => {
+                setTimeout(() => { if (!e.defaultPrevented) btn.disabled = true; }, 0);
+            });
+            window.addEventListener("pageshow", () => { btn.disabled = false; });
+        })();
+    </script>
 }

@@ -19,6 +19,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Hawk.Web.Areas.Identity.Pages.Account
 {
+    [Hawk.Web.Infrastructure.SignedInLoginRepost]
     public class LoginModel : PageModel
     {
         private readonly SignInManager<IdentityUser> _signInManager;
