@@ -6,6 +6,17 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.16.5] - 2026-11-14
+
+### Fixed
+
+- Pages, queries and checks no longer stall for 1-4 s every 30 s. Each app start added another scheduler tick chain (18 in production), and every waiting tick blocked a thread-pool thread while polling for the scheduler lock. Ticks now take the lock without waiting, and duplicate chains end within one tick interval.
+
+### Added
+
+- A minutely watchdog job (`hawk-scheduler-watchdog`) restarts the scheduler when its tick chain has died. Before, only an app restart did.
+- The edge proxy re-checks Hawk's health every 5 s and lets requests wait up to 15 s during a restart, so deploys no longer cause about 30 s of 503 errors (infra repo).
+
 ## [0.16.4] - 2026-11-14
 
 ### Added

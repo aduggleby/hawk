@@ -13,7 +13,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), "Tower" design (0.14.0, polished in 0.16.0, see "Tower Design"), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.16.4`
+- Version: `0.16.5`
 
 ## Ports
 
@@ -192,6 +192,9 @@ Scheduling requirements:
 
 Implementation:
 - Scheduling is a self-scheduling Hangfire tick job (`IMonitorScheduler.TickAsync`) that enqueues due monitors.
+- One tick chain: every app start enqueues a tick (`EnsureStartedAsync`) while the previous run's scheduled tick survives in Hangfire, so chains used to pile up (18 on prod1 by 2026-11-14). `TickAsync` takes the lock `hawk:scheduler:tick` with `TimeSpan.Zero` (busy = exit, no successor) and keeps `lastTickAt` in the Hangfire hash `hawk:scheduler`: a tick less than 3/4 of an interval after the last chain-continuing tick (`MonitorScheduler.IsDuplicateTick`) exits at once (no work, not recorded, no successor), so duplicate chains end within one interval. Recurring `hawk-scheduler-watchdog` (minutely, removed when `Hawk:Scheduler:Enabled=false`) enqueues a tick with a Warning when `lastTickAt` is missing or older than 3 intervals + 60 s (`IsChainStale`): a chain dies when a tick throws after recording itself, a transient lock error counts as busy, or a crash orphans the lock (Hangfire.PostgreSql releases it after 10 min). Rollback to 0.16.4: delete the `hawk-scheduler-watchdog` recurring job in the Hangfire dashboard (the old image has no `WatchdogAsync`). Check: `select count(*) from hangfire.job where statename='Scheduled' and invocationdata::text like '%IMonitorScheduler%'` should be 1.
+- **Never wait for a Hangfire distributed lock in a tick-like job.** Hangfire.PostgreSql waits by polling with `Thread.Sleep` on a thread-pool thread (Hangfire runs async jobs on the pool after the first await). Many waiters starve the pool: every page, query and check stalls 1-4 s (diagnosed 2026-11-14 with `dotnet-counters`/`dotnet-stack`, see `docs/plans/2026-11-14-1500-fix-scheduler-starvation-and-deploy-503-plan.md`). The alert, heartbeat and run-bucket locks still wait, but per monitor and rarely contended.
+- Live runtime diagnostics on prod1 (read-only rootfs, no tools in the image): run `dotnet-counters`/`dotnet-stack` (single-file downloads from `aka.ms/dotnet-counters/linux-x64`, `aka.ms/dotnet-stack/linux-x64`) in a sidecar from the app's own image: `docker run --rm --network none --user 1654 --pid=container:hawk-app-1 -e TMPDIR=/proc/1/root/tmp -e DOTNET_ROLL_FORWARD=Major -e DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 -v <dir>:/work --entrypoint /work/dotnet-counters <image> collect -p 1 ...` (`dotnet-counters` also takes `--diagnostic-port /proc/1/root/tmp/dotnet-diagnostic-*-socket,connect`).
 - The user-facing interval list includes `5s` only when `ASPNETCORE_ENVIRONMENT=Testing`.
   - This is enforced in code via `MonitorIntervals.AllowedSeconds(env)`.
 
