@@ -42,27 +42,32 @@ public sealed class MonitorStatusService(ApplicationDbContext db, IConfiguration
 {
     /// <summary>
     /// Last completed run per monitor (legacy runs with an empty state count as completed), optionally limited to some monitors.
+    /// Monitors without a completed run have no entry.
     /// </summary>
+    /// <remarks>
+    /// One top-1 query per monitor on the (MonitorId, StartedAt) index (well under 1 ms each). A single grouped query
+    /// (GroupBy/First, or a correlated FirstOrDefault/SelectMany+Take) is translated by EF into ROW_NUMBER() over every
+    /// retained run: with ~1.1 M runs that was a seq scan plus an on-disk sort of ~1.8 s on every board load.
+    /// </remarks>
     public async Task<Dictionary<Guid, LastCompletedRun>> GetLastCompletedRunsAsync(
         IReadOnlyCollection<Guid>? monitorIds, CancellationToken cancellationToken)
     {
-        var runs = db.MonitorRuns
-            .AsNoTracking()
-            .WhereCompleted();
-        if (monitorIds is not null)
-            runs = runs.Where(r => monitorIds.Contains(r.MonitorId));
-
-        return await runs
-            .GroupBy(r => r.MonitorId)
-            .Select(g => g
+        var ids = monitorIds ?? await db.Monitors.AsNoTracking().Select(m => m.Id).ToListAsync(cancellationToken);
+        var result = new Dictionary<Guid, LastCompletedRun>(ids.Count);
+        foreach (var id in ids.Distinct())
+        {
+            var last = await db.MonitorRuns
+                .AsNoTracking()
+                .Where(r => r.MonitorId == id)
+                .WhereCompleted()
                 .OrderByDescending(r => r.StartedAt)
                 .ThenByDescending(r => r.Id)
-                .Select(r => new { r.MonitorId, r.StartedAt, r.Success, r.StatusCode, r.ErrorMessage })
-                .First())
-            .ToDictionaryAsync(
-                x => x.MonitorId,
-                x => new LastCompletedRun(x.StartedAt, x.Success, x.StatusCode, x.ErrorMessage),
-                cancellationToken);
+                .Select(r => new LastCompletedRun(r.StartedAt, r.Success, r.StatusCode, r.ErrorMessage))
+                .FirstOrDefaultAsync(cancellationToken);
+            if (last is not null)
+                result[id] = last;
+        }
+        return result;
     }
 
     /// <summary>
