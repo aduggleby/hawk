@@ -243,10 +243,16 @@ if (!app.Configuration.GetValue("Hawk:DisableHttpsRedirection", false))
 }
 // Else branch: E2E/Testing can force plain HTTP to keep Playwright stable.
 
+// Adopt the edge proxy's X-Request-Id first, so the request log, the error page and the access log share one id.
+app.UseHawkRequestCorrelation();
+
+var slowRequestMs = Math.Max(0, app.Configuration.GetValue("Hawk:Logging:SlowRequestMs", RequestAbort.DefaultSlowRequestMs));
 app.UseSerilogRequestLogging(options =>
 {
-    // Health probes run every few seconds; keep them out of the default log output.
-    options.GetLevel = (httpContext, _, ex) => HealthRequestAbort.GetLevel(httpContext, ex);
+    // Health probes stay at Verbose, client aborts (499) at Information, slow requests at Warning.
+    options.GetLevel = (httpContext, elapsedMs, ex) => RequestAbort.GetLevel(httpContext, elapsedMs, ex, slowRequestMs);
+    options.MessageTemplate = RequestCorrelation.MessageTemplate;
+    options.EnrichDiagnosticContext = RequestCorrelation.Enrich;
 
     // The ping token is a bearer secret: never write it to the log.
     options.GetMessageTemplateProperties = (httpContext, path, elapsedMs, statusCode) =>
@@ -258,8 +264,8 @@ app.UseSerilogRequestLogging(options =>
     ];
 });
 
-// Probes the edge proxy hangs up on (reload during a deploy) end as 499, not as errors.
-app.UseHawkHealthRequestAbort();
+// Requests the client hung up on (abandoned page loads, probes during an edge reload) end as 499, not as errors.
+app.UseHawkRequestAbort();
 
 // Preserve exception details in HttpContext.Items so /Error can render diagnostics
 // even if the exception feature is not populated by upstream middleware.

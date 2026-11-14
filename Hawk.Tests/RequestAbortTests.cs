@@ -10,7 +10,7 @@ using Serilog.Events;
 
 namespace Hawk.Tests;
 
-public class HealthRequestAbortTests
+public class RequestAbortTests
 {
     [Fact]
     public async Task Aborted_ready_probe_ends_as_499_and_is_not_an_error()
@@ -26,7 +26,7 @@ public class HealthRequestAbortTests
         await pipeline(context);
 
         Assert.Equal(499, context.Response.StatusCode);
-        Assert.Equal(LogEventLevel.Verbose, HealthRequestAbort.GetLevel(context, ex: null));
+        Assert.Equal(LogEventLevel.Verbose, RequestAbort.GetLevel(context, 0, ex: null));
     }
 
     [Fact]
@@ -44,6 +44,43 @@ public class HealthRequestAbortTests
         await pipeline(context);
 
         Assert.Equal(499, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Abandoned_page_load_ends_as_499_at_information()
+    {
+        using var cts = new CancellationTokenSource();
+        var context = NewContext("/monitors", cts.Token);
+        var pipeline = Pipeline(_ =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException("Query was cancelled");
+        });
+
+        await pipeline(context);
+
+        Assert.Equal(499, context.Response.StatusCode);
+        Assert.Equal(LogEventLevel.Information, RequestAbort.GetLevel(context, 5000, ex: null));
+    }
+
+    [Theory]
+    [InlineData("/monitors", 1500, 1000, LogEventLevel.Warning)]
+    [InlineData("/monitors", 900, 1000, LogEventLevel.Information)]
+    [InlineData("/monitors", 1500, 0, LogEventLevel.Information)]
+    [InlineData("/ready", 4000, 1000, LogEventLevel.Verbose)]
+    public void Slow_requests_log_at_warning(string path, double elapsedMs, int thresholdMs, LogEventLevel expected)
+    {
+        var context = NewContext(path, CancellationToken.None);
+        context.Response.StatusCode = 200;
+        Assert.Equal(expected, RequestAbort.GetLevel(context, elapsedMs, ex: null, thresholdMs));
+    }
+
+    [Fact]
+    public void Server_errors_log_at_error_even_when_fast()
+    {
+        var context = NewContext("/monitors", CancellationToken.None);
+        context.Response.StatusCode = 500;
+        Assert.Equal(LogEventLevel.Error, RequestAbort.GetLevel(context, 1, ex: null));
     }
 
     [Fact]
@@ -68,7 +105,7 @@ public class HealthRequestAbortTests
         await pipeline(context);
 
         Assert.Equal(503, context.Response.StatusCode);
-        Assert.Equal(LogEventLevel.Error, HealthRequestAbort.GetLevel(context, ex: null));
+        Assert.Equal(LogEventLevel.Error, RequestAbort.GetLevel(context, 0, ex: null));
     }
 
     [Fact]
@@ -117,7 +154,7 @@ public class HealthRequestAbortTests
     private static RequestDelegate Pipeline(RequestDelegate terminal)
     {
         var app = new ApplicationBuilder(new ServiceCollection().BuildServiceProvider());
-        app.UseHawkHealthRequestAbort();
+        app.UseHawkRequestAbort();
         app.Run(terminal);
         return app.Build();
     }

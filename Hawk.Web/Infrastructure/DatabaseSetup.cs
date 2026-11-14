@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 // <file>
 // <summary>
 // Database provider selection (Hawk:Database:Provider) for EF Core, Identity and Hangfire.
@@ -61,13 +62,15 @@ public static class DatabaseSetup
     /// </summary>
     public static IServiceCollection AddHawkDbContext(this IServiceCollection services, DatabaseProvider provider, string connectionString)
     {
+        // One shared instance: a new interceptor per context would make EF build a new internal service provider and model each time.
+        services.TryAddSingleton(SlowSqlInterceptor.Create);
         switch (provider)
         {
             case DatabaseProvider.SqlServer:
-                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(connectionString));
+                services.AddDbContext<ApplicationDbContext>((sp, options) => options.UseSqlServer(connectionString).AddInterceptors(sp.GetRequiredService<SlowSqlInterceptor>()));
                 break;
             case DatabaseProvider.Postgres:
-                services.AddDbContext<ApplicationDbContext, PostgresApplicationDbContext>(options => options.UseNpgsql(connectionString));
+                services.AddDbContext<ApplicationDbContext, PostgresApplicationDbContext>((sp, options) => options.UseNpgsql(connectionString).AddInterceptors(sp.GetRequiredService<SlowSqlInterceptor>()));
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unsupported database provider.");
