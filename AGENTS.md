@@ -13,7 +13,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), "Tower" design (0.14.0, polished in 0.16.0, see "Tower Design"), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.16.2`
+- Version: `0.16.3`
 
 ## Ports
 
@@ -237,6 +237,7 @@ Handy commands:
 - `AuthAbuseProtection` rate-limits only login and anonymous password-reset/confirmation-resend POSTs by the forwarded client IP; rejected requests return 429 and `Retry-After`.
 - `Hawk:Security` settings: `LoginRequestsPerMinute` (10), `EmailRequestsPer15Minutes` (5), `FailedLoginAttempts` (5), `LockoutMinutes` (5), `EmailCooldownMinutes` (1). Invalid out-of-range values fail startup.
 - Anonymous account-email actions share a bounded, expiring `AccountEmailCooldown` keyed by user ID. Scheduled monitor alerts do not use it.
+- Repeated login POST: a second submit of the login form arrives with an antiforgery token issued to the anonymous user after the first one signed in, and antiforgery rejects it with a bare 400 (seen in production with a slow board). `SignedInLoginRepostAttribute` (authorization filter, order 0, before antiforgery's 1000) redirects a signed-in user's POST whose token no longer validates to the local `returnUrl` (else `~/`); valid tokens and anonymous requests are untouched. The login button is also disabled after a submit that passed client validation. Test: `PublicSecurityHttpTests.Repeated_login_post_after_sign_in_redirects_instead_of_400`.
 
 ## Email Alerts
 
@@ -351,6 +352,7 @@ Alert recipient resolution (in order):
 
 - `Services/Monitoring/MonitorBoardService.cs` builds the index view model (`BoardModel`: groups, attention list, headline, per-row 24h strip); the page stays thin and its POST handlers (batch, group actions, rename) are unchanged.
 - Headline: pure `BoardHeadline.For(...)` ("2 of 31 monitors are down. Longest outage: ..." / "All 31 monitors are up." / "5 of 7 monitors are up. 1 overdue, 1 waiting for a first check."). Only healthy active monitors count as up.
+- Last completed run per monitor (`MonitorStatusService.GetLastCompletedRunsAsync`) is one top-1 query per monitor on the `(MonitorId, StartedAt)` index. Do not turn it back into a single grouped query: EF translates GroupBy/First, a correlated `FirstOrDefault` and `SelectMany`+`Take(1)` alike into `ROW_NUMBER()` over every retained run (a sequential scan and on-disk sort, ~1.8 s at 1.1 M runs on every board load). Check `ToQueryString()` and `EXPLAIN ANALYZE` on production-sized data for any query over `MonitorRuns`. Custom `IQueryable` extensions such as `WhereCompleted()` cannot be used inside a correlated subquery lambda.
 - Status words (`BoardRow.StatusLabel`): Down (failing), Disabled, Paused, **Overdue** (`MonitorHealth.Overdue`: a heartbeat past its deadline, or HTTP checks stopped; `--warn` square, `data-status="overdue"`), **Pending** (no completed run yet, `data-status="pending"`), Up.
 - **Attention** section (`data-testid="attention"`): one card per monitor whose most recent completed run failed (`MonitorStatusService.IsInFailingGroup`), longest outage first, no checkboxes. The monitor itself appears once, as a row in its group (selectable there).
 - Group rail (desktop column, mobile chips) links to the group anchors; rows show status word, name, kind, the 24h strip (`_StatusStrip`), the newest bucket's average response time and the last run. Below 640 px rows wrap to two lines; touch layouts get 44 px targets.
@@ -554,6 +556,7 @@ Implementation:
 - Screenshots are written to host `./screenshots` by `e2e/tests/helpers.ts`.
  - Playwright is forced to run serially in Docker via `E2E_DOCKER=1` in `docker-compose.e2e.yml`.
 - If screenshot capture is flaky under Docker/Xvfb, `snap()` retries and then logs a warning instead of failing the whole suite.
+- Holding a navigation with `page.route` (to inspect the page between submit and response): `click()` waits for the navigation it starts, so start it unawaited and await it after releasing; while the navigation is pending, locators and `page.evaluate` do not see the live document (they read stale values or hang), so have the page report state via `console.log` and `page.waitForEvent('console')` (see the login button test in `smoke.spec.ts`). `page.route` globs are case-sensitive and Hawk's form actions keep their original casing (`/Identity/Account/Login`); use a case-insensitive regex.
 
 ## Upgrading To The Non-Root Image
 

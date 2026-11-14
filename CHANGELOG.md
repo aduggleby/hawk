@@ -6,6 +6,13 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-11-14
+
+### Fixed
+
+- Logging in no longer ends on a 400 page. A second submit of the login form (double Enter, a password manager auto-submit) arrived after the first had signed in, so its antiforgery token no longer matched and the request was rejected, which also aborted the monitors page that was loading. A signed-in user's repeat login POST now redirects to the return URL, and the login button is disabled after a valid submit.
+- The monitors board took about 3 s to load. Its last-completed-run lookup was a window query over every retained run (a sequential scan and on-disk sort of 1.1 M rows, 1.8 s in production); it is now one indexed top-1 query per monitor (0.9 ms in total for all 48 monitors in production, measured in psql).
+
 ## [0.16.2] - 2026-11-02
 
 ### Fixed
