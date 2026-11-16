@@ -6,6 +6,16 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.16.6] - 2026-11-16
+
+### Fixed
+
+- No distributed-lock wait blocks a thread any more. The alert-state, heartbeat, ping, run-bucket and alert-digest locks waited by polling with `Thread.Sleep` on a thread-pool thread (the cause of the scheduler stalls fixed in 0.16.5). They now retry with asynchronous delays, keeping their timeouts and busy handling.
+
+### Security
+
+- Pinned patched versions of transitive packages: `System.Security.Cryptography.Pkcs` 10.0.15 (GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7) and `NuGet.Packaging`/`NuGet.Protocol` 6.12.5 (GHSA-g4vj-cjjj-v7hg).
+
 ## [0.16.5] - 2026-11-14
 
 ### Fixed
