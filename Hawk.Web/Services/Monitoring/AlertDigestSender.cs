@@ -212,7 +212,7 @@ public sealed class AlertDigestSender(
         IDisposable flushLock;
         try
         {
-            flushLock = connection.AcquireDistributedLock(LockKey, LockTimeout);
+            flushLock = await DistributedLocks.AcquireAsync(connection, LockKey, LockTimeout, cancellationToken);
         }
         catch (DistributedLockTimeoutException)
         {

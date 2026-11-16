@@ -228,9 +228,11 @@ public sealed class MonitorExecutor(
         try
         {
             using var lockConnection = jobStorage.GetConnection();
-            using var alertLock = lockConnection.AcquireDistributedLock(
+            using var alertLock = await DistributedLocks.AcquireAsync(
+                lockConnection,
                 $"hawk:monitor-alert:{monitor.Id}",
-                TimeSpan.FromSeconds(AlertLockTimeoutSeconds));
+                TimeSpan.FromSeconds(AlertLockTimeoutSeconds),
+                cancellationToken);
 
             await EvaluateAlertsAsync(monitor, run, cancellationToken);
 
@@ -363,7 +365,7 @@ public sealed class MonitorExecutor(
         IDisposable alertLock;
         try
         {
-            alertLock = lockConnection.AcquireDistributedLock($"hawk:monitor-alert:{monitorId}", TimeSpan.FromSeconds(HeartbeatMissLockTimeoutSeconds));
+            alertLock = await DistributedLocks.AcquireAsync(lockConnection, $"hawk:monitor-alert:{monitorId}", TimeSpan.FromSeconds(HeartbeatMissLockTimeoutSeconds), cancellationToken);
         }
         catch (DistributedLockTimeoutException)
         {
@@ -458,7 +460,7 @@ public sealed class MonitorExecutor(
         IDisposable alertLock;
         try
         {
-            alertLock = lockConnection.AcquireDistributedLock($"hawk:monitor-alert:{monitorId}", TimeSpan.FromSeconds(PingLockTimeoutSeconds));
+            alertLock = await DistributedLocks.AcquireAsync(lockConnection, $"hawk:monitor-alert:{monitorId}", TimeSpan.FromSeconds(PingLockTimeoutSeconds), cancellationToken);
         }
         catch (DistributedLockTimeoutException ex)
         {

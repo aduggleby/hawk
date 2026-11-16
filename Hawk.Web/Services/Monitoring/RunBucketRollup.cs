@@ -131,7 +131,7 @@ public sealed class RunBucketRollup(
 
     /// <inheritdoc />
     public Task RecomputeAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken) =>
-        RunLockedAsync(() => RecomputeCoreAsync(from, to, cancellationToken), skipWhenBusy: false);
+        RunLockedAsync(() => RecomputeCoreAsync(from, to, cancellationToken), cancellationToken, skipWhenBusy: false);
 
     /// <inheritdoc />
     public Task RefreshAsync(CancellationToken cancellationToken) =>
@@ -151,7 +151,7 @@ public sealed class RunBucketRollup(
 
             await RecomputeCoreAsync(start, now, cancellationToken);
             await DeleteOldAsync(now - Retention, cancellationToken);
-        });
+        }, cancellationToken);
 
     /// <inheritdoc />
     public Task BackfillAsync(CancellationToken cancellationToken) =>
@@ -159,9 +159,9 @@ public sealed class RunBucketRollup(
         {
             var now = DateTimeOffset.UtcNow;
             return RecomputeCoreAsync(now - BackfillSpan, now, cancellationToken);
-        }, skipWhenBusy: false);
+        }, cancellationToken, skipWhenBusy: false);
 
-    private async Task RunLockedAsync(Func<Task> work, bool skipWhenBusy = true)
+    private async Task RunLockedAsync(Func<Task> work, CancellationToken cancellationToken, bool skipWhenBusy = true)
     {
         // Branch: scheduling off (as MonitorScheduler.TickAsync), nothing runs on this instance.
         if (!config.GetValue("Hawk:Scheduler:Enabled", true))
@@ -179,7 +179,7 @@ public sealed class RunBucketRollup(
         try
         {
             conn = jobStorage.GetConnection();
-            distLock = conn.AcquireDistributedLock(LockKey, skipWhenBusy ? LockTimeout : OneShotLockTimeout);
+            distLock = await DistributedLocks.AcquireAsync(conn, LockKey, skipWhenBusy ? LockTimeout : OneShotLockTimeout, cancellationToken);
             await work();
         }
         catch (DistributedLockTimeoutException) when (skipWhenBusy)

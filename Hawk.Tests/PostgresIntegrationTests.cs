@@ -652,6 +652,59 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
     }
 
     [SkippableFact]
+    public async Task Async_lock_acquire_waits_without_blocking_pool_threads()
+    {
+        await using var app = await CreateAppAsync();
+        var storage = app.Services.GetRequiredService<JobStorage>();
+        const string key = "hawk:test:async-lock";
+
+        // Free: acquired on the first attempt.
+        using (var c = storage.GetConnection())
+        using (await DistributedLocks.AcquireAsync(c, key, TimeSpan.Zero, CancellationToken.None)) { }
+
+        using var holderConn = storage.GetConnection();
+        var held = holderConn.AcquireDistributedLock(key, TimeSpan.FromSeconds(5));
+
+        // Busy for the whole timeout: the Hangfire exception type, after about the timeout.
+        using (var c = storage.GetConnection())
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            await Assert.ThrowsAnyAsync<DistributedLockTimeoutException>(() => DistributedLocks.AcquireAsync(c, key, TimeSpan.FromSeconds(1), CancellationToken.None));
+            Assert.InRange(watch.Elapsed, TimeSpan.FromMilliseconds(900), TimeSpan.FromSeconds(3));
+        }
+
+        // Canceled while waiting.
+        using (var c = storage.GetConnection())
+        using (var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200)))
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => DistributedLocks.AcquireAsync(c, key, TimeSpan.FromSeconds(10), cts.Token));
+
+        // Many waiters hold no threads: new pool work still starts promptly (Thread.Sleep polling starved the pool).
+        var acquired = 0;
+        var waiters = Enumerable.Range(0, Environment.ProcessorCount * 4).Select(async _ =>
+        {
+            using var c = storage.GetConnection();
+            try
+            {
+                using (await DistributedLocks.AcquireAsync(c, key, TimeSpan.FromSeconds(3), CancellationToken.None))
+                    Interlocked.Increment(ref acquired);
+            }
+            catch (DistributedLockTimeoutException) { }
+        }).ToList();
+        await Task.Delay(300);
+        var latency = System.Diagnostics.Stopwatch.StartNew();
+        await Task.Run(() => { });
+        // A blocking implementation makes this wait for thread injection (seconds); allow for a loaded test machine.
+        Assert.True(latency.Elapsed < TimeSpan.FromMilliseconds(500), $"Pool work waited {latency.Elapsed} behind lock waiters.");
+
+        // Released while they wait: they acquire it (one at a time) instead of all failing.
+        held.Dispose();
+        await Task.WhenAll(waiters);
+        Assert.True(acquired > 0, "No waiter acquired the released lock.");
+        using (var c = storage.GetConnection())
+        using (await DistributedLocks.AcquireAsync(c, key, TimeSpan.Zero, CancellationToken.None)) { }
+    }
+
+    [SkippableFact]
     public async Task Scheduler_watchdog_restarts_a_dead_chain_only()
     {
         await using var app = await CreateAppAsync();
