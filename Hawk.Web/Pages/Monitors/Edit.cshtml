@@ -140,6 +140,14 @@
                 <div class="hawk-error-message" asp-validation-for="Form.AlertEmailOverride"></div>
                 <div class="hawk-form-hint">Optional. Overrides the alert recipient for this monitor.</div>
             </div>
+            <div>
+                <label class="hawk-label invisible select-none" aria-hidden="true">@Html.DisplayNameFor(m => m.Form.AlertsEnabled)</label>
+                <label class="hawk-input mt-2 inline-flex items-center gap-2">
+                    <input class="h-4 w-4" asp-for="Form.AlertsEnabled" />
+                    <span class="font-medium">@Html.DisplayNameFor(m => m.Form.AlertsEnabled)</span>
+                </label>
+                <div class="hawk-form-hint">Off: the monitor is still checked and its state stays visible, but Hawk sends no failure, reminder or recovery email for it.</div>
+            </div>
             @if (!isHeartbeat)
             {
                 <div>

@@ -447,6 +447,50 @@ public sealed class ApiPostgresHttpTests(PostgresFixture fixture)
     }
 
     [SkippableFact]
+    public async Task Alerts_enabled_defaults_to_true_and_round_trips_through_create_patch_alerting_list_and_detail()
+    {
+        await using var host = await CreateHostAsync();
+
+        var (status, created, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors", "{\"name\":\"a\",\"url\":\"https://example.com/\"}");
+        Assert.Equal(HttpStatusCode.Created, status);
+        Assert.True(created.GetProperty("alertsEnabled").GetBoolean());
+        Assert.True((await GetFullAsync(host, created.GetProperty("id").GetGuid())).AlertsEnabled);
+
+        (status, created, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors", "{\"name\":\"b\",\"url\":\"https://example.com/\",\"alertsEnabled\":false}");
+        Assert.Equal(HttpStatusCode.Created, status);
+        Assert.False(created.GetProperty("alertsEnabled").GetBoolean());
+        var id = created.GetProperty("id").GetGuid();
+
+        // Other patches keep it; an explicit patch changes it.
+        (status, _, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"group\":\"g\"}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.False((await GetFullAsync(host, id)).AlertsEnabled);
+        (status, var patched, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"alertsEnabled\":true}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.True(patched.GetProperty("alertsEnabled").GetBoolean());
+        (status, var invalid, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}", "{\"alertsEnabled\":\"no\"}");
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(invalid.GetProperty("errors").TryGetProperty("alertsEnabled", out _));
+
+        // The alerting endpoint switches it too, and the list and the detail report it.
+        (status, var alerting, _) = await SendFullAsync(host, HttpMethod.Patch, $"/api/v1/monitors/{id}/alerting", "{\"alertsEnabled\":false}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.False(alerting.GetProperty("alertsEnabled").GetBoolean());
+        Assert.False((await GetFullAsync(host, id)).AlertsEnabled);
+        var (_, list) = await SendAsync(host, host.ReadKey, HttpMethod.Get, "/api/v1/monitors");
+        var items = list.GetProperty("monitors").EnumerateArray().ToDictionary(m => m.GetProperty("name").GetString()!);
+        Assert.True(items["a"].GetProperty("alertsEnabled").GetBoolean());
+        Assert.False(items["b"].GetProperty("alertsEnabled").GetBoolean());
+        var (_, detail) = await SendAsync(host, host.ReadKey, HttpMethod.Get, $"/api/v1/monitors/{id}");
+        Assert.False(detail.GetProperty("alertsEnabled").GetBoolean());
+
+        // Heartbeats take it as well.
+        (status, var hb, _) = await SendFullAsync(host, HttpMethod.Post, "/api/v1/monitors", "{\"name\":\"hb\",\"type\":\"heartbeat\",\"intervalSeconds\":3600,\"alertsEnabled\":false}");
+        Assert.Equal(HttpStatusCode.Created, status);
+        Assert.False((await GetFullAsync(host, hb.GetProperty("id").GetGuid())).AlertsEnabled);
+    }
+
+    [SkippableFact]
     public async Task Follow_redirects_defaults_to_true_round_trips_through_create_and_patch_and_the_column_defaults_to_true()
     {
         await using var host = await CreateHostAsync();

@@ -250,12 +250,13 @@ public sealed class MonitorCommands(ApplicationDbContext db, IBackgroundJobClien
     }
 
     /// <summary>
-    /// Changes the alert threshold and/or the alert email override in one statement and renews the concurrency stamp.
-    /// A null <paramref name="threshold"/> or <paramref name="email"/> leaves that field alone; <paramref name="clearEmail"/> removes the email.
+    /// Changes the alert threshold, the alert email override and/or the alert switch in one statement and renews the concurrency stamp.
+    /// A null <paramref name="threshold"/>, <paramref name="email"/> or <paramref name="alertsEnabled"/> leaves that field alone;
+    /// <paramref name="clearEmail"/> removes the email.
     /// The caller validates values with <see cref="AlertSettingsValidator"/>. Returns false when the monitor does not exist.
     /// </summary>
     public async Task<bool> UpdateAlertingAsync(
-        Guid id, int? threshold, string? email, bool clearEmail, CancellationToken cancellationToken)
+        Guid id, int? threshold, string? email, bool clearEmail, bool? alertsEnabled, CancellationToken cancellationToken)
     {
         var stamp = Guid.NewGuid();
         var newEmail = clearEmail ? null : string.IsNullOrWhiteSpace(email) ? null : email.Trim();
@@ -270,6 +271,8 @@ public sealed class MonitorCommands(ApplicationDbContext db, IBackgroundJobClien
                     s.SetProperty(m => m.AlertAfterConsecutiveFailures, value);
                 if (setEmail)
                     s.SetProperty(m => m.AlertEmailOverride, newEmail);
+                if (alertsEnabled is { } enabled)
+                    s.SetProperty(m => m.AlertsEnabled, enabled);
             }, cancellationToken);
         return updated > 0;
     }

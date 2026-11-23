@@ -222,6 +222,9 @@ namespace Hawk.Web.Data.Migrations.Postgres
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)");
 
+                    b.Property<bool>("AlertsEnabled")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("AllowedStatusCodes")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");

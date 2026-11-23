@@ -117,6 +117,7 @@ public class CreateModel(ApplicationDbContext db, IHostEnvironment env, UserMana
             IntervalSeconds = interval,
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,
             AlertEmailOverride = model.AlertEmailOverride,
+            AlertsEnabled = model.AlertsEnabled,
             AllowedStatusCodes = model.AllowedStatusCodes,
             FollowRedirects = model.FollowRedirects ?? true,
             RunRetentionDays = model.RunRetentionDays,

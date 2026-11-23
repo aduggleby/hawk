@@ -40,6 +40,7 @@ public sealed class MonitorEditor(ApplicationDbContext db)
             IntervalSeconds = form.IntervalSeconds,
             AlertAfterConsecutiveFailures = form.AlertAfterConsecutiveFailures,
             AlertEmailOverride = string.IsNullOrWhiteSpace(form.AlertEmailOverride) ? null : form.AlertEmailOverride.Trim(),
+            AlertsEnabled = form.AlertsEnabled,
             AllowedStatusCodes = heartbeat ? null : AllowedStatusCodesParser.Normalize(form.AllowedStatusCodes),
             FollowRedirects = heartbeat || form.FollowRedirects,
             RunRetentionDays = form.RunRetentionDays,
@@ -96,6 +97,7 @@ public sealed class MonitorEditor(ApplicationDbContext db)
         m.IntervalSeconds = form.IntervalSeconds;
         m.AlertAfterConsecutiveFailures = form.AlertAfterConsecutiveFailures;
         m.AlertEmailOverride = string.IsNullOrWhiteSpace(form.AlertEmailOverride) ? null : form.AlertEmailOverride.Trim();
+        m.AlertsEnabled = form.AlertsEnabled;
         m.RunRetentionDays = form.RunRetentionDays;
 
         if (heartbeat)

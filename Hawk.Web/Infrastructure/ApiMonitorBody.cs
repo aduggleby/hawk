@@ -45,6 +45,7 @@ internal static partial class ApiMonitorBody
         GraceSeconds = m.HeartbeatGraceSeconds,
         AlertAfterConsecutiveFailures = m.AlertAfterConsecutiveFailures,
         AlertEmailOverride = m.AlertEmailOverride,
+        AlertsEnabled = m.AlertsEnabled,
         AllowedStatusCodes = m.AllowedStatusCodes,
         FollowRedirects = m.FollowRedirects,
         RunRetentionDays = m.RunRetentionDays,
@@ -130,6 +131,10 @@ internal static partial class ApiMonitorBody
                 case "body": form.Body = String(errors, name, value, out s) ? s : form.Body; break;
                 case "followRedirects":
                     if (value.ValueKind is JsonValueKind.True or JsonValueKind.False) form.FollowRedirects = value.GetBoolean();
+                    else Add(errors, name, "Must be true or false.");
+                    break;
+                case "alertsEnabled":
+                    if (value.ValueKind is JsonValueKind.True or JsonValueKind.False) form.AlertsEnabled = value.GetBoolean();
                     else Add(errors, name, "Must be true or false.");
                     break;
                 case "enabled":

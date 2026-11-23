@@ -32,6 +32,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -313,6 +314,253 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
             Assert.All(rows, x => Assert.NotNull(x.SentAt));
             Assert.Equal([1, 2, 2], rows.Select(x => x.SentInBatchOf!.Value).Order());
         }
+    }
+
+    [SkippableFact]
+    public async Task Muted_monitor_sends_no_fail_or_recovered_mail_and_records_no_alert_error_in_the_state()
+    {
+        await using var app = await CreateAppAsync();
+        var emails = new RecordingEmailSender();
+        Guid loud, quiet;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ml = NewMonitor("Loud", null);
+            var mq = NewMonitor("Quiet", null);
+            mq.AlertsEnabled = false;
+            db.Monitors.AddRange(ml, mq);
+            await db.SaveChangesAsync();
+            (loud, quiet) = (ml.Id, mq.Id);
+        }
+
+        async Task RunAsync(Guid id, HttpStatusCode status)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await NewExecutor(app, scope, emails, null, status).ExecuteAsync(id, "schedule", CancellationToken.None);
+        }
+
+        foreach (var id in new[] { loud, quiet, loud, quiet })
+            await RunAsync(id, HttpStatusCode.InternalServerError);
+
+        // The unmuted monitor in the same setup does send, so email itself works.
+        Assert.Equal(["[ALERT FAIL] Loud (500)"], emails.Sent.Select(e => e.Subject));
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var state = await db.MonitorAlertStates.AsNoTracking().SingleAsync(s => s.MonitorId == quiet);
+            Assert.Equal(2, state.ConsecutiveFailures);
+            Assert.NotNull(state.FailureIncidentOpenedAt);
+            Assert.Null(state.LastFailureAlertSentAt);
+            Assert.Null(state.LastFailureAlertError);
+            var runs = await db.MonitorRuns.AsNoTracking().Where(r => r.MonitorId == quiet).ToListAsync();
+            Assert.Equal(2, runs.Count);
+            Assert.All(runs, r => Assert.False(r.AlertSent));
+            Assert.All(runs, r => Assert.Equal(MonitorExecutor.AlertsMutedNote, r.AlertError));
+        }
+
+        await RunAsync(loud, HttpStatusCode.OK);
+        await RunAsync(quiet, HttpStatusCode.OK);
+        Assert.Equal(["[ALERT FAIL] Loud (500)", "[ALERT RECOVERED] Loud (200)"], emails.Sent.Select(e => e.Subject));
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var state = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorAlertStates.AsNoTracking().SingleAsync(s => s.MonitorId == quiet);
+            Assert.Equal(0, state.ConsecutiveFailures);
+            Assert.False(state.PendingRecoveryAlert);
+            Assert.Null(state.LastRecoveryAlertError);
+        }
+    }
+
+    [SkippableFact]
+    public async Task Muting_during_an_alerted_incident_suppresses_the_reminder_and_the_recovery()
+    {
+        await using var app = await CreateAppAsync();
+        var emails = new RecordingEmailSender();
+        Guid loud, muted;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ml = NewMonitor("Loud", null);
+            var mm = NewMonitor("Muted", null);
+            db.Monitors.AddRange(ml, mm);
+            await db.SaveChangesAsync();
+            (loud, muted) = (ml.Id, mm.Id);
+        }
+
+        async Task RunAsync(Guid id, HttpStatusCode status)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await NewExecutor(app, scope, emails, null, status).ExecuteAsync(id, "schedule", CancellationToken.None);
+        }
+
+        async Task UpdateAsync(Func<ApplicationDbContext, Task> change)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await change(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        }
+
+        await RunAsync(loud, HttpStatusCode.InternalServerError);
+        await RunAsync(muted, HttpStatusCode.InternalServerError);
+        Assert.Equal(2, emails.Sent.Count);
+
+        // Mute one, then make both reminders due.
+        await UpdateAsync(db => db.Monitors.Where(m => m.Id == muted).ExecuteUpdateAsync(s => s.SetProperty(m => m.AlertsEnabled, false)));
+        var dayAgo = DateTimeOffset.UtcNow.AddHours(-25);
+        await UpdateAsync(db => db.MonitorAlertStates.ExecuteUpdateAsync(s => s.SetProperty(x => x.LastFailureAlertSentAt, dayAgo)));
+
+        await RunAsync(loud, HttpStatusCode.InternalServerError);
+        await RunAsync(muted, HttpStatusCode.InternalServerError);
+        Assert.Equal("[ALERT FAIL REMINDER] Loud (500)", Assert.Single(emails.Sent.Skip(2)).Subject);
+
+        await RunAsync(loud, HttpStatusCode.OK);
+        await RunAsync(muted, HttpStatusCode.OK);
+        Assert.Equal(["[ALERT FAIL REMINDER] Loud (500)", "[ALERT RECOVERED] Loud (200)"], emails.Sent.Skip(2).Select(e => e.Subject));
+
+        // The dropped recovery is not left pending, so unmuting later never sends a stale one.
+        await UpdateAsync(db => db.Monitors.Where(m => m.Id == muted).ExecuteUpdateAsync(s => s.SetProperty(m => m.AlertsEnabled, true)));
+        await RunAsync(muted, HttpStatusCode.OK);
+        Assert.Equal(4, emails.Sent.Count);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var state = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorAlertStates.AsNoTracking().SingleAsync(s => s.MonitorId == muted);
+            Assert.False(state.PendingRecoveryAlert);
+            Assert.Null(state.LastFailureAlertError);
+            Assert.Null(state.LastRecoveryAlertError);
+        }
+    }
+
+    [SkippableFact]
+    public async Task Grouped_summary_leaves_out_muted_monitors_and_is_not_sent_when_nothing_is_left()
+    {
+        await using var app = await CreateAppAsync(new Dictionary<string, string?> { ["Hawk:Alerting:DigestWindowSeconds"] = "30" });
+        var emails = new RecordingEmailSender();
+        var ids = new Dictionary<string, Guid>();
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            foreach (var name in new[] { "Alpha", "Beta", "Gamma", "Silent" })
+            {
+                var m = NewMonitor(name, null);
+                m.AlertsEnabled = name != "Silent";
+                db.Monitors.Add(m);
+                ids[name] = m.Id;
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        async Task RunAsync(string name, HttpStatusCode status)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await NewExecutor(app, scope, emails, null, status).ExecuteAsync(ids[name], "schedule", CancellationToken.None);
+        }
+
+        async Task SetAlertsAsync(bool enabled, params string[] names)
+        {
+            var targets = names.Select(n => ids[n]).ToList();
+            await using var scope = app.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors
+                .Where(m => targets.Contains(m.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.AlertsEnabled, enabled));
+        }
+
+        async Task AgeAndFlushAsync()
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var past = DateTimeOffset.UtcNow.AddSeconds(-31);
+            await db.PendingAlerts.Where(x => x.SentAt == null).ExecuteUpdateAsync(x => x.SetProperty(y => y.QueuedAt, past));
+            await new AlertDigestSender(db, emails, app.Services.GetRequiredService<IConfiguration>(), NullLogger<AlertDigestSender>.Instance,
+                app.Services.GetRequiredService<JobStorage>()).FlushAsync(CancellationToken.None);
+        }
+
+        foreach (var name in ids.Keys)
+            await RunAsync(name, HttpStatusCode.InternalServerError);
+
+        // A muted monitor queues nothing.
+        Guid gammaRun;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var queued = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().PendingAlerts.AsNoTracking().OrderBy(x => x.MonitorName).ToListAsync();
+            Assert.Equal(["Alpha", "Beta", "Gamma"], queued.Select(x => x.MonitorName));
+            gammaRun = queued[2].RunId;
+        }
+
+        // Gamma is muted after its alert was queued: the summary leaves it out.
+        await SetAlertsAsync(false, "Gamma");
+        await AgeAndFlushAsync();
+        var summary = Assert.Single(emails.Sent);
+        Assert.Equal("[ALERT SUMMARY] 2 failed", summary.Subject);
+        Assert.Contains("Alpha", summary.Html);
+        Assert.Contains("Beta", summary.Html);
+        Assert.DoesNotContain("Gamma", summary.Html);
+        Assert.DoesNotContain("Silent", summary.Html);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.False(await db.PendingAlerts.AnyAsync(x => x.MonitorId == ids["Gamma"]));
+            var run = await db.MonitorRuns.AsNoTracking().SingleAsync(r => r.Id == gammaRun);
+            Assert.False(run.AlertSent);
+            Assert.Equal(MonitorExecutor.AlertsMutedNote, run.AlertError);
+        }
+
+        // Both recoveries are queued, then both monitors are muted: nothing is left, so nothing is sent.
+        await RunAsync("Alpha", HttpStatusCode.OK);
+        await RunAsync("Beta", HttpStatusCode.OK);
+        await SetAlertsAsync(false, "Alpha", "Beta");
+        await AgeAndFlushAsync();
+        Assert.Single(emails.Sent);
+        await using (var scope = app.Services.CreateAsyncScope())
+            Assert.False(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().PendingAlerts.AnyAsync(x => x.SentAt == null));
+    }
+
+    [SkippableFact]
+    public async Task Edit_page_shows_and_saves_the_alert_switch_and_other_saves_keep_it()
+    {
+        await using var app = await CreateAppAsync();
+        var id = await AddMonitorAsync(app);
+
+        var form = await LoadEditFormAsync(app, id);
+        Assert.True(form.AlertsEnabled);
+        form.AlertsEnabled = false;
+        Assert.IsType<RedirectToPageResult>((await PostEditAsync(app, id, form)).Result);
+
+        form = await LoadEditFormAsync(app, id);
+        Assert.False(form.AlertsEnabled);
+        form.Name = "Renamed";
+        Assert.IsType<RedirectToPageResult>((await PostEditAsync(app, id, form)).Result);
+        await using var scope = app.Services.CreateAsyncScope();
+        var saved = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.AsNoTracking().SingleAsync(m => m.Id == id);
+        Assert.Equal("Renamed", saved.Name);
+        Assert.False(saved.AlertsEnabled);
+    }
+
+    [SkippableFact]
+    public async Task Alerts_enabled_migration_sets_existing_monitors_to_true()
+    {
+        await using var app = await CreateAppAsync();
+        Guid id;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var m = NewMonitor("Existing", null);
+            m.AlertsEnabled = false;
+            db.Monitors.Add(m);
+            await db.SaveChangesAsync();
+            id = m.Id;
+
+            // Back to the schema before the column existed and forward again: the row now gets the column default.
+            var migrator = db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+            await migrator.MigrateAsync("20261029121816_AddPendingAlerts");
+            await migrator.MigrateAsync();
+
+            var columnDefault = await db.Database
+                .SqlQueryRaw<string>("select column_default as \"Value\" from information_schema.columns where table_name = 'Monitors' and column_name = 'AlertsEnabled'")
+                .SingleAsync();
+            Assert.Equal("true", columnDefault);
+        }
+
+        await using (var scope = app.Services.CreateAsyncScope())
+            Assert.True((await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.AsNoTracking().SingleAsync(m => m.Id == id)).AlertsEnabled);
     }
 
     [SkippableFact]
@@ -1405,25 +1653,25 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
         await using var scope = app.Services.CreateAsyncScope();
         var commands = NewCommands(scope, new RecordingJobClient());
 
-        Assert.True(await commands.UpdateAlertingAsync(id, 3, null, false, CancellationToken.None));
+        Assert.True(await commands.UpdateAlertingAsync(id, 3, null, false, null, CancellationToken.None));
         var afterThreshold = await GetMonitorAsync(app, id);
         Assert.Equal(3, afterThreshold.AlertAfterConsecutiveFailures);
         Assert.Equal("alerts@example.com", afterThreshold.AlertEmailOverride);
         Assert.NotEqual(stamp, afterThreshold.ConcurrencyStamp);
 
-        Assert.True(await commands.UpdateAlertingAsync(id, null, "  ops@example.com ", false, CancellationToken.None));
+        Assert.True(await commands.UpdateAlertingAsync(id, null, "  ops@example.com ", false, null, CancellationToken.None));
         var afterEmail = await GetMonitorAsync(app, id);
         Assert.Equal(3, afterEmail.AlertAfterConsecutiveFailures);
         Assert.Equal("ops@example.com", afterEmail.AlertEmailOverride);
         Assert.NotEqual(afterThreshold.ConcurrencyStamp, afterEmail.ConcurrencyStamp);
 
-        Assert.True(await commands.UpdateAlertingAsync(id, null, null, true, CancellationToken.None));
+        Assert.True(await commands.UpdateAlertingAsync(id, null, null, true, null, CancellationToken.None));
         var cleared = await GetMonitorAsync(app, id);
         Assert.Null(cleared.AlertEmailOverride);
         Assert.Equal(3, cleared.AlertAfterConsecutiveFailures);
         Assert.NotEqual(afterEmail.ConcurrencyStamp, cleared.ConcurrencyStamp);
 
-        Assert.False(await commands.UpdateAlertingAsync(Guid.NewGuid(), 2, null, false, CancellationToken.None));
+        Assert.False(await commands.UpdateAlertingAsync(Guid.NewGuid(), 2, null, false, null, CancellationToken.None));
 
         // The Edit form loaded before the change now conflicts.
         form.Name = "Edited after API change";

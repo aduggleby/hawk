@@ -166,6 +166,10 @@ else
                             <span role="cell" class="hawk-c-nm">
                                 <a asp-page="/Monitors/Details" asp-route-id="@m.Id">@m.Name</a>
                                 <span class="hawk-kind">@(m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat ? "Heartbeat" : "HTTP")</span>
+                                @if (!m.AlertsEnabled)
+                                {
+                                    <span class="hawk-kind" data-testid="alerts-muted" title="Alert emails are off for this monitor">Alerts muted</span>
+                                }
                             </span>
                             <span role="cell" class="hawk-c-sc"><partial name="_StatusStrip" model="r.Strip" /></span>
                             <span role="cell" class="hawk-c-lat">@(r.LastMs is { } ms ? $"{ms} ms" : "-")</span>

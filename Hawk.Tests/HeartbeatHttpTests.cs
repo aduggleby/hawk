@@ -47,6 +47,38 @@ public class HeartbeatHttpTests
     }
 
     [Fact]
+    public async Task Create_page_stores_muted_alerts_and_details_and_board_show_it()
+    {
+        await using var app = await SecurityTestApplication.CreateAsync();
+        await app.LoginAsync();
+
+        using (var form = await app.Client.GetAsync("/Monitors/Create"))
+            Assert.Contains("Form.AlertsEnabled", await form.Content.ReadAsStringAsync());
+
+        using var created = await PostAsync(app, "/Monitors/Create", "/Monitors/Create", new()
+        {
+            ["Form.Type"] = "Http",
+            ["Form.Name"] = "Watched elsewhere",
+            ["Form.Url"] = "https://example.com/",
+            ["Form.Method"] = "GET",
+            ["Form.IntervalSeconds"] = "60",
+            ["Form.TimeoutSeconds"] = "15",
+            ["Form.AlertAfterConsecutiveFailures"] = "1",
+            ["Form.AlertsEnabled"] = "false",
+            ["Form.Enabled"] = "true",
+        });
+        Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
+
+        var m = await LoadSingleAsync(app);
+        Assert.False(m.AlertsEnabled);
+        using var details = await app.Client.GetAsync($"/Monitors/Details/{m.Id}");
+        Assert.Contains("Off (muted", await details.Content.ReadAsStringAsync());
+        using var board = await app.Client.GetAsync("/Monitors");
+        board.EnsureSuccessStatusCode();
+        Assert.Contains("data-testid=\"alerts-muted\"", await board.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Create_page_accepts_a_heartbeat_without_url_and_details_shows_the_ping_url()
     {
         await using var app = await SecurityTestApplication.CreateAsync();

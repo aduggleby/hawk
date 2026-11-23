@@ -26,6 +26,26 @@ namespace Hawk.Tests;
 public sealed class MonitorTransferTests
 {
     [Fact]
+    public void Alerts_enabled_defaults_to_true_round_trips_through_json_and_a_missing_field_imports_as_true()
+    {
+        Assert.True(new MonitorEntity { Name = "n", Url = "https://example.com", Method = "GET" }.AlertsEnabled);
+        Assert.True(new MonitorForm().AlertsEnabled);
+
+        var muted = SampleMonitor("Muted", "https://example.com/m");
+        muted.AlertsEnabled = false;
+        var json = JsonSerializer.Serialize(new MonitorExportEnvelope { Monitors = [MonitorJsonPort.ToModel(muted)] }, MonitorJsonPort.JsonOptions);
+        Assert.Contains("\"alertsEnabled\": false", json);
+        Assert.True(MonitorJsonPort.TryParse(json, out var parsed, out var error), error);
+        Assert.True(MonitorJsonPort.TryCreateMonitor(parsed!.Monitors.Single(), null, new FakeEnv("Production"), out var imported, out error), error);
+        Assert.False(imported.AlertsEnabled);
+
+        const string old = "{\"version\":3,\"monitors\":[{\"name\":\"old\",\"url\":\"https://example.com\",\"intervalSeconds\":60}]}";
+        Assert.True(MonitorJsonPort.TryParse(old, out parsed, out error), error);
+        Assert.True(MonitorJsonPort.TryCreateMonitor(parsed!.Monitors.Single(), null, new FakeEnv("Production"), out imported, out error), error);
+        Assert.True(imported.AlertsEnabled);
+    }
+
+    [Fact]
     public void Follow_redirects_is_exported_for_http_and_a_missing_field_imports_as_true()
     {
         var off = SampleMonitor("No follow", "https://example.com/r");

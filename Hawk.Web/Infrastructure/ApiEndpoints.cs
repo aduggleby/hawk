@@ -41,7 +41,7 @@ public static class ApiEndpoints
         new("POST", Prefix + "/monitors", "write", "Create an HTTP or heartbeat monitor owned by the caller; a heartbeat response includes the pingUrl."),
         new("PATCH", Prefix + "/monitors/{id}", "write", "Edit a monitor (merge patch; headers and matchRules replace the list; optional If-Match)."),
         new("DELETE", Prefix + "/monitors/{id}", "write", "Delete a monitor with its runs and alert state; cannot be undone (optional If-Match)."),
-        new("PATCH", Prefix + "/monitors/{id}/alerting", "write", "Change alertAfterConsecutiveFailures (1-20) and/or alertEmailOverride (null clears)."),
+        new("PATCH", Prefix + "/monitors/{id}/alerting", "write", "Change alertAfterConsecutiveFailures (1-20), alertEmailOverride (null clears) and/or alertsEnabled (false = no alert email)."),
         new("GET", Prefix + "/account/alerting", "read", "The caller's account-wide alert email."),
         new("PUT", Prefix + "/account/alerting", "write", "Replace the account-wide alert email: {\"alertEmail\": string|null}."),
         new("POST", Prefix + "/monitors/{id}/pause", "write", "Pause a monitor."),
@@ -137,7 +137,7 @@ public static class ApiEndpoints
         return Json(new ApiMonitorList(monitors
             .Select(m => new ApiMonitorListItem(
                 m.Id, m.Name, m.GroupName, m.Type, UrlOf(m), status[m.Id].State, status[m.Id].Health,
-                m.CreatedByUserId == userId, FailureOf(status[m.Id]), m.LastRunAt, m.NextRunAt))
+                m.CreatedByUserId == userId, FailureOf(status[m.Id]), m.LastRunAt, m.NextRunAt, m.AlertsEnabled))
             .ToList()));
     }
 
@@ -185,7 +185,7 @@ public static class ApiEndpoints
             m.Id, m.Name, m.GroupName, m.Type, UrlOf(m), status.State, status.Health, m.CreatedByUserId == UserId(http), FailureOf(status),
             m.LastRunAt, m.NextRunAt, m.Method, m.IntervalSeconds, m.TimeoutSeconds, m.AllowedStatusCodes,
             heartbeat ? null : m.FollowRedirects,
-            m.AlertAfterConsecutiveFailures, m.AlertEmailOverride, m.RunRetentionDays,
+            m.AlertAfterConsecutiveFailures, m.AlertEmailOverride, m.AlertsEnabled, m.RunRetentionDays,
             heartbeat ? m.HeartbeatGraceSeconds : null, m.LastPingAt, m.CreatedAt,
             new ApiAlertState(
                 state?.ConsecutiveFailures ?? 0, state?.FailureIncidentOpenedAt, state?.LastFailureAlertSentAt,
@@ -257,6 +257,7 @@ public static class ApiEndpoints
         int? threshold = null;
         string? email = null;
         var emailPresent = false;
+        bool? alertsEnabled = null;
         foreach (var property in body.EnumerateObject())
         {
             switch (property.Name)
@@ -277,6 +278,12 @@ public static class ApiEndpoints
                 case "alertEmailOverride":
                     (email, emailPresent) = ParseEmail(property, errors);
                     break;
+                case "alertsEnabled":
+                    if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                        alertsEnabled = property.Value.GetBoolean();
+                    else
+                        errors[property.Name] = ["Must be true or false."];
+                    break;
                 default:
                     errors[property.Name] = ["Unknown property."];
                     break;
@@ -285,16 +292,16 @@ public static class ApiEndpoints
 
         if (errors.Count > 0)
             return Problem(StatusCodes.Status400BadRequest, "validation_failed", "The request is not valid", errors: errors);
-        if (threshold is not null || emailPresent)
+        if (threshold is not null || emailPresent || alertsEnabled is not null)
         {
             var clearEmail = emailPresent && string.IsNullOrWhiteSpace(email);
-            if (!await commands.UpdateAlertingAsync(id, threshold, email, clearEmail, ct)) return MonitorNotFound();
+            if (!await commands.UpdateAlertingAsync(id, threshold, email, clearEmail, alertsEnabled, ct)) return MonitorNotFound();
             LogWrite(http, logs, id, "alerting.update");
         }
 
         var m = await db.Monitors.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (m is null) return MonitorNotFound();
-        return Json(new ApiAlertingResponse(m.AlertAfterConsecutiveFailures, m.AlertEmailOverride, await RecipientsAsync(resolver, m, ct)));
+        return Json(new ApiAlertingResponse(m.AlertAfterConsecutiveFailures, m.AlertEmailOverride, m.AlertsEnabled, await RecipientsAsync(resolver, m, ct)));
     }
 
     private static async Task<IResult> PutAccountAlertingAsync(

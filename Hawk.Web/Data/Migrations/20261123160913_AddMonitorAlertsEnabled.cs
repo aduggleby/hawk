@@ -1,0 +1,29 @@
+﻿using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace Hawk.Web.Data.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddMonitorAlertsEnabled : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<bool>(
+                name: "AlertsEnabled",
+                table: "Monitors",
+                type: "bit",
+                nullable: false,
+                defaultValue: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "AlertsEnabled",
+                table: "Monitors");
+        }
+    }
+}

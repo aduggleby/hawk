@@ -222,6 +222,9 @@ namespace Hawk.Web.Data.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
 
+                    b.Property<bool>("AlertsEnabled")
+                        .HasColumnType("bit");
+
                     b.Property<string>("AllowedStatusCodes")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");

@@ -40,6 +40,9 @@ public sealed record MonitorExportModel
     public string? HeartbeatToken { get; init; }
     public int AlertAfterConsecutiveFailures { get; init; } = 1;
     public string? AlertEmailOverride { get; init; }
+
+    /// <summary>False = Hawk sends no alert email for this monitor. A missing value means true (older files and Hawk versions).</summary>
+    public bool AlertsEnabled { get; init; } = true;
     public string? AllowedStatusCodes { get; init; }
 
     /// <summary>Written for HTTP monitors only; a missing value means true (older files and Hawk versions).</summary>
@@ -108,6 +111,7 @@ public static class MonitorJsonPort
             HeartbeatToken = monitor.HeartbeatToken,
             AlertAfterConsecutiveFailures = monitor.AlertAfterConsecutiveFailures,
             AlertEmailOverride = monitor.AlertEmailOverride,
+            AlertsEnabled = monitor.AlertsEnabled,
             AllowedStatusCodes = monitor.AllowedStatusCodes,
             FollowRedirects = monitor.Type == MonitorType.Http ? monitor.FollowRedirects : null,
             RunRetentionDays = monitor.RunRetentionDays,
@@ -237,6 +241,7 @@ public static class MonitorJsonPort
             GraceSeconds = model.HeartbeatGraceSeconds,
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,
             AlertEmailOverride = model.AlertEmailOverride,
+            AlertsEnabled = model.AlertsEnabled,
             AllowedStatusCodes = model.AllowedStatusCodes,
             FollowRedirects = model.FollowRedirects ?? true,
             RunRetentionDays = model.RunRetentionDays,
@@ -271,6 +276,7 @@ public static class MonitorJsonPort
             IntervalSeconds = model.IntervalSeconds,
             AlertAfterConsecutiveFailures = model.AlertAfterConsecutiveFailures,
             AlertEmailOverride = string.IsNullOrWhiteSpace(model.AlertEmailOverride) ? null : model.AlertEmailOverride.Trim(),
+            AlertsEnabled = model.AlertsEnabled,
             AllowedStatusCodes = heartbeat ? null : AllowedStatusCodesParser.Normalize(model.AllowedStatusCodes),
             FollowRedirects = heartbeat || (model.FollowRedirects ?? true),
             RunRetentionDays = model.RunRetentionDays,

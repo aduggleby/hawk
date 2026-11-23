@@ -81,6 +81,9 @@ public sealed class MonitorExecutor(
     private const string AlertLockBusyMessage = "Alert state lock busy; skipped alert evaluation to avoid duplicate alert.";
     private const int FailureLogEntryLimit = 20;
 
+    /// <summary>Run alert note when the monitor's alert emails are off (<see cref="MonitorEntity.AlertsEnabled"/>).</summary>
+    public const string AlertsMutedNote = "Alert emails are off for this monitor.";
+
     private sealed record FailureLogEntry(DateTimeOffset StartedAt, int? StatusCode);
 
     private readonly AlertDigestOptions digest = AlertDigestOptions.From(config);
@@ -286,7 +289,14 @@ public sealed class MonitorExecutor(
         {
             decision = MonitorAlertingDecider.OnFailure(state, threshold, run.StartedAt, repeatEvery);
 
-            if (decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder)
+            if ((decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder) && !monitor.AlertsEnabled)
+            {
+                // Muted: the state keeps counting, but nothing is sent and no alert error is recorded in the state
+                // (readers of the API treat lastFailureAlertError as a delivery problem).
+                run.AlertSent = false;
+                run.AlertError = AlertsMutedNote;
+            }
+            else if (decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder)
             {
                 var failureLog = await GetFailureLogEntriesAsync(
                     monitor.Id,
@@ -326,7 +336,14 @@ public sealed class MonitorExecutor(
         {
             decision = MonitorAlertingDecider.OnSuccess(state, threshold, run.StartedAt);
 
-            if (decision.Kind == MonitorAlertKind.Recovered)
+            if (decision.Kind == MonitorAlertKind.Recovered && !monitor.AlertsEnabled)
+            {
+                // Muted: drop the recovery instead of keeping it pending, so unmuting later never sends a stale one.
+                state.PendingRecoveryAlert = false;
+                run.AlertSent = false;
+                run.AlertError = AlertsMutedNote;
+            }
+            else if (decision.Kind == MonitorAlertKind.Recovered)
             {
                 var sent = await TrySendRecoveredAlertAsync(
                     monitor,

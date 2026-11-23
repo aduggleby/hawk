@@ -8,6 +8,7 @@
 // Every flush runs under the Hangfire lock "hawk:alert-digest" so two workers never send the same group.
 // Each queued alert schedules a flush after the window; the minutely recurring job "hawk-alert-digest" (always registered,
 // alerts are also raised by pings and manual runs) retries failed sends and picks up anything a skipped or lost flush missed.
+// Alerts of monitors whose alert emails were turned off after queuing (Monitor.AlertsEnabled) are dropped before grouping.
 // </summary>
 // </file>
 
@@ -134,6 +135,19 @@ public sealed class AlertDigestSender(
     }
 
     /// <summary>
+    /// Splits queued alerts into those to send and those of muted monitors (<c>Monitor.AlertsEnabled = false</c>), which are
+    /// dropped. Alerts of deleted monitors are kept (they are still sent). Pure; used by <see cref="FlushAsync"/>.
+    /// </summary>
+    public static (List<PendingAlert> Send, List<PendingAlert> Muted) SplitMuted(IEnumerable<PendingAlert> queued, IReadOnlySet<Guid> mutedMonitorIds)
+    {
+        var send = new List<PendingAlert>();
+        var muted = new List<PendingAlert>();
+        foreach (var alert in queued)
+            (mutedMonitorIds.Contains(alert.MonitorId) ? muted : send).Add(alert);
+        return (send, muted);
+    }
+
+    /// <summary>
     /// The email for a group: the stored email for one alert, a summary for more.
     /// </summary>
     public static (string Subject, string Html) Compose(IReadOnlyList<PendingAlert> alerts)
@@ -235,7 +249,18 @@ public sealed class AlertDigestSender(
             .Where(a => a.SentAt == null && a.FailedAt == null)
             .ToListAsync(cancellationToken);
 
-        var plan = Plan(queued, now, options);
+        var queuedMonitorIds = queued.Select(a => a.MonitorId).Distinct().ToList();
+        HashSet<Guid> mutedMonitorIds = queuedMonitorIds.Count == 0
+            ? []
+            : (await db.Monitors
+                .Where(m => queuedMonitorIds.Contains(m.Id) && !m.AlertsEnabled)
+                .Select(m => m.Id)
+                .ToListAsync(cancellationToken)).ToHashSet();
+        var (send, muted) = SplitMuted(queued, mutedMonitorIds);
+        if (muted.Count > 0)
+            await DropMutedAsync(muted, cancellationToken);
+
+        var plan = Plan(send, now, options);
         foreach (var group in plan.Due)
             await SendGroupAsync(group, now, cancellationToken);
 
@@ -297,6 +322,24 @@ public sealed class AlertDigestSender(
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes queued alerts of muted monitors and records on their runs that no email went out.
+    /// </summary>
+    private async Task DropMutedAsync(IReadOnlyList<PendingAlert> muted, CancellationToken cancellationToken)
+    {
+        var runIds = muted.Select(a => a.RunId).ToList();
+        var runs = await db.MonitorRuns.Where(r => runIds.Contains(r.Id)).ToListAsync(cancellationToken);
+        foreach (var run in runs)
+        {
+            run.AlertSent = false;
+            run.AlertError = MonitorExecutor.AlertsMutedNote;
+        }
+
+        db.PendingAlerts.RemoveRange(muted);
+        await db.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Dropped {Count} queued alert(s) of monitors whose alert emails are off.", muted.Count);
     }
 
     private async Task DeleteOldAsync(DateTimeOffset now, CancellationToken cancellationToken)

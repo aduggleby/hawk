@@ -122,6 +122,12 @@ public sealed class Monitor
     public string? AlertEmailOverride { get; set; }
 
     /// <summary>
+    /// When false Hawk sends no alert email (failure, reminder, recovery, or a place in a summary) for this monitor.
+    /// Checks, runs, alert state and the API are unaffected, so another system can read the state and alert instead.
+    /// </summary>
+    public bool AlertsEnabled { get; set; } = true;
+
+    /// <summary>
     /// Optional additional HTTP status codes that should count as success.
     /// Comma-separated numeric list (for example: 404,429).
     /// 2xx status codes are always treated as success.

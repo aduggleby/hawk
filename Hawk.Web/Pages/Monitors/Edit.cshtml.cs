@@ -97,6 +97,7 @@ public class EditModel(ApplicationDbContext db, IHostEnvironment env, MonitorEdi
             GraceSeconds = m.HeartbeatGraceSeconds,
             AlertAfterConsecutiveFailures = Math.Clamp(m.AlertAfterConsecutiveFailures, 1, 20),
             AlertEmailOverride = m.AlertEmailOverride,
+            AlertsEnabled = m.AlertsEnabled,
             AllowedStatusCodes = m.AllowedStatusCodes,
             FollowRedirects = m.FollowRedirects,
             RunRetentionDays = m.RunRetentionDays,

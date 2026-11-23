@@ -104,6 +104,12 @@ public sealed class MonitorForm
     public string? AlertEmailOverride { get; set; }
 
     /// <summary>
+    /// Send alert emails for this monitor (default). When off, the monitor is still checked but never emails.
+    /// </summary>
+    [Display(Name = "Send alert emails")]
+    public bool AlertsEnabled { get; set; } = true;
+
+    /// <summary>
     /// Optional additional HTTP status codes that count as success.
     /// </summary>
     [Display(Name = "Allowed HTTP status codes (additional OK)")]

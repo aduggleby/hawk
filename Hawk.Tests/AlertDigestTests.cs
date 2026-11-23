@@ -212,6 +212,59 @@ public sealed class AlertDigestTests
         Assert.Empty(emails.Subjects);
     }
 
+    [Fact]
+    public void Summary_leaves_out_alerts_of_muted_monitors()
+    {
+        var alpha = Alert("Alpha", MonitorAlertKind.Failure, 40);
+        var muted = Alert("Muted", MonitorAlertKind.Failure, 40);
+        var beta = Alert("Beta", MonitorAlertKind.Recovered, 35);
+
+        var (send, dropped) = AlertDigestSender.SplitMuted([alpha, muted, beta], new HashSet<Guid> { muted.MonitorId });
+        Assert.Equal(["Muted"], dropped.Select(a => a.MonitorName));
+
+        var group = Assert.Single(AlertDigestSender.Plan(send, Now, Options).Due);
+        var (subject, html) = AlertDigestSender.Compose(group);
+        Assert.Equal("[ALERT SUMMARY] 1 failed, 1 recovered", subject);
+        Assert.Contains("Alpha", html);
+        Assert.Contains("Beta", html);
+        Assert.DoesNotContain("Muted", html);
+
+        // With one alert left the summary becomes that alert's own email.
+        (send, _) = AlertDigestSender.SplitMuted([alpha, muted], new HashSet<Guid> { muted.MonitorId });
+        Assert.Equal("[single] Alpha", AlertDigestSender.Compose(Assert.Single(AlertDigestSender.Plan(send, Now, Options).Due)).Subject);
+    }
+
+    [Fact]
+    public async Task Flush_drops_alerts_of_muted_monitors_and_sends_nothing_when_none_are_left()
+    {
+        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("n")).Options);
+        var muted = new Hawk.Web.Data.Monitoring.Monitor { Name = "Muted", Url = "https://example.com", Method = "GET", AlertsEnabled = false };
+        db.Monitors.Add(muted);
+        var run = new MonitorRun { MonitorId = muted.Id, State = "completed", AlertSent = true };
+        db.MonitorRuns.Add(run);
+        var alert = Alert("Muted", MonitorAlertKind.Failure, 0);
+        alert.MonitorId = muted.Id;
+        alert.RunId = run.Id;
+        alert.QueuedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        // A deleted monitor's alert is still sent (no monitor row means not muted).
+        var orphan = Alert("Deleted", MonitorAlertKind.Failure, 0, "other@example.com");
+        orphan.QueuedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        db.PendingAlerts.AddRange(alert, orphan);
+        await db.SaveChangesAsync();
+
+        var emails = new SelectiveEmailSender("none");
+        await new AlertDigestSender(db, emails, Config(("Hawk:Email:From", "hawk@example.com")), NullLogger<AlertDigestSender>.Instance)
+            .FlushAsync(CancellationToken.None);
+
+        Assert.Equal(["[single] Deleted"], emails.Subjects);
+        db.ChangeTracker.Clear();
+        Assert.Equal(["Deleted"], await db.PendingAlerts.Select(a => a.MonitorName).ToListAsync());
+        var mutedRun = await db.MonitorRuns.SingleAsync();
+        Assert.False(mutedRun.AlertSent);
+        Assert.Equal(MonitorExecutor.AlertsMutedNote, mutedRun.AlertError);
+    }
+
     private static IConfiguration Config(params (string Key, string Value)[] values) =>
         new ConfigurationBuilder().AddInMemoryCollection(values.ToDictionary(v => v.Key, v => (string?)v.Value)).Build();
 

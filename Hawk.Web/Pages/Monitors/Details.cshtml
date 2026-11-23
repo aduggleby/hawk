@@ -295,6 +295,8 @@ else
                     <dt class="col-span-4 text-[color:var(--text-secondary)]">Follow redirects</dt>
                     <dd class="col-span-8">@(Model.Monitor.FollowRedirects ? "Yes" : "No")</dd>
                 }
+                <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert emails</dt>
+                <dd class="col-span-8" data-testid="alerts-enabled">@(Model.Monitor.AlertsEnabled ? "On" : "Off (muted: checked, but no email is sent)")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert after</dt>
                 <dd class="col-span-8">@Model.Monitor.AlertAfterConsecutiveFailures consecutive @(Model.Monitor.AlertAfterConsecutiveFailures == 1 ? "failure" : "failures")</dd>
                 <dt class="col-span-4 text-[color:var(--text-secondary)]">Alert email</dt>

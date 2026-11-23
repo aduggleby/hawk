@@ -47,7 +47,8 @@ public sealed record ApiMonitorListItem(
     bool OwnedByCaller,
     ApiFailureSummary? Failure,
     DateTimeOffset? LastRunAt,
-    DateTimeOffset? NextRunAt);
+    DateTimeOffset? NextRunAt,
+    bool AlertsEnabled);
 
 public sealed record ApiMonitorList(IReadOnlyList<ApiMonitorListItem> Monitors);
 
@@ -85,6 +86,7 @@ public sealed record ApiMonitorDetail(
     bool? FollowRedirects,
     int AlertAfterConsecutiveFailures,
     string? AlertEmailOverride,
+    bool AlertsEnabled,
     int? RunRetentionDays,
     int? HeartbeatGraceSeconds,
     DateTimeOffset? LastPingAt,
@@ -142,7 +144,7 @@ public sealed record ApiRunDetail(
     string? AlertError);
 
 public sealed record ApiAlertingResponse(
-    int AlertAfterConsecutiveFailures, string? AlertEmailOverride, ApiAlertRecipients AlertRecipients);
+    int AlertAfterConsecutiveFailures, string? AlertEmailOverride, bool AlertsEnabled, ApiAlertRecipients AlertRecipients);
 
 public sealed record ApiAccountAlerting(string? AlertEmail, string AppliesTo);
 
