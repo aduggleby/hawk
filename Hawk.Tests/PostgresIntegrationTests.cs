@@ -358,6 +358,11 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
             Assert.All(runs, r => Assert.Equal(MonitorExecutor.AlertsMutedNote, r.AlertError));
         }
 
+        // A recovery send that failed before muting stays pending with its error; the muted recovery drops both.
+        await using (var scope = app.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorAlertStates.Where(s => s.MonitorId == quiet)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.PendingRecoveryAlert, true).SetProperty(x => x.LastRecoveryAlertError, "smtp down"));
+
         await RunAsync(loud, HttpStatusCode.OK);
         await RunAsync(quiet, HttpStatusCode.OK);
         Assert.Equal(["[ALERT FAIL] Loud (500)", "[ALERT RECOVERED] Loud (200)"], emails.Sent.Select(e => e.Subject));
@@ -429,6 +434,94 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
             Assert.False(state.PendingRecoveryAlert);
             Assert.Null(state.LastFailureAlertError);
             Assert.Null(state.LastRecoveryAlertError);
+        }
+    }
+
+    [SkippableFact]
+    public async Task Unmuting_a_failing_monitor_sends_fail_on_the_next_failing_run()
+    {
+        await using var app = await CreateAppAsync();
+        var emails = new RecordingEmailSender();
+        Guid id;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var m = NewMonitor("Muted", null);
+            m.AlertsEnabled = false;
+            db.Monitors.Add(m);
+            await db.SaveChangesAsync();
+            id = m.Id;
+        }
+
+        async Task FailAsync()
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await NewExecutor(app, scope, emails, null, HttpStatusCode.InternalServerError).ExecuteAsync(id, "schedule", CancellationToken.None);
+        }
+
+        await FailAsync();
+        await FailAsync();
+        Assert.Empty(emails.Sent);
+
+        await using (var scope = app.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Monitors.Where(m => m.Id == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.AlertsEnabled, true));
+        await FailAsync();
+        Assert.Equal(["[ALERT FAIL] Muted (500)"], emails.Sent.Select(e => e.Subject));
+
+        // Delivered once; the next failure is not a new alert.
+        await FailAsync();
+        Assert.Single(emails.Sent);
+    }
+
+    [SkippableFact]
+    public async Task Muted_heartbeat_sends_nothing_on_a_missed_ping_or_the_recovering_ping()
+    {
+        await using var app = await CreateAppAsync();
+        var emails = new RecordingEmailSender();
+        MonitorEntity loud, quiet;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            loud = NewHeartbeat("Loud beat", 60, 60, null, false);
+            quiet = NewHeartbeat("Quiet beat", 60, 60, null, false);
+            quiet.AlertsEnabled = false;
+            db.Monitors.AddRange(loud, quiet);
+            await db.SaveChangesAsync();
+        }
+
+        foreach (var m in new[] { loud, quiet })
+        {
+            await SetNextRunAsync(app, m.Id, DateTimeOffset.UtcNow.AddSeconds(-1));
+            await MissAsync(app, m.Id, emails);
+        }
+
+        // The unmuted heartbeat in the same setup does send.
+        Assert.Equal(["[ALERT FAIL] Loud beat (NO_PING)"], emails.Sent.Select(e => e.Subject));
+        var missed = Assert.Single(await RunsAsync(app, quiet.Id));
+        Assert.False(missed.Success);
+        Assert.Equal(MonitorExecutor.AlertsMutedNote, missed.AlertError);
+
+        // Pretend the quiet heartbeat's incident was alerted before muting, so its ping really is a recovery decision.
+        var alertedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await using (var scope = app.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorAlertStates.Where(s => s.MonitorId == quiet.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.LastFailureAlertSentAt, alertedAt));
+
+        foreach (var m in new[] { loud, quiet })
+            Assert.Equal((200, "OK"), await PingAsync(app, m.HeartbeatToken!, emails));
+        Assert.Equal(["[ALERT FAIL] Loud beat (NO_PING)", "[ALERT RECOVERED] Loud beat (PING_RECEIVED)"], emails.Sent.Select(e => e.Subject));
+
+        var runs = await RunsAsync(app, quiet.Id);
+        Assert.Equal(2, runs.Count);
+        Assert.True(runs[1].Success);
+        Assert.Equal(MonitorExecutor.AlertsMutedNote, runs[1].AlertError);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var state = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorAlertStates.AsNoTracking().SingleAsync(s => s.MonitorId == quiet.Id);
+            Assert.Equal(0, state.ConsecutiveFailures);
+            Assert.Null(state.LastFailureAlertError);
+            Assert.False(state.PendingRecoveryAlert);
         }
     }
 

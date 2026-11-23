@@ -339,8 +339,10 @@ public sealed class MonitorExecutor(
 
             if (decision.Kind == MonitorAlertKind.Recovered && !monitor.AlertsEnabled)
             {
-                // Muted: drop the recovery instead of keeping it pending, so unmuting later never sends a stale one.
+                // Muted: drop the recovery instead of keeping it pending, so unmuting later never sends a stale one,
+                // and drop the error of an earlier failed recovery send with it.
                 state.PendingRecoveryAlert = false;
+                state.LastRecoveryAlertError = null;
                 run.AlertSent = false;
                 run.AlertError = AlertsMutedNote;
             }
