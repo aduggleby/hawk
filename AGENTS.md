@@ -13,7 +13,7 @@ This repository is building an ASP.NET Razor Pages uptime checker and URL verifi
 - UI: Tailwind CSS v4 with custom component classes (`hawk-btn`, `hawk-card`, etc.), "Tower" design (0.14.0, polished in 0.16.0, see "Tower Design"), dark mode support, mobile nav drawer. Bootstrap has been removed.
 - Database: SQL Server (default) or PostgreSQL 17, selected by `Hawk:Database:Provider` (see "Database Providers")
 - SQLite: not used (previous experimentation, if any, should not be reintroduced unless explicitly requested)
-- Version: `0.16.6`
+- Version: `0.17.0`
 
 ## Ports
 
@@ -339,6 +339,15 @@ Alert recipient resolution (in order):
 - Rollback to 0.14.x: delete the `hawk-alert-digest` recurring job and any scheduled/failed `IAlertDigestSender` jobs in the Hangfire dashboard (the old image cannot load the type); unsent queued alerts are lost. The table is additive.
 - Run diagnostics read the row by `RunId` (queued / sent alone or in a summary of N / retrying / failed). E2E compose files set the window to 0 because the specs assert each email immediately.
 - Tests: `AlertDigestTests` (plan, compose, options, retry/give-up), `PostgresIntegrationTests.Grouped_alerts_are_queued_with_the_run_and_sent_as_one_summary`; the Postgres test host defaults the window to 0.
+
+## Alert Mute (0.17.0)
+
+- `Monitor.AlertsEnabled` (bool, default true; migration `AddMonitorAlertsEnabled` in both sets with column default **true**, because EF scaffolds `false` for a new non-null bool, which would mute every existing monitor). Form: **Send alert emails** checkbox on Create and Edit (both types). API: `alertsEnabled` on create, PATCH, `PATCH /monitors/{id}/alerting` (`MonitorCommands.UpdateAlertingAsync`), detail and list. JSON export writes it (still format v3; missing = true). Board rows show an `Alerts muted` tag (`hawk-kind`, `data-testid="alerts-muted"`), Details shows "Alert emails".
+- Why: BigSister reads Hawk's state with a read-only API key and is the only sender of alert mail; Hawk mails only for the monitors that watch BigSister itself.
+- Gate: `MonitorExecutor.EvaluateAlertsAsync` (the one path for scheduled/manual runs, heartbeat misses and pings) always runs the decider, so `ConsecutiveFailures`/incident fields keep moving. A muted Failure/Reminder sends nothing and leaves `LastFailureAlertSentAt` and both alert errors untouched; a muted Recovered also clears `PendingRecoveryAlert` (no stale recovery after unmuting). The run gets `AlertSent=false`, `AlertError = MonitorExecutor.AlertsMutedNote`.
+- **Never record muting as an alert error in `MonitorAlertState`.** BigSister's Hawk check reads `alertState.lastFailureAlertError` and fails when any failing monitor has one.
+- `AlertDigestSender.FlushCoreAsync` drops queued rows of monitors that are muted now (`SplitMuted`, pure) before planning: rows are deleted and their runs get the muted note, so a summary leaves them out and an emptied group sends nothing. Rows of deleted monitors are still sent.
+- Tests: `PostgresIntegrationTests` (`Muted_monitor_sends_no_fail_or_recovered_mail...`, `Muting_during_an_alerted_incident...`, `Grouped_summary_leaves_out_muted_monitors...`, `Edit_page_shows_and_saves_the_alert_switch...`, `Alerts_enabled_migration_sets_existing_monitors_to_true`), `ApiPostgresHttpTests.Alerts_enabled_defaults_to_true_and_round_trips...`, `AlertDigestTests` (`Summary_leaves_out_alerts_of_muted_monitors`, `Flush_drops_alerts_of_muted_monitors...`), `MonitorTransferTests`, `HeartbeatHttpTests.Create_page_stores_muted_alerts...`.
 
 ## Monitor Edit Concurrency
 

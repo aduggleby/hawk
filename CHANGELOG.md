@@ -6,6 +6,12 @@ The format is based on "Keep a Changelog", and this project follows Semantic Ver
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-23
+
+### Added
+
+- Per-monitor **Send alert emails** switch (`alertsEnabled` in the API and the JSON export, default on). When it is off, Hawk keeps checking the monitor and recording runs, alert state and history, but sends no failure, reminder or recovery email for it and leaves it out of grouped summaries; a summary with nothing left is not sent. Editable on the Create and Edit forms, through `PATCH /api/v1/monitors/{id}` and `PATCH /api/v1/monitors/{id}/alerting`; the monitors board marks muted monitors. Existing monitors keep sending alerts.
+
 ## [0.16.6] - 2026-11-16
 
 ### Fixed

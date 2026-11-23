@@ -408,6 +408,14 @@ When a shared dependency fails, many monitors alert at once. Hawk therefore hold
 
 With grouping off (`0`), a failed send is retried on the monitor's next run instead.
 
+### Muting A Monitor's Alerts
+
+Each monitor has a **Send alert emails** switch (Create/Edit form; API field `alertsEnabled`, default on). When it is off, Hawk keeps checking the monitor and records runs, alert state and history as usual, but sends no failure, reminder or recovery email for it, and leaves it out of summaries (a summary with nothing left is not sent). Use it when another system reads Hawk's state through the API and does the alerting. The monitors board marks such monitors with **Alerts muted**, and the Details page shows the setting.
+
+- A muted monitor's runs show "Alert emails are off for this monitor." as their alert status; its alert state records no alert error.
+- Alerts that were already queued for a grouped email when the monitor was muted are dropped.
+- A recovery that would have been sent while muted is dropped too, so turning alerts back on never sends a stale recovery email. Turning them back on while the monitor is still failing sends a failure alert on its next failed run.
+
 ### Alert Recipient Resolution
 
 When a monitor triggers an alert, the email recipient is resolved in this order:
