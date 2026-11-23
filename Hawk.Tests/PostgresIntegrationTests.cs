@@ -406,10 +406,14 @@ public sealed class PostgresIntegrationTests(PostgresFixture fixture)
         await UpdateAsync(db => db.Monitors.Where(m => m.Id == muted).ExecuteUpdateAsync(s => s.SetProperty(m => m.AlertsEnabled, false)));
         var dayAgo = DateTimeOffset.UtcNow.AddHours(-25);
         await UpdateAsync(db => db.MonitorAlertStates.ExecuteUpdateAsync(s => s.SetProperty(x => x.LastFailureAlertSentAt, dayAgo)));
+        // An error left by a send before muting would never be retried, so the muted run clears it.
+        await UpdateAsync(db => db.MonitorAlertStates.Where(x => x.MonitorId == muted).ExecuteUpdateAsync(s => s.SetProperty(x => x.LastFailureAlertError, "smtp down")));
 
         await RunAsync(loud, HttpStatusCode.InternalServerError);
         await RunAsync(muted, HttpStatusCode.InternalServerError);
         Assert.Equal("[ALERT FAIL REMINDER] Loud (500)", Assert.Single(emails.Sent.Skip(2)).Subject);
+        await using (var scope = app.Services.CreateAsyncScope())
+            Assert.Null((await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().MonitorAlertStates.AsNoTracking().SingleAsync(s => s.MonitorId == muted)).LastFailureAlertError);
 
         await RunAsync(loud, HttpStatusCode.OK);
         await RunAsync(muted, HttpStatusCode.OK);

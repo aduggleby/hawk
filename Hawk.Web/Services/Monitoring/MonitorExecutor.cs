@@ -291,8 +291,9 @@ public sealed class MonitorExecutor(
 
             if ((decision.Kind is MonitorAlertKind.Failure or MonitorAlertKind.FailureReminder) && !monitor.AlertsEnabled)
             {
-                // Muted: the state keeps counting, but nothing is sent and no alert error is recorded in the state
-                // (readers of the API treat lastFailureAlertError as a delivery problem).
+                // Muted: the state keeps counting, but nothing is sent. No alert error stays in the state (readers of the
+                // API treat lastFailureAlertError as a delivery problem); one left by a send before muting is never retried.
+                state.LastFailureAlertError = null;
                 run.AlertSent = false;
                 run.AlertError = AlertsMutedNote;
             }

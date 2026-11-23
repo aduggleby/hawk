@@ -174,14 +174,14 @@ curl -fsS -X PATCH -H "Authorization: Bearer $KEY" -H "Content-Type: application
   -d '{"alertAfterConsecutiveFailures": 3}' $HAWK/api/v1/monitors/$ID/alerting
 ```
 
+Response: `{ "alertAfterConsecutiveFailures": 3, "alertEmailOverride": "ops@x.com", "alertsEnabled": true, "alertRecipients": { "source": "monitor", "addresses": ["ops@x.com"] } }`.
+
 Mute a monitor's alert emails (it keeps being checked, and its state stays readable for another alerting system):
 
 ```bash
-curl -sS -X PATCH -H "Authorization: Bearer $HAWK_API_KEY" -H "Content-Type: application/json" \
+curl -fsS -X PATCH -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"alertsEnabled": false}' $HAWK/api/v1/monitors/$ID/alerting
 ```
-
-Response: `{ "alertAfterConsecutiveFailures": 3, "alertEmailOverride": "ops@x.com", "alertsEnabled": true, "alertRecipients": { "source": "monitor", "addresses": ["ops@x.com"] } }`.
 
 The change renews the monitor's concurrency stamp, so an open Edit form reports a conflict instead of overwriting it.
 

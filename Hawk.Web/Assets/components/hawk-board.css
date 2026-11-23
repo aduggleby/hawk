@@ -450,6 +450,11 @@
     display: none;
   }
 
+  /* The muted tag carries state, not decoration: keep it on narrow screens. */
+  .hawk-kind.hawk-kind-keep {
+    display: inline;
+  }
+
   .hawk-c-sc {
     grid-column: 1 / -1;
     grid-row: 2;

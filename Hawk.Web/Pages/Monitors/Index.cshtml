@@ -168,7 +168,7 @@ else
                                 <span class="hawk-kind">@(m.Type == Hawk.Web.Data.Monitoring.MonitorType.Heartbeat ? "Heartbeat" : "HTTP")</span>
                                 @if (!m.AlertsEnabled)
                                 {
-                                    <span class="hawk-kind" data-testid="alerts-muted" title="Alert emails are off for this monitor">Alerts muted</span>
+                                    <span class="hawk-kind hawk-kind-keep" data-testid="alerts-muted" title="Alert emails are off for this monitor">Alerts muted</span>
                                 }
                             </span>
                             <span role="cell" class="hawk-c-sc"><partial name="_StatusStrip" model="r.Strip" /></span>
